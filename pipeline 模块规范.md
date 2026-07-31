@@ -19,14 +19,14 @@ Windows 交织缓冲区（&[f32]，来自 APO_CONNECTION_PROPERTY.p_buffer）
 pipeline/process.rs — evaluate_buffer → 提取输入/输出切片
   │
   ▼
-pipeline/channel.rs — deinterleave_into（交织 → 去交织，零分配）
+pipeline/interleave.rs — deinterleave_into（交织 → 去交织，零分配）
   │
   ▼
 pipeline/chain.rs — 逐 Filter 调用（去交织空间）
   │   └── filter.process(&mut [Vec<f32>], frame_count)
   │
   ▼
-pipeline/channel.rs — interleave_from（去交织 → 交织，零分配）
+pipeline/interleave.rs — interleave_from（去交织 → 交织，零分配）
   │
   ▼
 Windows 交织缓冲区（写回 APO_CONNECTION_PROPERTY.p_buffer）
@@ -58,7 +58,7 @@ pipeline/
 ├── format.rs           # 从 IAudioMediaType 提取 WAVEFORMATEX
 ├── chain.rs            # Filter 链执行 + 延迟累计
 ├── process.rs          # APOProcess 调度入口 + 桥接函数 + 错误策略
-├── channel.rs          # 通道映射 + 去交织/交织 + 默认通道掩码
+├── interleave.rs       # 通道数据搬运（去交织/交织）
 ├── realtime.rs         # 实时安全基础设施模块入口
 ├── realtime/
 │   ├── ring.rs         # SPSC 无锁环形缓冲区
@@ -89,9 +89,9 @@ pipeline/
 | `pipeline/context.rs` | 无 | `install/`、`config/`、`object/` |
 | `pipeline/buffer.rs` | `sys/com/apo_types` | `install/`、`config/`、`object/` |
 | `pipeline/format.rs` | `sys/com/apo_interfaces`、`sys/com/apo_types` | `install/`、`config/`、`object/` |
-| `pipeline/channel.rs` | 无 | `install/`、`config/`、`object/` |
+| `pipeline/interleave.rs` | 无 | `install/`、`config/`、`object/` |
 | `pipeline/chain.rs` | `dsp/filter`、`utils/` | `install/`、`config/`、`object/`、`dsp/transition` |
-| `pipeline/process.rs` | `context`、`chain`、`buffer`、`channel`、`dsp/filter`、`dsp/transition`、`sys/com/apo_types`、`utils/` | `install/`、`config/`、`object/` |
+| `pipeline/process.rs` | `context`、`chain`、`buffer`、`interleave`、`dsp/filter`、`dsp/transition`、`sys/com/apo_types`、`utils/` | `install/`、`config/`、`object/` |
 | `pipeline/realtime/contract.rs` | `core` | 其他 |
 | `pipeline/realtime/ring.rs` | `core` | 其他 |
 | `pipeline/dsp/filter.rs` | `utils/` | `install/`、`config/`、`object/` |
@@ -283,22 +283,17 @@ pub fn is_float_format(media_type: *mut IAudioMediaType) -> bool;
 
 ---
 
-### 4.4 `pipeline/channel.rs`
+### 4.4 `pipeline/interleave.rs`
 
-**职责**：通道映射、去交织/交织、默认通道掩码。
+**职责**：通道数据搬运（去交织/交织）。不包含掩码映射或通道名逻辑（已迁移至 `sys/audio_defs.rs`）。
 
 **引用来源**：无外部依赖
 
-**导出给**：`pipeline/process.rs`、`pipeline/chain.rs`、`config/`
+**导出给**：`pipeline/process.rs`、`pipeline/chain.rs`
 
 **公开 API**：
 
 ```rust
-pub fn default_channel_mask(channels: u32) -> u32;
-pub fn get_channel_names(mask: u32) -> Vec<String>;
-
-// ── 去交织/交织 ──
-
 /// 交织格式 → 去交织平面缓冲区（分配新 Vec<Vec<f32>>）。非实时路径用。
 pub fn deinterleave(input: &[f32], channels: usize, frames: usize) -> Vec<Vec<f32>>;
 
@@ -399,7 +394,7 @@ pub fn process(&mut self, samples: &mut [Vec<f32>], frame_count: usize) -> Resul
 - `crate::pipeline::context::PipelineContext`
 - `crate::pipeline::chain::Chain`
 - `crate::pipeline::buffer::{BufferInfo, evaluate_buffer, BufferAction, is_silent, zero_buffers, copy_buffers}`
-- `crate::pipeline::channel::{deinterleave_into, interleave_from}`
+- `crate::pipeline::interleave::{deinterleave_into, interleave_from}`
 - `crate::pipeline::dsp::transition::mix_buffers`
 - `crate::sys::com::apo_types::{APO_CONNECTION_PROPERTY, APO_BUFFER_FLAGS}`
 - `crate::utils::vx_error::*`
@@ -1178,7 +1173,7 @@ impl Filter for DelayFilter { ... }
 
 **职责**：通道复制/混音。
 
-**引用来源**：`crate::pipeline::dsp::filter::Filter`、`crate::pipeline::channel::*`
+**引用来源**：`crate::pipeline::dsp::filter::Filter`、`crate::pipeline::interleave::*`
 
 **导出给**：仅 `pipeline/dsp/` 内部
 

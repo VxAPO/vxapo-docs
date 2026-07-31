@@ -68,7 +68,7 @@ object/
 - `crate::pipeline::chain::Chain`
 - `crate::pipeline::context::PipelineContext`
 - `crate::pipeline::format::{extract_format, is_float_format, AudioFormat}`
-- `crate::pipeline::channel::get_channel_names`
+- `crate::sys::audio_defs::get_channel_names`
 - `crate::pipeline::dsp::filter::{DspContext, DeviceType, ProcessingStage}`
 - `crate::pipeline::dsp::transition::{SmoothingProvider, mix_buffers, default_smoothing_length}`
 - `crate::config::parser::ConfigParser`

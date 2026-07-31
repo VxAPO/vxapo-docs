@@ -14,6 +14,7 @@
 sys/
 ├── com.rs                   # COM 子系统模块入口
 ├── registry.rs              # 注册表模块（单一文件，含 win32_ok + RegKey + 读写删）
+├── audio_defs.rs            # Windows 音频基础定义（通道掩码位标志 + 标准布局映射）
 └── com/
     ├── prelude.rs           # COM 基础类型重导出 + HRESULT 常量
     ├── apo_interfaces.rs    # 4 个 APO 接口定义 + 7 个 IID 常量
@@ -26,6 +27,7 @@ sys/
 
 | 模块 | 可依赖 | 不可依赖 |
 |------|--------|----------|
+| `sys/audio_defs.rs` | `windows` crate | 所有其他 |
 | `sys/com/prelude.rs` | `windows` crate | 所有其他 |
 | `sys/com/apo_interfaces.rs` | `prelude`、`apo_types`、`windows` crate（3 个系统接口仅取 IID） | 其他 |
 | `sys/com/apo_types.rs` | `windows` crate | 其他 |
@@ -523,3 +525,82 @@ pub struct RegKey {
 | `save_to_file` | `fn save_to_file(root: HKEY, sub_key: &str, path: &str) -> Result<()>` | 递归导出注册表键为 `.reg` 文件（UTF-16LE with BOM），用于安装前备份 |
 
 **禁止**：不包含任何 APO 专用路径或安装业务逻辑
+
+---
+
+### 3.5 `sys/audio_defs.rs`
+
+**职责**：Windows 音频基础定义。提供通道掩码位标志常量、标准布局常量，以及通道掩码兜底/通道名映射函数。
+
+**引用来源**：
+- `windows::Win32::Media::KernelStreaming::SPEAKER_*`（re-export 优先，缺失位自定义补齐）
+
+**导出给**：`install/device/format.rs`（`default_channel_mask` 兜底）、`config/parser.rs`、`config/commands/channel.rs`（`get_channel_names`）、`object/apo.rs`（`get_channel_names`）
+
+**公开 API**：
+
+```rust
+// ── 1. 通道掩码位标志（re-export 优先）──
+pub use windows::Win32::Media::KernelStreaming::{
+    SPEAKER_FRONT_LEFT,            // 0x1
+    SPEAKER_FRONT_RIGHT,           // 0x2
+    SPEAKER_FRONT_CENTER,          // 0x4
+    SPEAKER_LOW_FREQUENCY,         // 0x8
+    SPEAKER_BACK_LEFT,             // 0x10
+    SPEAKER_BACK_RIGHT,            // 0x20
+    SPEAKER_FRONT_LEFT_OF_CENTER,  // 0x40
+    SPEAKER_FRONT_RIGHT_OF_CENTER, // 0x80
+    SPEAKER_BACK_CENTER,           // 0x100
+    SPEAKER_SIDE_LEFT,             // 0x200
+    SPEAKER_SIDE_RIGHT,            // 0x400
+    SPEAKER_TOP_CENTER,            // 0x800
+    SPEAKER_TOP_FRONT_LEFT,        // 0x1000
+    SPEAKER_TOP_FRONT_CENTER,      // 0x2000
+    SPEAKER_TOP_FRONT_RIGHT,       // 0x4000
+    SPEAKER_TOP_BACK_LEFT,         // 0x8000
+    SPEAKER_TOP_BACK_CENTER,       // 0x10000
+    SPEAKER_TOP_BACK_RIGHT,        // 0x20000
+};
+// windows-rs 缺失的位使用 `pub const SPEAKER_xxx: u32 = 0x...;` 自定义补齐
+
+// ── 2. 标准布局常量 ──
+// windows-rs 提供 KSAUDIO_SPEAKER_* 时 re-export，否则按位组合自定义
+pub const KSAUDIO_SPEAKER_MONO:    u32 = SPEAKER_FRONT_CENTER;
+pub const KSAUDIO_SPEAKER_STEREO:  u32 = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT;
+pub const KSAUDIO_SPEAKER_QUAD:    u32 = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT
+                                       | SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT;
+pub const KSAUDIO_SPEAKER_5POINT1: u32 = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT
+                                       | SPEAKER_FRONT_CENTER | SPEAKER_LOW_FREQUENCY
+                                       | SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT;
+pub const KSAUDIO_SPEAKER_7POINT1: u32 = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT
+                                       | SPEAKER_FRONT_CENTER | SPEAKER_LOW_FREQUENCY
+                                       | SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT
+                                       | SPEAKER_SIDE_LEFT | SPEAKER_SIDE_RIGHT;
+
+// ── 3. 函数 ──
+/// 按通道数返回标准布局掩码（兜底用）。
+/// 1→MONO、2→STEREO、4→QUAD、6→5POINT1、8→7POINT1；其余返回 0。
+pub fn default_channel_mask(channels: u32) -> u32;
+
+/// 掩码 → 短名通道列表（L/R/C/LFE/BL/BR/SL/SR，按标准位顺序）。
+/// 严格按掩码位映射，未命中位不补。
+/// 掩码为 0 时按通道数兜底到 default_channel_mask 后重试。
+pub fn get_channel_names(mask: u32) -> Vec<String>;
+```
+
+**通道名 → 掩码位映射表**：
+
+| 短名 | 位标志 | 标准位置 |
+|------|--------|---------|
+| `L` | `SPEAKER_FRONT_LEFT` | 0x1 |
+| `R` | `SPEAKER_FRONT_RIGHT` | 0x2 |
+| `C` | `SPEAKER_FRONT_CENTER` | 0x4 |
+| `LFE` | `SPEAKER_LOW_FREQUENCY` | 0x8 |
+| `BL` | `SPEAKER_BACK_LEFT` | 0x10 |
+| `BR` | `SPEAKER_BACK_RIGHT` | 0x20 |
+| `SL` | `SPEAKER_SIDE_LEFT` | 0x200 |
+| `SR` | `SPEAKER_SIDE_RIGHT` | 0x400 |
+
+**职责边界**：只包含 Windows SDK 语义的静态定义与纯函数。不包含任何 VxAPO 业务逻辑，不引用 `pipeline/`、`config/`、`install/`、`object/`、`utils/`。
+
+**禁止**：不包含任何业务逻辑，不感知运行时状态

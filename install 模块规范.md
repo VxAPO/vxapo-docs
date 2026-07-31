@@ -31,7 +31,7 @@ install/
 | 模块 | 可依赖 | 不可依赖 |
 |------|--------|----------|
 | `install/device/endpoint.rs` | `sys/registry`、`utils/error` | `pipeline/`、`config/` |
-| `install/device/format.rs` | `sys/registry`、`utils/error`、`pipeline/channel`（仅 `default_channel_mask`） | `config/` |
+| `install/device/format.rs` | `sys/registry`、`utils/error`、`sys/audio_defs`（仅 `default_channel_mask`） | `config/` |
 | `install/device/slots.rs` | `sys/registry`、`utils/guid` | `pipeline/`、`config/` |
 | `install/device/info.rs` | `device/endpoint`、`device/format`、`device/slots`、`sys/registry`、`object/vx_reg_props`、`utils/error` | `pipeline/`、`config/` |
 | `install/selector.rs` | `install/device/info` | `pipeline/`、`config/` |
@@ -98,14 +98,14 @@ pub fn is_endpoint_active(endpoint_key: &RegKey) -> Result<bool, VxApoError>;
 **引用来源**：
 - `crate::sys::registry::RegKey`
 - `crate::utils::error::VxApoError`
-- `crate::pipeline::channel::default_channel_mask`（兜底）
+- `crate::sys::audio_defs::default_channel_mask`（兜底）
 
 **导出给**：`install/device/info.rs`
 
 **通道掩码兜底链**（Note 27）：
 1. WAVEFORMATEXTENSIBLE 的 `dwChannelMask`（bytes[20..24]）
 2. 注册表 `channelMaskValueName`（DWORD）
-3. `pipeline::channel::default_channel_mask`（Note 17）
+3. `sys::audio_defs::default_channel_mask`（标准布局映射，1/2/4/6/8 通道）
 
 **公开 API**：
 
