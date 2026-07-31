@@ -504,9 +504,15 @@ fn LockForProcess(&self, num_input, pp_inputs, num_output, pp_outputs) -> HRESUL
 
 ```rust
 fn UnlockForProcess(&self) -> HRESULT {
-    // 子 APO UnlockForProcess 委托
+    // 子 APO UnlockForProcess 委托。
+    // 子解锁失败不阻塞父解锁（与 Note 57 降级立场一致）：
+    // UnlockForProcess 无重试语义，子 APO 可能已部分解锁，
+    // 父 APO 继续执行自身解锁流程，失败仅记录日志用于诊断。
     if let Some(ref child) = self.child_apo {
-        let _ = child.unlock_for_process();
+        let hr = child.unlock_for_process();
+        if hr.0 != 0 {
+            self.logger.log(LogLevel::Warn, "child APO UnlockForProcess failed");
+        }
     }
 
     let mut inner = self.mutex.lock().unwrap();

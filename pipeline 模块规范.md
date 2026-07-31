@@ -552,7 +552,7 @@ pub fn process_chain_interleaved(
 /// 2. 从 APO_CONNECTION_PROPERTY 提取交织输入切片
 /// 3. deinterleave_into → 去交织平面缓冲区（零分配）
 /// 4. is_silent 优化检测（去交织空间）
-/// 5. mono 上混（单声道输入且输出 ≥2 时）
+/// 5. 输出通道扩展（后通道清零 + mono 上混）
 /// 6. chain.process（去交织空间）
 /// 7. interleave_from → 交织输出切片（零分配）
 /// 8. apply_error_policy（chain.process 失败时）
@@ -620,8 +620,16 @@ pub fn process_audio(
             }
         }
 
-        // ── Step 4: mono 上混 ───────────────────────────────────────────
-        // 单声道输入且输出 ≥2 时：通道 0 → 通道 1
+        // ── Step 4: 输出通道扩展（后通道清零 + mono 上混） ───────────────
+        // 输入通道数 < 输出通道数时，先清零 temp_buffers[in_ch..out_ch]。
+        // temp_buffers 是跨处理循环复用的预分配缓冲区，不清零会导致
+        // 上一帧残留数据泄漏到 DSP 链和最终输出。
+        if out_ch > in_ch {
+            for ch in in_ch..out_ch {
+                temp_buffers[ch][..frames].fill(0.0);
+            }
+        }
+        // mono 上混：单声道输入且输出 ≥2 时：通道 0 → 通道 1
         if in_ch == 1 && out_ch >= 2 {
             for f in 0..frames {
                 temp_buffers[1][f] = temp_buffers[0][f];
