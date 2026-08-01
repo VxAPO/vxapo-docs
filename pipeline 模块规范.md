@@ -349,11 +349,22 @@ impl Chain {
     pub fn total_latency(&self) -> u32;
     pub fn filter_count(&self) -> usize;
 
+    /// 全链是否均就地处理（E1/v6.7）。
+    ///
+    /// `filters.iter().all(|f| f.is_in_place())`。调用方（process_audio）据此
+    /// 决定是否可走零拷贝快路径：全链 `true` 时去交织缓冲即最终输出，
+    /// 无需任何滤波间中间副本。
+    pub fn is_fully_in_place(&self) -> bool;
+
     /// 在去交织空间执行 Filter 链。
     ///
     /// `samples` 为预分配的去交织平面缓冲区（`samples[channel][frame]`）。
     /// 逐 Filter 调用 `filter.process(samples, frame_count)`。
     /// 纯计算操作：无锁、无分配、无 I/O。
+    ///
+    /// **in-place 语义（E1）**：默认全链就地修改同一 `samples`。
+    /// 若某滤波器 `is_in_place() == false`，Chain 需在调用其 `process` 前
+    /// 将 `samples` 副本保存至内部工作缓冲（E2 未来落点；当前内置滤波器均返回 true）。
     ///
     /// # Safety 不变量
     ///
@@ -637,6 +648,8 @@ pub fn process_audio(
         }
 
         // ── Step 5: DSP 处理（去交织空间） ──────────────────────────────
+        // E1（v6.7）：全链 in-place 时 temp_buffers 即最终输出（零拷贝快路径）；
+        // 存在非就地滤波器时 Chain 内部负责输入保护（当前内置全 true，无需分支）。
         let result = chain.process(&mut temp_buffers[..out_ch], frames);
 
         // ── Step 6: 错误恢复 ────────────────────────────────────────────
@@ -784,9 +797,27 @@ pub trait Filter: Send + Sync + std::fmt::Debug {
     /// 最大帧数约束。默认 None（无约束）。Some(n) 表示 process 每次最多处理 n 帧。
     fn max_frame_count(&self) -> Option<usize> { None }
 
+    /// 是否就地处理（默认 true，E1/v6.7，EqualizerAPO `IFilter::getInPlace` 借鉴）。
+    ///
+    /// - `true`：此滤波器在 `samples[ch][f]` 上**逐采样覆盖式**就地修改，
+    ///   不依赖"进入本滤波器前"的相邻采样旧值（Biquad/Gain/GraphicEQ/Copy 等）。
+    /// - `false`：处理过程中需要读取 `samples` 的**原始输入**（非就地语义，
+    ///   如未来叠加式 Delay / 部分 FFT Convolution 实现）。
+    ///
+    /// 返回 false 的滤波器由 `Chain::process` 在调用前以工作缓冲保存输入副本
+    /// （E2 未来落点；当前既有 Delay/Convolution 均有内部环形缓冲，无需 chain 干预）。
+    fn is_in_place(&self) -> bool { true }
+
     /// 重置过滤器内部状态。默认空实现。
     fn reset(&mut self) {}
 }
+```
+
+> **`is_in_place` 与 `process_audio` 快路径（E1）**：全链 `is_in_place() == true` 时，
+> 去交织工作缓冲 `temp_buffers` 既是链输入又是链输出——无需在滤波器间插入任何
+> 中间副本（现有流程天然满足零拷贝）。链中存在 `false` 滤波器时才需额外的
+> 输入保护缓冲。当前所有内置滤波器（含 Delay 环形缓冲、Convolution 骨架）
+> 均可安全声明 `true`。
 ```
 
 ---
