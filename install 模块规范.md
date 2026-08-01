@@ -423,7 +423,6 @@ pub fn uninstall_endpoint(device_guid: &str) -> Result<()>;
 > - **不自动回滚**（注册表已写入且 DLL 可能瞬时不可用；EAPO 同策略"报告，非回滚"）
 > - 返回 `Err` 并附明确错误（含失败 CLSID），由 `select.rs` 提示用户
 > - 用户可选择忽略或回滚（`reinstall`/`uninstall` 显式操作）
-```
 
 **Note 47 安装流程**（7 步）：
 1. 创建 Child APOs 键
