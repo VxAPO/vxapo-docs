@@ -43,11 +43,11 @@
 - DoD：☐ 规范定稿 ☐ 实现 ☐ 测试
 
 ### P0-3  per-device 配置路径
-- 状态：Spec-Drafting
+- 状态：Backlog
 - 优先级：P0 ｜ 关联 Phase：Phase 10
 - 目标：`APOInitSystemEffects` 反查设备 GUID → `Documents\VxAPO\{GUID}\config.txt`；目录不存在自动创建，config 不存在写入默认 passthrough
 - 影响模块：`object/apo.rs`（Initialize）、`config/watcher.rs`、`install/device`
-- 规范落点：（待起草 `object 7.1.x` Initialize/APOInitSystemEffects 章节 + sys 设备 GUID 能力）
+- 规范落点：（待定稿时回填；预期涉及 `object 7.1.x` Initialize/APOInitSystemEffects + sys 设备 GUID 能力）
 - 依赖：P0-1、P0-2（注册后可被加载、解析器存在才能读 config）
 - DoD：☐ 规范定稿 ☐ 实现 ☐ 测试
 
