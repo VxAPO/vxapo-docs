@@ -9,7 +9,7 @@
 - **Initialize 补全 per-device 路径解析**：`APOInitSystemEffects` 反查端点 GUID → `guid_to_string` 大写格式化 → `Documents\VxAPO\{GUID}\config.txt`；目录自动创建、config 缺失写默认 passthrough、无 GUID 兜底 `_default`——**对应章节**：`object 7.1.8`
 - **引用约束总表同步**：主规范增加 `sys/known_folder.rs` 行、`object/apo.rs` 增 `sys/known_folder` 依赖——**对应章节**：`主规范 十一`
 
-> 对应 commit：`待提交回填`
+> 对应 commit：`8dd42e2`
 
 ## v7.1 — 2026-08-01
 
