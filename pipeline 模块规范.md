@@ -349,6 +349,12 @@ impl Chain {
     pub fn total_latency(&self) -> u32;
     pub fn filter_count(&self) -> usize;
 
+    /// 链是否为空（零滤波器，R3/v6.9）。
+    ///
+    /// `filters.is_empty()`。`process_audio` 据此走零拷贝快路径——空链时
+    /// `temp_buffers` 原样即输出，直接复制到交织输出，跳过整条链遍历。
+    pub fn is_empty(&self) -> bool;
+
     /// 全链是否均就地处理（E1/v6.7）。
     ///
     /// `filters.iter().all(|f| f.is_in_place())`。调用方（process_audio）据此
@@ -650,7 +656,13 @@ pub fn process_audio(
         // ── Step 5: DSP 处理（去交织空间） ──────────────────────────────
         // E1（v6.7）：全链 in-place 时 temp_buffers 即最终输出（零拷贝快路径）；
         // 存在非就地滤波器时 Chain 内部负责输入保护（当前内置全 true，无需分支）。
-        let result = chain.process(&mut temp_buffers[..out_ch], frames);
+        // R3（v6.9）：空链（is_empty）时直接复制去交织结果到输出（近似 memcpy），跳过链遍历。
+        let result = if chain.is_empty() {
+            copy_buffers(&temp_buffers[..out_ch], &mut temp_buffers[..out_ch], frames);
+            Ok(())
+        } else {
+            chain.process(&mut temp_buffers[..out_ch], frames)
+        };
 
         // ── Step 6: 错误恢复 ────────────────────────────────────────────
         if result.is_err() {
@@ -1088,8 +1100,16 @@ impl SmoothingProvider {
     pub fn set_length(&mut self, length: u32);
 }
 
-pub fn default_smoothing_length(sample_rate: u32) -> u32;   // sample_rate / 20 ≈ 50ms
+pub fn default_smoothing_length(sample_rate: u32) -> u32;   // sample_rate / 100 ≈ 10ms（v6.9，EAPO 对齐）
 pub fn short_smoothing_length(sample_rate: u32) -> u32;     // sample_rate / 100 ≈ 10ms
+```
+
+> **过渡周期（R4，v6.9）**：默认平滑长度由 `sample_rate/20`（50ms）下调至 `sample_rate/100`（10ms），
+> 与 EqualizerAPO 对齐。理由：
+> - 过渡窗口内每帧双链处理（双处理模型），10ms 使 CPU 峰值最短、RT 稳定性最好
+> - 10ms 升余弦已被 EAPO 多年验证无听感跳变
+> - **"乱切也无所谓"**——过渡够短、开销够小，频繁配置变更不再构成负担
+> 原 `short_smoothing_length`（10ms）与新的默认值合并为同一公式，保留为别名以便语义区分。
 
 /// 交织格式缓冲区混合：output = old × (1 - factor) + new × factor
 ///

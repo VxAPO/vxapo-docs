@@ -240,13 +240,35 @@ pub struct ApoObject {
 pub struct ApoObjectInner {
     pub current_chain: Box<Chain>,
     pub outgoing_chain: Option<Box<Chain>>,
+    /// 退役链（R1/v6.9，EAPO `previousConfig` 借鉴）：过渡完成帧由 RT 线程
+    /// 将 outgoing_chain **移入**（`.take()`，零析构），再由控制线程
+    /// （hot_reload / UnlockForProcess / Reset）在锁内统一 drop。
+    /// 重型滤波器析构绝不留在 RT 线程。
+    pub retired_chain: Option<Box<Chain>>,
     pub transition: Option<SmoothingProvider>,
     pub pipeline_context: PipelineContext,
     pub temp_buffers: Vec<Vec<f32>>,
     pub temp_buffer_old: Vec<f32>,
     pub temp_buffer_new: Vec<f32>,
     pub pending_reload: bool,
+    /// 加载中标志（R2/v6.9，EAPO loadSemaphore 对齐）：过渡完成后 APOProcess
+    /// 触发一次的 hot_reload 会将此置回 false；期间新变更请求被忽略，
+    /// 避免 pending_reload 被连续变更覆盖。
+    pub reloading: bool,
 }
+```
+
+> **R1（退役链，v6.9）**：过渡完成帧 RT 线程只做 `inner.retired_chain = inner.outgoing_chain.take()`——
+> 移动 Box 所有权（零析构）。`current_chain = next` 后，旧链在 `retired_chain` 挂起，
+> 由**控制线程**（下一次 hot_reload / UnlockForProcess / Reset 的锁内）统一 `drop`。
+> 这是 EAPO `previousConfig` 槽的本质：把 RT 线程的析构开销与竞态窗口完全消除。
+
+> **R2（阻塞式重载，v6.9，EAPO 信号量对齐）**：hot_reload 检测到
+> `transition.is_some()` 时**直接返回不构建**（不再先 parse_file 后排队）——与 EAPO
+> `loadSemaphore` 一致：过渡期间不加载，过渡完成后 APOProcess 触发一次重载。
+> `reloading` 标志确保同一个过渡周期内至多触发一次；消除了排队式的重复解析、
+> pending_reload 覆盖漏洞与额外标志保护。
+> 在 10ms 过渡窗口下，"阻塞到过渡完成的解析延迟"完全可忽略（用户决策，R2 理由）。
 ```
 
 ```rust
@@ -512,12 +534,14 @@ fn LockForProcess(&self, num_input, pp_inputs, num_output, pp_outputs) -> HRESUL
     // 写入 inner
     inner.current_chain = Box::new(chain);
     inner.outgoing_chain = None;
+    inner.retired_chain = None;   // R1：新锁定周期无退役链
     inner.transition = None;
     inner.pipeline_context = ctx;
     inner.temp_buffers = vec![vec![0.0f32; ctx.max_frame_count]; max_ch];
     inner.temp_buffer_old = temp_buffer_old;
     inner.temp_buffer_new = temp_buffer_new;
     inner.pending_reload = false;
+    inner.reloading = false;      // R2：新锁定周期无加载在途
 
     // 写入两个原子延迟值
     self.latency_samples.store(total_latency, Ordering::SeqCst);
@@ -558,6 +582,8 @@ fn UnlockForProcess(&self) -> HRESULT {
     }
     inner.current_chain = Box::new(Chain::new(0));
     inner.outgoing_chain = None;
+    // R1（v6.9）：退役链由控制线程在锁内统一析构。
+    inner.retired_chain = None;
     inner.transition = None;
     inner.pipeline_context = PipelineContext::new();
     inner.temp_buffers.clear();
@@ -626,11 +652,15 @@ fn APOProcess(&self, input_props, output_props, params: &ProcessParams) {
 
         // 过渡完成
         if factor >= 1.0 {
-            inner.outgoing_chain = None;
+            // R1（v6.9）：旧链移入退役槽——仅移动 Box 所有权，零析构。
+            // 析构由控制线程在锁内统一完成（hot_reload / UnlockForProcess / Reset）。
+            inner.retired_chain = inner.outgoing_chain.take();
             inner.transition = None;
-            // 过渡完成时检查是否有排队的热重载请求
-            if inner.pending_reload {
+            // R2（v6.9，阻塞式重载）：过渡完成触发一次 hot_reload。
+            // 仅当过渡期间有变更请求（pending_reload）且当前不在加载中。
+            if inner.pending_reload && !inner.reloading {
                 inner.pending_reload = false;
+                inner.reloading = true;
                 drop(inner); // 释放锁，避免递归死锁
                 self.hot_reload();
                 return;
@@ -701,6 +731,8 @@ fn Reset(&self) -> HRESULT {
     let mut inner = self.mutex.lock().unwrap();
     inner.current_chain = Box::new(Chain::new(0));
     inner.outgoing_chain = None;
+    // R1（v6.9）：退役链由控制线程在锁内统一析构。
+    inner.retired_chain = None;
     inner.transition = None;
     inner.pipeline_context = PipelineContext::new();
     inner.temp_buffers.clear();
@@ -817,7 +849,16 @@ fn GetInputChannelCount(&self, p_count: *mut u32) -> HRESULT {
 
 ```rust
 fn hot_reload(&self) {
-    // 1. 锁外解析配置（不持有 mutex）
+    // 1. 若已有过渡在途或正在加载——阻塞式退出（R2/v6.9，EAPO 信号量对齐）。
+    //    过渡期间不构建新链；过渡完成后由 APOProcess 触发下一次 hot_reload。
+    {
+        let lock = self.mutex.lock().unwrap();
+        if lock.transition.is_some() || lock.reloading {
+            return;
+        }
+    }
+
+    // 2. 锁外解析配置（不持有 mutex）。此刻保证无过渡在途。
     let current_ctx = { self.mutex.lock().unwrap().pipeline_context.clone() };
     let filters = match self.config_loader.parse_file(&self.config_path, &mut ctx) {
         Ok(f) => f,
@@ -834,22 +875,24 @@ fn hot_reload(&self) {
         }
     }
 
-    // 2. 短锁内交换（仅交换指针）
+    // 3. 短锁内交换（仅交换指针）
     let mut inner = self.mutex.lock().unwrap();
-
     if inner.transition.is_some() {
+        // 竞态兜底：解析期间可能已有新过渡启动，退回阻塞。
         inner.pending_reload = true;
-        self.logger.log(LogLevel::Info, "hot_reload: transition in progress, queued");
         return;
     }
 
     let old = std::mem::replace(&mut inner.current_chain, Box::new(new_chain));
+    // 旧链进 outgoing（过渡窗口内由 RT 双处理）；
+    // 过渡完成后 APOProcess 将其移入 retired_chain（R1），控制线程统一析构。
     inner.outgoing_chain = Some(old);
     inner.transition = Some(SmoothingProvider::new(
         default_smoothing_length(inner.pipeline_context.sample_rate),
     ));
-    // pending_reload 在过渡完成后由 APOProcess（RT 线程）触发。
-    // 此设计确保过渡完全结束后才执行重载，避免多个过渡混合。
+    inner.pending_reload = false;
+    inner.reloading = false;
+    // 当前过渡在途；下次变更由 APOProcess 过渡完成后触发（reloading 防覆盖）。
 }
 ```
 
