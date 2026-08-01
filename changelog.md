@@ -32,4 +32,15 @@
 
 > 对应 commit：`415ef53`
 
-> **范围说明**：本 changelog 自 v6.7 开始记录（v6.0-v6.6 不补录）。维护规则见 `.clinerules/changelog-rule.md`。
+## v6.6 — 2026-08-01
+
+变更类型：`外部借鉴`（tympan-apo）
+
+- **O1 RT 编译期见证**：`RealtimeContext` 零尺寸标记 + `DspContext::rt_marker`（`PhantomData<RealtimeContext>`）——编译期能解决的问题绝不拖到运行时
+- **O2 StateCell 补全**：`release()`（任意态→Created，析构终态复位）+ `TransitionError{expected, attempted, actual}` + 语义化转换（initialize/lock/unlock）
+- **O3 生产构建约束**：release 必须 `panic="abort"` + `codegen-units=1`（RT 跨 FFI unwind = UB 底线）
+- **O4 AEC 接口预留**：`feature = "aec"` 门控 3 个 AEC 接口 + IID 常量（不实现，声明位置）
+
+> 对应 commit：`a6ca7b5`
+
+> **范围说明**：本 changelog 自 v6.6 开始记录（v6.0-v6.5 不补录）。维护规则见 `.clinerules/changelog-rule.md`。
