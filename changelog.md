@@ -4,10 +4,10 @@
 
 变更类型：`外部借鉴`（EqualizerAPO FilterEngine 过渡/重载机制深度分析）
 
-- **R1 退役链延迟析构**：过渡完成帧 RT 线程仅 `retired_chain = outgoing_chain.take()`（零析构），控制线程锁内统一 drop——重型滤波器析构绝不留在 RT 线程
-- **R2 阻塞式重载**：hot_reload 检测到过渡在途/加载中即返回不构建（EAPO `loadSemaphore` 对齐），过渡完成由 APOProcess 触发重载；`reloading` 标志防覆盖
-- **R3 空链快路径**：`Chain::is_empty()` 时 `process_audio` 直接复制去交织结果（近似 memcpy）跳过链遍历
-- **R4 过渡周期 10ms**：`default_smoothing_length` 由 `sample_rate/20`（50ms）→ `sample_rate/100`（10ms）——双处理窗口缩短 5 倍
+- **R1 退役链延迟析构**：过渡完成帧 RT 线程仅 `retired_chain = outgoing_chain.take()`（零析构），控制线程锁内统一 drop——重型滤波器析构绝不留在 RT 线程——**对应章节**：`object 7.1.3/7.1.9/7.1.10/7.1.11/7.1.13`
+- **R2 阻塞式重载**：hot_reload 检测到过渡在途/加载中即返回不构建，过渡完成由 APOProcess 触发重载；`reloading` 标志防覆盖——**对应章节**：`object 7.1.3/7.1.11/7.1.18`
+- **R3 空链快路径**：`Chain::is_empty()` 时 `process_audio` 直接复制去交织结果跳过链遍历——**对应章节**：`pipeline 4.5/4.6`
+- **R4 过渡周期 10ms**：`default_smoothing_length` 由 `sample_rate/20`（50ms）→ `sample_rate/100`（10ms）——**对应章节**：`pipeline 4.11`
 
 > 对应 commit：`7aa6f16`
 
@@ -15,11 +15,11 @@
 
 变更类型：`外部借鉴`（EqualizerAPO Device 层）
 
-- **E3.1 默认设备判定边界**：driver 层 `enumerate_devices()` 仅返回合法安装容器，不判定默认设备；默认/有效设备由用户层经 COM `GetDefaultAudioEndpoint` 取得后对应
-- **E3.2 设备物理状态谓词**：`DeviceInfo::is_disabled()` / `is_unplugged()`（由已有 `EndpointState` 推导，零新增 I/O）
-- **E3.3 autoAdjust 独立字段**：`InstallConfig::auto_adjust`（默认 false），Step 4 写注册表读取该字段而非硬编码
-- **E3.4 安装自检**：`install_endpoint(..., verify)`——commit 后 `CoCreateInstance` 验证 DLL 可实例化；失败不自动回滚
-- 修复 install 5.5.2 多余代码围栏（用户修复，`b162890`）
+- **E3.1 默认设备判定边界**：driver 层 `enumerate_devices()` 仅返回合法安装容器，不判定默认设备；用户层经 COM `GetDefaultAudioEndpoint` 对应——**对应章节**：`install 5.4`
+- **E3.2 设备物理状态谓词**：`DeviceInfo::is_disabled()` / `is_unplugged()`（由已有 `EndpointState` 推导）——**对应章节**：`install 5.4`
+- **E3.3 autoAdjust 独立字段**：`InstallConfig::auto_adjust`（默认 false），Step 4 写注册表读取——**对应章节**：`install 5.5.2`
+- **E3.4 安装自检**：`install_endpoint(..., verify)`——commit 后 `CoCreateInstance` 验证 DLL 可实例化——**对应章节**：`install 5.5.2`
+- 修复 install 5.5.2 多余代码围栏（用户修复）——**对应章节**：`install 5.5.2`
 
 > 对应 commit：`bac344e`（+ 用户围栏修复 `b162890`）
 
@@ -27,8 +27,8 @@
 
 变更类型：`外部借鉴`（EqualizerAPO `IFilter::getInPlace`）
 
-- **E1 就地处理声明**：`Filter::is_in_place()`（默认 true）+ `Chain::is_fully_in_place()`——全链就地时 `temp_buffers` 即最终输出，零拷贝快路径
-- 与 v6.6 的 O1（RealtimeContext）/ 去交织架构完全兼容
+- **E1 就地处理声明**：`Filter::is_in_place()`（默认 true）+ `Chain::is_fully_in_place()`——全链就地时 `temp_buffers` 即最终输出，零拷贝快路径——**对应章节**：`pipeline 4.9/4.5/4.6`
+- 与 v6.6 的 O1（RealtimeContext）/ 去交织架构完全兼容——**对应章节**：`pipeline 4.7/4.9`
 
 > 对应 commit：`415ef53`
 
@@ -36,10 +36,10 @@
 
 变更类型：`外部借鉴`（tympan-apo）
 
-- **O1 RT 编译期见证**：`RealtimeContext` 零尺寸标记 + `DspContext::rt_marker`（`PhantomData<RealtimeContext>`）——编译期能解决的问题绝不拖到运行时
-- **O2 StateCell 补全**：`release()`（任意态→Created，析构终态复位）+ `TransitionError{expected, attempted, actual}` + 语义化转换（initialize/lock/unlock）
-- **O3 生产构建约束**：release 必须 `panic="abort"` + `codegen-units=1`（RT 跨 FFI unwind = UB 底线）
-- **O4 AEC 接口预留**：`feature = "aec"` 门控 3 个 AEC 接口 + IID 常量（不实现，声明位置）
+- **O1 RT 编译期见证**：`RealtimeContext` 零尺寸标记 + `DspContext::rt_marker`（`PhantomData<RealtimeContext>`）——编译期能解决的问题绝不拖到运行时——**对应章节**：`pipeline 4.7/4.9`
+- **O2 StateCell 补全**：`release()`（任意态→Created）+ `TransitionError{expected, attempted, actual}` + 语义化转换——**对应章节**：`object 7.1.4`
+- **O3 生产构建约束**：release 必须 `panic="abort"` + `codegen-units=1`（RT 跨 FFI unwind = UB）——**对应章节**：`主规范 十五`
+- **O4 AEC 接口预留**：`feature = "aec"` 门控 3 个 AEC 接口 + IID 常量——**对应章节**：`sys 3.2`
 
 > 对应 commit：`a6ca7b5`
 
