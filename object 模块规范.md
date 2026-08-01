@@ -476,9 +476,21 @@ fn Initialize(&self, cb_data_size: u32, pby_data: *mut u8) -> HRESULT {
     //    c. 拼接：{Documents}\VxAPO\{GUID}\  → config_path
     //    d. 目录不存在 → std::fs::create_dir_all 创建
     //    e. config.txt 不存在 → 写入默认 passthrough（空文件或仅注释行）
-    // 6. self.config_path = path；返回 S_OK
+    // 6. 启动 watcher（v7.3，P0-4）：
+    //    watch_dir = config_path 父目录（Documents\VxAPO\{GUID}）
+    //    经 config/watcher.rs::ConfigWatcher::new(watch_dir, poll_interval_ms, dedup_window_ms)
+    //    轮询检测变更 → WatchEvent::ConfigFileChanged → hot_reload（7.1.18）
+    // 7. self.config_path = path；返回 S_OK
 }
 ```
+
+**watcher 启动约定（v7.3，P0-4）**：
+> - 监控目录 = `config_path` 父目录（`Documents\VxAPO\{GUID}`），非 config.txt 文件本身
+> - 轮询间隔默认 2000ms、去重窗口默认 500ms（`config 6.2`）
+> - `ConfigFileChanged` / `ConfigFileDeleted` 事件经 `hot_reload`（7.1.18）处理：
+>   R2 阻塞式（过渡在途/加载中直接返回）、过渡完成触发、退役链 R1 控制线程析构
+> - `ConfigWatcher` 生命周期与 APO 实例一致（`ApoObject.watcher` 字段持有），
+>   `UnlockForProcess` / `Reset` 不停止 watcher（配置热重载跨锁定周期持续生效）
 
 **config_path 确定规则（v7.2，P0-3）**：
 

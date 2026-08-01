@@ -75,13 +75,21 @@
 > 目录不存在自动创建；config 缺失写默认 passthrough；无 GUID 时回退 `_default`。
 
 ### P0-4  配置热重载全链路（watcher + swap + 过渡）
-- 状态：Backlog
+- 状态：Spec-Finalized
 - 优先级：P0 ｜ 关联 Phase：Phase 10
 - 目标：监控线程检测 config.txt 变更 → swap 串联 → 升余弦过渡；修改文件实时生效且无爆音（对齐 v6.9 R1-R4）
 - 影响模块：`config/watcher.rs`、`object/apo.rs`（hot_reload/APOProcess）
-- 规范落点：（定稿时回填）
-- 依赖：P0-3
-- DoD：☐ 规范定稿 ☐ 实现 ☐ 测试（含手动听感验证）
+- 规范落点：`object 7.1.8`（watcher 启动约定：父目录监控、轮询 2000ms/去重 500ms、跨锁定周期持续）、`config 6.2`（ConfigWatcher 已有）、`object 7.1.18`（hot_reload 已有，R2 阻塞式 + R1 退役链）
+- 依赖：P0-3（已 Spec-Finalized ✅）
+- DoD：☑ 规范定稿（v7.3）☐ 实现 ☐ 测试（含手动听感验证）
+
+> **定稿说明（v7.3）**：watcher 能力（轮询 + 500ms 去重）与过渡机制（R1 退役链/R2 阻塞式/R4 10ms）
+> 已在 `config 6.2` / `object 7.1.11/7.1.18` 覆盖；本次补齐 Initialize 中 watcher **启动时机与生命周期**
+> （watch_dir = config_path 父目录；UnlockForProcess/Reset 不停止）。
+>
+> **合规性**：watcher 为后台线程（控制路径，I/O 允许）；事件仅在非过渡期触发 hot_reload；
+> 不触碰 RT 分配/锁。**实现验收**：修改 `Documents\VxAPO\{GUID}\config.txt` → 音频变化无爆音；
+> chan 一致（过渡无排队重复解析）。
 
 ---
 

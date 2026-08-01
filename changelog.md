@@ -1,5 +1,14 @@
 # Changelog
 
+## v7.3 — 2026-08-01
+
+变更类型：`实现对齐`（P0-4 配置热重载全链路规范补齐）
+
+- **watcher 启动约定**：Initialize 中按 `config_path` 父目录启动 `ConfigWatcher`（轮询 2000ms、去重 500ms，`config 6.2`）；`ConfigFileChanged/Deleted` 事件经 `hot_reload`（R2 阻塞式 + R1 退役链）处理——**对应章节**：`object 7.1.8`
+- **watcher 生命周期**：与 APO 实例一致（`ApoObject.watcher` 字段持有）；`UnlockForProcess`/`Reset` 不停止 watcher（热重载跨锁定周期持续生效）——**对应章节**：`object 7.1.8`
+
+> 对应 commit：`待提交回填`
+
 ## v7.2 — 2026-08-01
 
 变更类型：`实现对齐`（P0-3 per-device 配置路径规范补齐）
