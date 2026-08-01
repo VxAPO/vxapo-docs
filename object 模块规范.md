@@ -275,26 +275,57 @@ impl Drop for ApoObject {
 #### 7.1.4 原子状态机
 
 ```rust
+/// APO 生命周期状态（对应 Windows 引擎驱动顺序）。
 #[repr(u8)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ApoState {
-    Created     = 0,
-    Initialized = 1,
-    Locked      = 2,
+    Created     = 0,   // 对象已创建，Initialize 未调用
+    Initialized = 1,   // Initialize 成功；LockForProcess 未调用或已 Unlock
+    Locked      = 2,   // LockForProcess 成功；APOProcess 可调用
 }
 
+impl ApoState {
+    /// `true` 当且仅当 `Locked`（APOProcess 合法）。
+    pub const fn allows_process(self) -> bool { matches!(self, ApoState::Locked) }
+}
+
+/// 状态转换失败详情（v6.6 补全，tympan-apo 借鉴）。
+///
+/// 携带 期望态 / 尝试目标态 / 实际观测态 三要素，便于定位状态机问题。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct TransitionError {
+    pub expected: ApoState,
+    pub attempted: ApoState,
+    pub actual: ApoState,
+}
+
+/// 原子状态机载体。
 pub struct StateCell {
     state: AtomicU8,
 }
 
 impl StateCell {
-    pub fn transition(&self, from: ApoState, to: ApoState) -> Result<()> {
-        self.state.compare_exchange(
-            from as u8, to as u8,
-            Ordering::AcqRel, Ordering::Acquire,
-        ).map(|_| ())
-         .map_err(|_| VxApoError::State("非法状态转换".into()))
-    }
+    pub fn new() -> Self;   // 初始 Created
+
+    /// 获取当前状态（Acquire 序，RT 路径可安全调用）。
     pub fn current(&self) -> ApoState;
+
+    /// `current() == Locked` 的快捷判断。
+    pub fn is_locked(&self) -> bool;
+
+    /// CAS 转换：成功返回 Ok，失败返回 TransitionError{expected, attempted, actual}。
+    pub fn transition(&self, from: ApoState, to: ApoState) -> Result<(), TransitionError>;
+
+    /// 无条件复位至 `Created`（`AcqRel` swap）。返回复位前状态。
+    ///
+    /// 用于 COM `Release` 最终引用释放 / 析构器将单元置于已知终态
+    /// （DLL 卸载时的资源回收关键，v6.6 补全）。
+    pub fn release(&self) -> ApoState;
+
+    // ── 语义化便捷转换（失败即 TransitionError） ──
+    pub fn initialize(&self) -> Result<(), TransitionError>; // Created → Initialized
+    pub fn lock(&self)       -> Result<(), TransitionError>; // Initialized → Locked
+    pub fn unlock(&self)     -> Result<(), TransitionError>; // Locked → Initialized
 }
 ```
 
@@ -303,6 +334,12 @@ impl StateCell {
 - `LockForProcess`：要求 `Initialized` → `Locked`
 - `APOProcess`：要求 `Locked`（不改变状态）
 - `UnlockForProcess`：要求 `Locked` → `Initialized`
+- `release()`：任意状态 → `Created`（仅析构/最终 Release 路径使用）
+
+> **v6.6 设计说明（O2）**：引入 `TransitionError`（expected/attempted/actual）替代
+> 原 `VxApoError::State("非法状态转换")` 纯字符串，便于快速定位状态机偏差；
+> `release()` 保证 DLL 卸载时无论对象处于何种状态都可安全复位终态。
+> 错误转换为 `HRESULT` 时统一 `State(TransitionError)` 映射为 `APOERR_ALREADY_INITIALIZED` 等对应码（实现端确定）。
 
 ---
 

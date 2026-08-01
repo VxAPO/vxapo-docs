@@ -678,15 +678,24 @@ pub fn process_audio(
 
 ### 4.7 `pipeline/realtime/contract.rs`
 
-**职责**：RT-safety 契约。实时上下文标记、断言、安全索引。
+**职责**：RT-safety 契约。实时上下文标记（编译期见证）、断言、安全索引。
 
-**引用来源**：`core::sync::atomic`
+**引用来源**：`core::sync::atomic`、`core::marker::PhantomData`
 
-**导出给**：`pipeline/` 下所有实时路径模块
+**导出给**：`pipeline/` 下所有实时路径模块、`pipeline/dsp/filter.rs`（`DspContext::rt_marker`）
 
 **公开 API**：
 
 ```rust
+/// 零尺寸 RT 上下文标记——**编译期见证**（tympan-apo 借鉴，v6.6 引入）。
+///
+/// `RealtimeContext` 无字段、无用户可达构造函数；RT harness（pipeline/process.rs
+/// 的 RT 内部函数）在实时路径创建后按引用传递。其出现在调用栈中即为
+/// "此代码路径 RT 安全"的编译期证明——比运行时 `rt_assert_in_rt!` 更强。
+///
+/// 设计原则：**编译期能解决的问题，绝不拖到运行时**。
+pub struct RealtimeContext { _private: () }
+
 pub struct RtGuard;
 impl RtGuard {
     pub fn enter() -> Self;
@@ -862,7 +871,18 @@ pub struct DspContext {
     pub device_type: DeviceType,
     pub stage: ProcessingStage,
     pub variables: HashMap<String, f64>, // Eval: 命令变量存储
+    pub rt_marker: PhantomData<RealtimeContext>, // RT 编译期见证（v6.6）
 }
+```
+
+> **`rt_marker`（O1：RT 编译期见证）**：`PhantomData<RealtimeContext>` 零尺寸字段——
+> 将"此配置/上下文服务于实时路径"的语义**前移到编译期**。DspContext 由 object/apo.rs
+> 在非 RT 路径构造，但其内在方法（Filter 创建/初始化）均服务于 RT `process`；
+> `rt_marker` 使 pipeline 内部方法可通过 `&RealtimeContext` 借贷链传递 RT 状态，
+> 逐步将 `rt_assert_in_rt!` 运行时断言升级为编译期见证（tympan-apo 借鉴）。
+>
+> **演进方向**：新代码优先声明 `fn f(&self, rt: &RealtimeContext, ...)`；存量使用
+> `rt_assert_in_rt!` 的路径按批次迁移。禁止在非 RT 路径构造 `RealtimeContext`（无公开构造器）。
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeviceType { Render, Capture }

@@ -181,6 +181,29 @@ pub const IID_IAUDIO_PROCESSING_OBJECT_NOTIFICATIONS: GUID =
 
 > 这 3 个接口由 Windows 实现（非 APO 实现），APO 侧不需要 trait 定义，仅需 IID 用于 `QueryInterface` 查询。
 
+#### AEC 接口预留（O4，v6.6）
+
+Windows 11 AEC（声学回声消除）APO 未来若支持，需在此预留以下接口 re-export 与 IID 常量
+（当前**不实现**，仅声明与门控位置，避免未来大改）：
+
+```rust
+// feature-gated：`#[cfg(feature = "aec")]`（非默认 feature）
+pub use windows::Win32::Media::Audio::Apo::{
+    IApoAcousticEchoCancellation,
+    IApoAuxiliaryInputConfiguration,
+    IApoAuxiliaryInputRT,
+};
+
+pub const IID_IAPO_ACOUSTIC_ECHO_CANCELLATION: GUID = IApoAcousticEchoCancellation::IID;
+pub const IID_IAPO_AUXILIARY_INPUT_CONFIGURATION: GUID = IApoAuxiliaryInputConfiguration::IID;
+pub const IID_IAPO_AUXILIARY_INPUT_RT: GUID = IApoAuxiliaryInputRT::IID;
+```
+
+> **门控设计**：`feature = "aec"` 非默认——非 AEC 构建不得引入 Windows 11 SDK 接口面。
+> 实现时 `object/apo.rs` 三接口 + 3 个 AEC 接口 = **六接口**承载（对应 tympan-apo 的
+> `AecApoInstanceCom` 九接口：六 SISO + 三 AEC）。
+> 当前仅声明位置，不实现逻辑（与 object 目标态一致）。
+
 **禁止**：不包含任何实现逻辑
 
 ---
