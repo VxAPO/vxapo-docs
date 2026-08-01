@@ -31,7 +31,7 @@ sys/
 | `sys/com/prelude.rs` | `windows` crate | 所有其他 |
 | `sys/com/apo_interfaces.rs` | `prelude`、`apo_types`、`windows` crate（3 个系统接口仅取 IID） | 其他 |
 | `sys/com/apo_types.rs` | `windows` crate | 其他 |
-| `sys/registry.rs` | `windows` crate、`windows-core` crate | 所有其他 |
+| `sys/registry.rs` | `windows` crate、`windows-core` crate、`sys/com/prelude`（`guid_to_string`） | 其他 |
 
 ---
 
@@ -43,7 +43,7 @@ sys/
 - `windows::core::{IUnknown, IUnknown_Vtbl, Interface, interface, GUID, HRESULT, implement}`
 - `windows::Win32::System::Com::{IClassFactory, StringFromGUID2}`
 
-**导出给**：`sys/com/` 下所有子模块、`install/selector/operation.rs`（`guid_to_string`）
+**导出给**：`sys/com/` 下所有子模块、`sys/registry.rs`（`guid_to_string`）、`install/selector/operation.rs`（`guid_to_string`）
 
 **公开 API**：
 
@@ -372,11 +372,11 @@ pub const APOERR_INVALID_INPUTID:              HRESULT = HRESULT(0x887D_000Eu32 
 
 **边界**：纯注册表操作工具层。不知道 APO。不知道音频处理。不知道安装业务。不知道配置文件。
 
-**允许依赖**：`windows` crate、`windows-core` crate
+**允许依赖**：`windows` crate、`windows-core` crate、`sys/com/prelude`（`guid_to_string`）
 
 **禁止依赖**：`pipeline/`、`install/`、`config/`、`object/`、`utils/`、`telemetry/`
 
-> 由原 `read.rs`、`write.rs`、`delete.rs` 合并为单一模块。GUID 转换使用 `windows::core::GUID` 的 `from_values` 和 `Display`，无需外部依赖。错误类型统一为 `windows::core::Error`。权限提升函数（`make_writable`、`take_ownership`、`PrivilegeGuard`、`enable_take_ownership_privilege`、`create_administrators_sid`）迁移至 `install/permission.rs`，不属于工具层职责。
+> 由原 `read.rs`、`write.rs`、`delete.rs` 合并为单一模块。GUID 格式化统一走 `sys/com/prelude::guid_to_string`（StringFromGUID2 的 unsafe 已收窄至该单一安全边界；依赖 `prelude` 的 `guid_to_string` 属允许例外）。错误类型统一为 `windows::core::Error`。权限提升函数（`make_writable`、`take_ownership`、`PrivilegeGuard`、`enable_take_ownership_privilege`、`create_administrators_sid`）迁移至 `install/permission.rs`，不属于工具层职责。
 
 ---
 
@@ -447,7 +447,7 @@ pub struct RegKey {
 | `key_exists_child` | `fn key_exists_child(&self, sub_key: &str) -> Result<bool>` | 检查当前键下指定子键是否存在 |
 | `enum_sub_keys` | `fn enum_sub_keys(&self) -> Result<Vec<String>>` | 枚举所有子键名称。**设备枚举的底层能力源**（供 `install/device/info::enumerate_devices` 遍历 MMDevices 子键；本模块不认识设备） |
 | `enum_values` | `fn enum_values(&self) -> Result<Vec<String>>` | 枚举所有值名称（含默认值 `""`） |
-| `get_guid_string` | `fn get_guid_string(&self, name: &str) -> Result<String>` | 读取 GUID，支持 REG_BINARY（16 字节 LE，通过 `GUID::from_values` 转换后 `format!("{guid}")`）和 REG_SZ |
+| `get_guid_string` | `fn get_guid_string(&self, name: &str) -> Result<String>` | 读取 GUID，支持 REG_BINARY（16 字节 LE）和 REG_SZ；统一经 `sys/com/prelude::guid_to_string` 格式化 |
 
 **写入操作**（需要通过 `create` 获得的句柄）：
 
