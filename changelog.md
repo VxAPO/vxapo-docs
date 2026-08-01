@@ -9,7 +9,7 @@
 - **DllUnregisterServer 幂等**：键不存在视为成功（重复 `regsvr32 /u` 安全），尽力清理——**对应章节**：`object 7.6`
 - **dll_exports 依赖补全**：引用约束总表增加 `sys/registry`（CLSID 键写入）——**对应章节**：`主规范 十一`、`object 7.6`
 
-> 对应 commit：`待提交回填`
+> 对应 commit：`895d9cd`
 
 ## v7.0 — 2026-08-01
 
