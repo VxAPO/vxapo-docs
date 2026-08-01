@@ -43,7 +43,9 @@ sys/
 - `windows::core::{IUnknown, IUnknown_Vtbl, Interface, interface, GUID, HRESULT, implement}`
 - `windows::Win32::System::Com::{IClassFactory, StringFromGUID2}`
 
-**导出给**：`sys/com/` 下所有子模块、`sys/registry.rs`（`guid_to_string`）、`install/selector/operation.rs`（`guid_to_string`）
+**导出给**：`sys/com/` 下所有子模块、以及所有需要 GUID 格式化的模块——`sys/registry.rs`、`install/selector/operation.rs`、`install/device/slots.rs` 等
+>
+> **允许各层必要依赖**：`guid_to_string` 本质是 `StringFromGUID2`（FFI unsafe 调用）的安全收窄重导出，是重导出性质的规范函数。任何模块在**确实需要 GUID 标准字符串格式化**时均可必要依赖（各使用方模块的约束表需显式列出）。
 
 **公开 API**：
 
@@ -77,6 +79,8 @@ pub const CLASS_E_NOAGGREGATION: HRESULT = HRESULT(0x8004_0110u32 as i32);
 
 **禁止**：不包含任何自定义类型或业务逻辑。**唯一例外**：`guid_to_string` 函数——
 GUID 未实现 `Display` 的必要安全操作扩展，属系统层职责；其余不得新增函数。
+>
+> **消费边界**：`guid_to_string` 允许**任意模块必要依赖**（本质是 `StringFromGUID2` 的安全收窄重导出）；使用方模块的约束表需显式列出该依赖。
 
 ---
 

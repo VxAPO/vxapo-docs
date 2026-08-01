@@ -33,7 +33,7 @@ install/
 |------|--------|----------|
 | `install/device/endpoint.rs` | `sys/registry`、`utils/error` | `pipeline/`、`config/` |
 | `install/device/format.rs` | `sys/registry`、`utils/error`、`sys/audio_defs`（仅 `default_channel_mask`） | `config/` |
-| `install/device/slots.rs` | `sys/registry`、`utils/guid` | `pipeline/`、`config/` |
+| `install/device/slots.rs` | `sys/registry`、`utils/guid`、`sys/com/prelude`（`guid_to_string`，GUID 字符串化安全边界） | `pipeline/`、`config/` |
 | `install/device/info.rs` | `device/endpoint`、`device/format`、`device/slots`、`sys/registry`、`object/vx_reg_props`、`utils/error` | `pipeline/`、`config/` |
 | `install/selector.rs` | `selector/select`、`selector/operation`（入口聚合） | `pipeline/`、`config/` |
 | `install/selector/select.rs` | `install/device/info`（`enumerate_devices`）、`utils/error` | `pipeline/`、`config/`、`sys/registry`（不得自行遍历） |
@@ -154,6 +154,7 @@ pub fn read_audio_format(
 **引用来源**：
 - `crate::sys::registry::RegKey`
 - `crate::utils::guid::{format_guid, parse_guid_from_bytes}`
+- `crate::sys::com::prelude::guid_to_string`（GUID 标准字符串格式化，安全收窄边界）
 
 **导出给**：`install/device/info.rs`、`install/selector/operation.rs`
 
