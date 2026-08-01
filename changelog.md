@@ -1,5 +1,16 @@
 # Changelog
 
+## v7.2 — 2026-08-01
+
+变更类型：`实现对齐`（P0-3 per-device 配置路径规范补齐）
+
+- **sys 新增 known_folder**：`sys/known_folder.rs` 封装 `SHGetKnownFolderPath(FOLDERID_Documents)` 已知文件夹解析（RAII 释放 CoTaskMem 内存），只做 FFI 收窄不拼接路径——**对应章节**：`sys 3.6`
+- **APOInitSystemEffects re-export**：`sys/com/apo_types` 增加 `APOInitSystemEffects`（Initialize 初始化数据，提取端点 GUID）——**对应章节**：`sys 3.3.1b`
+- **Initialize 补全 per-device 路径解析**：`APOInitSystemEffects` 反查端点 GUID → `guid_to_string` 大写格式化 → `Documents\VxAPO\{GUID}\config.txt`；目录自动创建、config 缺失写默认 passthrough、无 GUID 兜底 `_default`——**对应章节**：`object 7.1.8`
+- **引用约束总表同步**：主规范增加 `sys/known_folder.rs` 行、`object/apo.rs` 增 `sys/known_folder` 依赖——**对应章节**：`主规范 十一`
+
+> 对应 commit：`待提交回填`
+
 ## v7.1 — 2026-08-01
 
 变更类型：`实现对齐`（P0-1 DllRegisterServer 规范补齐）

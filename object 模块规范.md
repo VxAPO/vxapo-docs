@@ -41,7 +41,7 @@ object/
 
 | 模块 | 可依赖 | 不可依赖 |
 |------|--------|----------|
-| `object/apo.rs` | `sys/com/`（全部）、`object/child.rs`、`object/vx_reg_props.rs`、`object/ref_count.rs`、`object/factory.rs`、`pipeline/`、`config/`、`install/audiodg`、`telemetry/logger`、`utils/` | — |
+| `object/apo.rs` | `sys/com/`（全部）、`sys/registry`、`sys/known_folder`、`object/child.rs`、`object/vx_reg_props.rs`、`object/ref_count.rs`、`object/factory.rs`、`pipeline/`、`config/`、`install/audiodg`、`telemetry/logger`、`utils/` | — |
 | `object/child.rs` | `sys/com/prelude`、`sys/com/apo_interfaces`、`sys/com/apo_types` | `object/apo.rs`（禁止循环） |
 | `object/factory.rs` | `sys/com/prelude`、`sys/com/apo_interfaces`、`object/apo.rs`、`object/vx_reg_props.rs`、`object/ref_count.rs` | — |
 | `object/ref_count.rs` | `core` | 所有其他 |
@@ -69,6 +69,9 @@ object/
 - `crate::pipeline::context::PipelineContext`
 - `crate::pipeline::format::{extract_format, is_float_format, AudioFormat}`
 - `crate::sys::audio_defs::get_channel_names`
+- `crate::sys::known_folder::documents_folder`（Initialize per-device 路径解析，v7.2）
+- `crate::sys::com::apo_types::APOInitSystemEffects`（Initialize 初始化数据，v7.2）
+- `crate::sys::com::prelude::guid_to_string`（设备 GUID 格式化，v7.2）
 - `crate::pipeline::dsp::filter::{DspContext, DeviceType, ProcessingStage}`
 - `crate::pipeline::dsp::transition::{SmoothingProvider, mix_buffers, default_smoothing_length}`
 - `crate::config::parser::ConfigParser`
@@ -452,17 +455,50 @@ pub struct LockConfig {
 
 ---
 
-#### 7.1.8 `Initialize`
+#### 7.1.8 `Initialize`（含 per-device 配置路径解析，v7.2）
+
+**职责**：初始化。解析 `APOInitSystemEffects`（提取子 APO CLSID + 设备 GUID），
+确定 per-device 配置路径并确保 `Documents\VxAPO\{GUID}\config.txt` 存在。
 
 ```rust
 fn Initialize(&self, cb_data_size: u32, pby_data: *mut u8) -> HRESULT {
-    // 1. 获取 mutex.lock()
-    // 2. state_cell.transition(Created, Initialized)
-    // 3. 解析 APOInitSystemEffects（pby_data），提取子 APO CLSID
-    // 4. 如有子 APO CLSID，创建 ChildApo
-    // 5. 返回 S_OK
+    // 1. 参数校验：pby_data 非空、cb_data_size >= size_of::<APOInitSystemEffects>()
+    //    非法 → E_INVALIDARG
+    // 2. state_cell.transition(Created, Initialized)；失败 → 对应 HRESULT
+    // 3. 解析 APOInitSystemEffects（强制类型转换 pby_data）：
+    //    - pSystemEffectsProperties->pEndpointGuid → 设备 endpoint GUID
+    //    - 提取子 APO CLSID（无子 APO → None，降级模式 Note 57）
+    // 4. 如有子 APO CLSID，创建 ChildApo（失败降级为无子 APO，不阻塞初始化）
+    // 5. 确定 per-device 配置路径（load_device_config）：
+    //    a. sys::known_folder::documents_folder() → Documents 路径
+    //       （SHGetKnownFolderPath(FOLDERID_Documents) 安全收窄）
+    //    b. 设备 GUID → 大写格式字符串（guid_to_string：{XXXXXXXX-...}）
+    //    c. 拼接：{Documents}\VxAPO\{GUID}\  → config_path
+    //    d. 目录不存在 → std::fs::create_dir_all 创建
+    //    e. config.txt 不存在 → 写入默认 passthrough（空文件或仅注释行）
+    // 6. self.config_path = path；返回 S_OK
 }
 ```
+
+**config_path 确定规则（v7.2，P0-3）**：
+
+```
+Documents\VxAPO\{GUID}\config.txt
+```
+
+- `{GUID}`：`APOInitSystemEffects.pSystemEffectsProperties->pEndpointGuid`
+  经 `sys/com/prelude::guid_to_string` 格式化为大写 `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`
+- **目录自动创建**：`VxAPO\{GUID}` 目录不存在时 `std::fs::create_dir_all` 创建
+- **config 默认写入**：config.txt 不存在时写入默认 passthrough（空文件或仅注释行，
+  DLL 不创建预设——预设由 App/CLI 管理，dll 只兜底 passthrough）
+- **无设备 GUID 兜底**：`pEndpointGuid` 为空 / 解析失败时，回退单实例共用路径
+  `Documents\VxAPO\_default\config.txt`（日志告警，不阻断初始化）
+
+**引用来源**（追加）：
+- `crate::sys::known_folder::documents_folder`
+- `crate::sys::com::apo_types::APOInitSystemEffects`
+- `crate::sys::com::prelude::guid_to_string`
+- `std::fs`（create_dir_all / 默认 config 写入）
 
 ---
 

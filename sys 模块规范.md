@@ -15,6 +15,7 @@ sys/
 ├── com.rs                   # COM 子系统模块入口
 ├── registry.rs              # 注册表模块（单一文件，含 win32_ok + RegKey + 读写删）
 ├── audio_defs.rs            # Windows 音频基础定义（通道掩码位标志 + 标准布局映射）
+├── known_folder.rs          # 已知文件夹路径解析（SHGetKnownFolderPath 安全收窄）
 └── com/
     ├── prelude.rs           # COM 基础类型重导出 + HRESULT 常量
     ├── apo_interfaces.rs    # 4 个 APO 接口定义 + 7 个 IID 常量
@@ -32,6 +33,7 @@ sys/
 | `sys/com/apo_interfaces.rs` | `prelude`、`apo_types`、`windows` crate（3 个系统接口仅取 IID） | 其他 |
 | `sys/com/apo_types.rs` | `windows` crate | 其他 |
 | `sys/registry.rs` | `windows` crate、`windows-core` crate、`sys/com/prelude`（`guid_to_string`） | 其他 |
+| `sys/known_folder.rs` | `windows` crate | 其他 |
 
 ---
 
@@ -215,6 +217,7 @@ pub const IID_IAPO_AUXILIARY_INPUT_RT: GUID = IApoAuxiliaryInputRT::IID;
 **引用来源**：
 - `windows::core::{GUID, HRESULT}`
 - `windows::Win32::Media::Audio::Apo::{APO_FLAG, APO_BUFFER_FLAGS, APO_REG_PROPERTIES, APO_CONNECTION_DESCRIPTOR, APO_CONNECTION_PROPERTY}`（及全部关联常量，直接 re-export）
+- `windows::Win32::Media::Audio::Apo::APOInitSystemEffects`（Initialize 初始化结构体，含 `pSystemEffectsProperties`、设备 GUID 提取）
 
 **导出给**：`sys/com/apo_interfaces.rs`、`pipeline/`、`install/`、`object/`、`config/`
 
@@ -270,6 +273,18 @@ pub use windows::Win32::Media::Audio::Apo::{
 ```
 
 > 结构体大小/偏移由 windows-rs 绑定保证，**不再需要** 3.3.8 中针对这些结构体的编译期断言。
+
+---
+
+#### 3.3.1b `APOInitSystemEffects`（Initialize 初始化数据）
+
+```rust
+pub use windows::Win32::Media::Audio::Apo::APOInitSystemEffects;
+```
+
+> 由 windows-rs 0.62.2 提供，直接 re-export 不自定义。Initialize（`object 7.1.8`）接收
+> `pby_data` 指向 `APOInitSystemEffects`，从 `pSystemEffectsProperties->pEndpointGuid`
+> 提取设备 GUID（v7.2，P0-3 per-device 配置路径）。
 
 ---
 
@@ -584,3 +599,40 @@ pub fn get_channel_names(mask: u32) -> Vec<String>;
 **职责边界**：只包含 Windows SDK 语义的静态定义与纯函数。不包含任何 VxAPO 业务逻辑，不引用 `pipeline/`、`config/`、`install/`、`object/`、`utils/`。
 
 **禁止**：不包含任何业务逻辑，不感知运行时状态
+
+---
+
+### 3.6 `sys/known_folder.rs`
+
+**职责**：Windows 已知文件夹路径解析（`SHGetKnownFolderPath` 安全收窄）。供 per-device 配置路径
+（`Documents\VxAPO\{GUID}\config.txt`）定位文档目录（v7.2，P0-3）。
+
+**引用来源**：
+- `windows::Win32::UI::Shell::{SHGetKnownFolderPath, FOLDERID_Documents}`
+- `windows::Win32::System::Com::CoTaskMemFree`（释放 `PWSTR`）
+- `windows::core::{Error, PWSTR}`
+
+**导出给**：`object/apo.rs`（Initialize 路径解析）
+
+**边界**：只做"已知文件夹 → 字符串路径"的 FFI 收窄。**不知道** VxAPO、config.txt、
+设备 GUID 拼接——拼接规则属 `object` 层（`object 7.1.8`）。不引用任何其他模块。
+
+**公开 API**：
+
+```rust
+/// 返回文档（Documents）文件夹的绝对路径（不含结尾反斜杠）。
+///
+/// 封装 `SHGetKnownFolderPath(FOLDERID_Documents, KF_FLAG_DEFAULT, ...)`：
+/// 1. 调用返回 `PWSTR`（CoTaskMemAlloc 分配）
+/// 2. 转 UTF-16 → String
+/// 3. `CoTaskMemFree` 释放（RAII 守卫，所有路径包括错误路径均释放）
+///
+/// # Errors
+/// - `Error`：SHGetKnownFolderPath 返回非 S_OK
+pub fn documents_folder() -> Result<String, windows::core::Error>;
+```
+
+**禁止**：
+- 不拼接任何子路径（`\VxAPO\{GUID}\config.txt` 由 `object/apo.rs` 负责）
+- 不创建目录 / 文件（I/O 属 object 层配置加载逻辑）
+- 不包含业务逻辑，不感知 VxAPO

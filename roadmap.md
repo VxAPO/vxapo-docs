@@ -57,13 +57,22 @@
 > **实现验收**：`cargo test` 通过 + 解析 config.txt 样例无 `NoMatch` 警告；`cargo check` 无未使用警告。
 
 ### P0-3  per-device 配置路径
-- 状态：Backlog
+- 状态：Spec-Finalized
 - 优先级：P0 ｜ 关联 Phase：Phase 10
 - 目标：`APOInitSystemEffects` 反查设备 GUID → `Documents\VxAPO\{GUID}\config.txt`；目录不存在自动创建，config 不存在写入默认 passthrough
 - 影响模块：`object/apo.rs`（Initialize）、`config/watcher.rs`、`install/device`
-- 规范落点：（待定稿时回填；预期涉及 `object 7.1.x` Initialize/APOInitSystemEffects + sys 设备 GUID 能力）
-- 依赖：P0-1、P0-2（注册后可被加载、解析器存在才能读 config）
-- DoD：☐ 规范定稿 ☐ 实现 ☐ 测试
+- 规范落点：`sys 3.6`（known_folder）、`sys 3.3.1b`（APOInitSystemEffects）、`object 7.1.8`（Initialize per-device 路径解析 + config_path 规则）、`主规范 十一`（引用约束同步）
+- 依赖：P0-1、P0-2（已 Spec-Finalized ✅）
+- DoD：☑ 规范定稿（v7.2）☐ 实现 ☐ 测试
+
+> **定稿说明（v7.2）**：新增 `sys/known_folder.rs`（SHGetKnownFolderPath FFI 收窄）、
+> re-export `APOInitSystemEffects`（端点 GUID 提取）、`object 7.1.8` 定义
+> `Documents\VxAPO\{GUID}\config.txt` 规则（目录自动创建 / 默认 passthrough / `_default` 兜底）。
+>
+> **合规性**：known_folder 只做 FFI 收窄（不拼接路径）；对象层负责业务拼接；
+> Initialize 为控制线程（I/O 允许）；不触碰 RT / install / config 边界。
+> **实现验收**：Initialize 后 `config_path` == `Documents\VxAPO\{GUID}\config.txt`；
+> 目录不存在自动创建；config 缺失写默认 passthrough；无 GUID 时回退 `_default`。
 
 ### P0-4  配置热重载全链路（watcher + swap + 过渡）
 - 状态：Backlog
