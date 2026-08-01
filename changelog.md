@@ -1,5 +1,16 @@
 # Changelog
 
+## v7.0 — 2026-08-01
+
+变更类型：`结构重构`（引入路线清单治理机制，v6.9 → v7.0 major 递增）
+
+- **路线清单驱动**：新增 `roadmap.md`（"要做什么"的规划），登记 P0-1..4 / P1-1..4 首版条目；任何新功能必须先登记，禁止"规范外直接实现"——**对应章节**：`主规范 十六`
+- **状态机 + 硬门禁**：`Backlog → Spec-Drafting → Spec-Finalized → Implementing → Done`；仅 `Spec-Finalized` 可进入 `Implementing`（roadmap-rule 强制）——**对应章节**：`主规范 十六`、`.clinerules/roadmap-rule.md`
+- **三文件联动**：一次版本变更须同时满足 roadmap 状态更新 + 规范章节落地 + changelog 记录，changelog 版本号 == 主规范版本号 == roadmap 落点版本——**对应章节**：`主规范 十六`、`.clinerules/roadmap-rule.md`
+- **配套 skill 修正**：`roadmap-add-item`（仅登记，Backlog 不写 changelog，依赖检查推迟到 Spec-Drafting 前）；`spec-finalize`（次版本默认递增、changelog 严格走 changelog-rule、补三文件一致性校验、无法合规停留 Spec-Drafting）——**对应章节**：`.clinerules/skills/roadmap-add-item/SKILL.md`、`.clinerules/skills/spec-finalize/SKILL.md`
+
+> 对应 commit：`待提交回填`
+
 ## v6.9 — 2026-08-01
 
 变更类型：`外部借鉴`（EqualizerAPO FilterEngine 过渡/重载机制深度分析）
