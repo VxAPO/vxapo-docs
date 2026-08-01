@@ -284,16 +284,35 @@ impl DeviceInfo {
     /// 音频增强是否被禁用。
     pub fn is_enhancements_disabled(&self, endpoint_key: &RegKey) -> bool;
 
+    /// 设备是否已禁用（DEVICE_STATE_DISABLED，E3.2/EAPO 借鉴）。
+    pub fn is_disabled(&self) -> bool;
+
+    /// 设备是否已拔除（DEVICE_STATE_NOTPRESENT，E3.2/EAPO 借鉴）。
+    pub fn is_unplugged(&self) -> bool;
+
     /// 是否有未应用的更改。
     pub fn has_changes(&self) -> bool;
 }
+```
 
 /// 查询设备综合信息（组合 endpoint + slots + format）。
 pub fn query_device_info(endpoint_key: &RegKey) -> Result<Option<DeviceInfo>, VxApoError>;
 
-/// 设备枚举（遍历 MMDevices\Audio\Render 和 Capture 下所有端点）。
+/// 设备枚举——**返回所有合法安装容器**（遍历 MMDevices\Audio\Render 和 Capture
+/// 下所有端点键，组合 endpoint/slots/format）。只保证"容器合法"，不判定
+/// 默认设备（用户层 COM 职责，见上）。
 pub fn enumerate_devices() -> Result<Vec<DeviceInfo>, VxApoError>;
 ```
+
+> **设备物理状态谓词（E3.2）**：`is_disabled()`/`is_unplugged()` 由
+> `DeviceInfo.endpoint.state`（已有 `EndpointState::{Disabled, NotPresent}`）推导，
+> 零新增 I/O。用于合法安装容器的进一步筛选。
+
+> **默认设备判定边界（E3.1 澄清）**：driver 层**不判定**"是否默认设备"——
+> `enumerate_devices()` 仅返回注册表 MMDevices 下的**合法安装容器**。
+> 默认设备/有效设备展示是**用户层（CLI/APP）经 COM `IMMDeviceEnumerator::GetDefaultAudioEndpoint`**
+> 取得的有效设备，再以 `device_id`/`endpoint_guid` 与 driver 枚举结果**对应**。
+> driver 不引入 COM 设备枚举，保持注册表单栈。
 
 **模式检测逻辑**：
 1. SFX 有 GUID + MFX 有 GUID → SfxMfx
@@ -362,9 +381,26 @@ pub fn prompt_user(devices: &[DeviceInfo]) -> Result<usize>;
 
 ```rust
 /// 安装参数。
-pub struct InstallConfig { ... }  // 字段同原 InstallConfig
+pub struct InstallConfig {
+    /// 是否安装 PreMix APO。
+    pub install_premix: bool,
+    /// 是否安装 PostMix APO。
+    pub install_postmix: bool,
+    /// 安装模式（决定使用哪两个槽位）。
+    pub install_mode: InstallMode,
+    /// 是否保留原有 PreMix APO 作为子 APO。
+    pub use_original_apo_premix: bool,
+    /// 是否保留原有 PostMix APO 作为子 APO。
+    pub use_original_apo_postmix: bool,
+    /// 是否允许静音缓冲区快速路径（Note 11）。
+    pub allow_silent_buffer: bool,
+    /// 是否启用自动频响校正（E3.3/EAPO `InstallState::autoAdjust` 借鉴）；
+    /// 独立于 `allow_silent_buffer`，对应安装 Step 4 写注册表的 `autoAdjust`。
+    pub auto_adjust: bool,
+}
+
 impl InstallConfig {
-    pub fn default_config() -> Self;  // SfxEfx, 双向安装, allow_silent = true
+    pub fn default_config() -> Self;  // SfxEfx, 双向安装, allow_silent = true, auto_adjust = false
 }
 
 pub fn install_endpoint(
@@ -372,9 +408,21 @@ pub fn install_endpoint(
     device_name: &str,
     connection_name: &str,
     config: &InstallConfig,
+    verify: bool,   // E3.4：true 时安装末尾执行 CoCreateInstance 自检
 ) -> Result<()>;
 
 pub fn uninstall_endpoint(device_guid: &str) -> Result<()>;
+```
+
+> **`auto_adjust`（E3.3）**：`InstallConfig` 独立字段，Step 4 写入注册表的 `autoAdjust`
+> 读取该字段而非硬编码。默认 `false`（EAPO 默认 true，但 VxAPO 无自动校正实现，保守默认关）。
+
+> **安装自检（E3.4，EAPO `testAPOInstallation` 借鉴）**：`install_endpoint(..., verify)`——
+> `verify=true` 时，7 步全部 commit 后，对 `CLSID_VXAPO_PRE_MIX`/`POST_MIX` 各执行一次
+> `CoCreateInstance` + 释放，验证 DLL 可实例化。自检失败：
+> - **不自动回滚**（注册表已写入且 DLL 可能瞬时不可用；EAPO 同策略"报告，非回滚"）
+> - 返回 `Err` 并附明确错误（含失败 CLSID），由 `select.rs` 提示用户
+> - 用户可选择忽略或回滚（`reinstall`/`uninstall` 显式操作）
 ```
 
 **Note 47 安装流程**（7 步）：
