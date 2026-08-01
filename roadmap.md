@@ -40,13 +40,21 @@
 > **实现验收**：`regsvr32 vxapo.dll` → `CoCreateInstance` 两个 CLSID 均可实例化；`regsvr32 /u` 后键清理、重复注册/注销幂等。
 
 ### P0-2  config.txt 解析链路补齐（命令工厂替换 NoMatch）
-- 状态：Backlog
+- 状态：Spec-Finalized
 - 优先级：P0 ｜ 关联 Phase：Phase 1-9
 - 目标：parser.rs + 命令处理器工厂可解析 config.txt 基础命令，无 NoMatch 占位
 - 影响模块：`config/parser.rs`、`config/commands/*.rs`、`pipeline/dsp/factory.rs`
-- 规范落点：（定稿时回填）
+- 规范落点：`config 6.0/6.1`（ConfigParser 三入口 + ParseContext + parse_content 逐行分发）、`config 6.3`（register_all_commands 全命令注册）、`config 6.4-6.15`（各命令语义）、`pipeline 4.x factory`（FilterRegistry/create_default_registry/register_builtin_filters）
 - 依赖：无
-- DoD：☐ 规范定稿 ☐ 实现 ☐ 测试
+- DoD：☑ 规范定稿（核对确认型，无版本变更）☐ 实现 ☐ 测试
+
+> **定稿说明（v7.1 确认型）**：规范侧**已完整覆盖** P0-2 全部需求（ConfigParser 解析三入口、
+> UTF-8/ANSI 降级、命令分发、全命令工厂注册）。本条目为**纯实现缺口**——规范无需新增/修改，
+> 无版本递增、无 changelog 记录。
+>
+> **合规性**：config 不依赖 `pipeline/chain`/具体 Filter 实现（引用约束总表已满足）；
+> DSP 命令经 `registry.try_create` 动态创建。
+> **实现验收**：`cargo test` 通过 + 解析 config.txt 样例无 `NoMatch` 警告；`cargo check` 无未使用警告。
 
 ### P0-3  per-device 配置路径
 - 状态：Backlog
