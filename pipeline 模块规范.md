@@ -76,7 +76,7 @@ pipeline/
     ├── copy.rs         # 通道复制/混音
     ├── graphic_eq.rs   # 图形均衡器（多段）
     ├── convolution.rs  # 卷积（FFT 骨架）
-    ├── vst.rs          # ⚠️ feature gate = ["vst"]
+    ├── vst.rs          # 已移除实现，仅注释（VstFactory 静默 NoMatch，保留注册入口）
     └── loudness.rs     # ISO 226 等响曲线
 ```
 
@@ -1253,27 +1253,22 @@ pub fn parse_convolution_params(spec: &str) -> Option<(String, f32)>;
 
 ---
 
-### 4.20 `pipeline/dsp/vst.rs`
+### 4.20 `pipeline/dsp/vst.rs`（实现已移除，保留注册入口）
 
-**职责**：VST 插件加载。
+**现状（v6.5 决策）**：VST 功能**回退为静默 `NoMatch` 模式**——配置中出现 `VSTPlugin:` 时，`VstFactory` 恒定返回 `FilterCreateResult::NoMatch`，解析器按未知命令静默跳过（不报错、不产生 Filter）。
 
-**引用来源**：`crate::pipeline::dsp::filter::Filter`
+**文件内容**：仅保留模块注释（说明当前行为与未来路径，供开发者查看），**无任何实现/测试**。
 
-**导出给**：仅 `pipeline/dsp/` 内部
+**保留不动**：
+- `FACTORY_COUNT = 15`
+- `index::VST_PLUGIN = 13`
+- `register_builtin_filters` 仍注册 `VstFactory`
 
-**公开 API**：
-
-```rust
-pub struct VstFilter { ... }
-impl VstFilter {
-    pub fn new(path: &str, name: &str) -> Self;
-}
-impl Filter for VstFilter { ... }
-
-pub fn parse_vst_params(spec: &str) -> Option<(String, String, String)>;
-```
-
-> **注意**：`feature gate = ["vst"]`，编译时通过 Cargo feature 控制。
+> 未来恢复 VST2/VST3 时**无需调整注册表/索引结构**，只需：
+> 1. 补 `vst.rs` 实现（动态库加载需 `libloading` + 协议绑定：`AEffect` / `IPluginFactory` COM 接口）
+> 2. `VstFactory::create_filter` 返回 `Filter(Box::new(VstFilter::new(...)))`
+>
+> 依赖 `libloading` 与 `[features] vst` **已删除**。
 
 ---
 
