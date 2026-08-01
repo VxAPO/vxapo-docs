@@ -17,9 +17,12 @@ install/
 │   ├── endpoint.rs        # 端点状态/名称查询（只读）
 │   ├── format.rs          # WAVEFORMATEX 解析 + 通道掩码兜底（只读）
 │   ├── slots.rs           # 5 槽位读取 + 3 模式 + GUID 回退（只读）
-│   └── info.rs            # 组合查询层（只读）
-├── selector.rs            # 设备选择 + 安装/卸载执行 + 事务回滚（合并原 install+rollback）
-└── audiodg.rs             # DisableProtectedAudioDG 检查与修复
+│   └── info.rs            # 组合查询层 + 设备枚举唯一入口（只读）
+├── selector.rs            # 模块入口（pub mod select; pub mod operation;）
+├── audiodg.rs             # DisableProtectedAudioDG 检查与修复
+└── selector/
+    ├── select.rs          # 设备选择接口 + 枚举（list_devices / select_device / prompt_user）
+    └── operation.rs       # 安装 + 卸载 + 回滚（install_endpoint / uninstall_endpoint / Transaction）
 ```
 
 ---
@@ -32,7 +35,9 @@ install/
 | `install/device/format.rs` | `sys/registry`、`utils/error`、`sys/audio_defs`（仅 `default_channel_mask`） | `config/` |
 | `install/device/slots.rs` | `sys/registry`、`utils/guid` | `pipeline/`、`config/` |
 | `install/device/info.rs` | `device/endpoint`、`device/format`、`device/slots`、`sys/registry`、`object/vx_reg_props`、`utils/error` | `pipeline/`、`config/` |
-| `install/selector.rs` | `install/device/slots`、`install/device/format`、`sys/registry`、`object/vx_reg_props`、`sys/com/prelude`（`guid_to_string`）、`utils/error` | `pipeline/`、`config/` |
+| `install/selector.rs` | `selector/select`、`selector/operation`（入口聚合） | `pipeline/`、`config/` |
+| `install/selector/select.rs` | `install/device/info`（`enumerate_devices`）、`utils/error` | `pipeline/`、`config/`、`sys/registry`（不得自行遍历） |
+| `install/selector/operation.rs` | `install/device/slots`、`install/device/format`、`sys/registry`、`object/vx_reg_props`、`sys/com/prelude`（`guid_to_string`）、`utils/error` | `pipeline/`、`config/` |
 | `install/audiodg.rs` | `sys/registry` | `pipeline/`、`config/` |
 
 ---
@@ -150,7 +155,7 @@ pub fn read_audio_format(
 - `crate::sys::registry::RegKey`
 - `crate::utils::guid::{format_guid, parse_guid_from_bytes}`
 
-**导出给**：`install/device/info.rs`、`install/selector.rs`
+**导出给**：`install/device/info.rs`、`install/selector/operation.rs`
 
 **5 个槽位**（Note 25）：
 
@@ -241,7 +246,7 @@ pub fn get_original_post_mix(slots: &[SlotValue; 5], mode: InstallMode) -> Strin
 
 ### 5.4 `install/device/info.rs`
 
-**职责**：组合 `endpoint`、`slots`、`format` 三个子模块，提供高层查询接口。只读。
+**职责**：组合 `endpoint`、`slots`、`format` 三个子模块，提供高层查询接口。**设备枚举唯一入口**（`enumerate_devices`）。只读。
 
 **引用来源**：
 - `install/device/endpoint`、`install/device/slots`、`install/device/format`
@@ -249,7 +254,7 @@ pub fn get_original_post_mix(slots: &[SlotValue; 5], mode: InstallMode) -> Strin
 - `crate::object::vx_reg_props::{CLSID_VXAPO_PRE_MIX, CLSID_VXAPO_POST_MIX}`
 - `crate::utils::error::VxApoError`
 
-**导出给**：`install/selector.rs`、`object/apo.rs`
+**导出给**：`install/selector/select.rs`、`install/selector/operation.rs`、`object/apo.rs`
 
 **公开 API**：
 
@@ -297,16 +302,26 @@ pub fn enumerate_devices() -> Result<Vec<DeviceInfo>, VxApoError>;
 
 ---
 
-### 5.5 `install/selector.rs`
+### 5.5 `install/selector.rs`（模块入口）
 
-**职责**：**设备选择 + 安装/卸载执行 + 事务回滚**（原 `install.rs` + `rollback.rs` 合并至此，v6.3 定稿）。
+**职责**：`selector` 子模块的入口聚合——仅 `pub mod select; pub mod operation;` 声明，不含业务逻辑。
+
+**公开 API**：
+
+```rust
+pub mod select;
+pub mod operation;
+```
+
+---
+
+### 5.5.1 `install/selector/select.rs`
+
+**职责**：设备选择交互。枚举设备、列出名称、让用户选择，并调度 operation 执行安装/卸载。
 
 **引用来源**：
-- `install/device/slots::*`（ApoSlot / InstallMode / SlotValue / read_all_slots / FX_PROPERTIES_KEY / INSTALL_VERSION）
-- `install/device/format::*`
-- `crate::sys::registry::{RegKey, RegValue}`
-- `crate::object::vx_reg_props::{CLSID_VXAPO_PRE_MIX, CLSID_VXAPO_POST_MIX}`
-- `crate::sys::com::prelude::guid_to_string`（GUID 格式化）
+- `install/device/info::enumerate_devices`（**设备枚举唯一入口**）
+- `install/selector/operation::{InstallConfig, install_endpoint, uninstall_endpoint}`
 - `crate::utils::vx_error::{Result, VxApoError}`
 
 **导出给**：外部 CLI
@@ -314,15 +329,38 @@ pub fn enumerate_devices() -> Result<Vec<DeviceInfo>, VxApoError>;
 **公开 API**：
 
 ```rust
-// ── 设备选择 ──
-pub fn list_devices() -> Result<Vec<DeviceInfo>>;
+pub fn list_devices() -> Result<Vec<DeviceInfo>>;       // 委托 device/info::enumerate_devices
 pub fn select_device() -> Result<Option<DeviceInfo>>;
-pub fn run_install_flow() -> Result<()>;
-pub fn run_uninstall_flow() -> Result<()>;
+pub fn run_install_flow() -> Result<()>;                // 调度 operation::install_endpoint
+pub fn run_uninstall_flow() -> Result<()>;              // 调度 operation::uninstall_endpoint
 pub fn print_device_list(devices: &[DeviceInfo]);
 pub fn prompt_user(devices: &[DeviceInfo]) -> Result<usize>;
+```
 
-// ── 安装/卸载（原 install.rs 职责，合并至此） ──
+**禁止**：
+- 不自行遍历注册表 MMDevices（不得依赖 `sys/registry` 直接操作）——设备列表一律来自 `enumerate_devices`
+- 不包含安装/回滚业务逻辑（在 operation.rs）
+
+---
+
+### 5.5.2 `install/selector/operation.rs`
+
+**职责**：设备 APO 安装/卸载执行 + 事务回滚（原 `install.rs` + `rollback.rs` 合并至此）。
+
+**引用来源**：
+- `install/device/slots::*`（ApoSlot / InstallMode / SlotValue / read_all_slots / FX_PROPERTIES_KEY / INSTALL_VERSION）
+- `install/device/format::*`
+- `crate::sys::registry::{RegKey, RegValue}`（备份经 `save_to_file` 委托）
+- `crate::object::vx_reg_props::{CLSID_VXAPO_PRE_MIX, CLSID_VXAPO_POST_MIX}`
+- `crate::sys::com::prelude::guid_to_string`（GUID 格式化）
+- `crate::utils::vx_error::{Result, VxApoError}`
+
+**导出给**：`install/selector/select.rs`
+
+**公开 API**：
+
+```rust
+/// 安装参数。
 pub struct InstallConfig { ... }  // 字段同原 InstallConfig
 impl InstallConfig {
     pub fn default_config() -> Self;  // SfxEfx, 双向安装, allow_silent = true
@@ -341,7 +379,7 @@ pub fn uninstall_endpoint(device_guid: &str) -> Result<()>;
 **Note 47 安装流程**（7 步）：
 1. 创建 Child APOs 键
 2. FxProperties 不存在则创建（失败则权限提升重试，Note 31）
-3. 已存在则备份原始 GUID（best-effort）+ 记录槽位回滚
+3. 已存在则备份 FxProperties 至 `.reg`（通过 `sys::registry::save_to_file`）并记录槽位回滚
 4. 写入子 APO 配置（childGuid / allowSilentBuffer / autoAdjust / version）
 5. 按模式写入 APO GUID（删除非当前模式的旧槽位）
 6. 写入默认处理模式 GUID（AUDIO_SIGNALPROCESSINGMODE_DEFAULT）
@@ -355,7 +393,7 @@ pub fn uninstall_endpoint(device_guid: &str) -> Result<()>;
 3. 删除子 APO 配置值（childGuid / allowSilentBuffer / autoAdjust / version）
 4. 删除 DisableEnhancements
 
-**事务回滚（原 rollback.rs 职责，合并至此）**：
+**事务回滚**（原 rollback.rs 职责，合并至此）：
 
 ```rust
 enum RollbackAction {
@@ -366,10 +404,6 @@ enum RollbackAction {
 struct Transaction { ... }
 // Drop 时未 commit 则逆序执行全部回滚动作
 ```
-
-**已知待办**（v6.3 如实描述当前实现）：
-- `list_endpoints()` 返回空列表——依赖 sys/registry 的键枚举能力，当前为占位实现，由上层通过已知设备 GUID 直接调用 `install_endpoint`
-- .reg 备份为简化实现：实际写入 `C:\ProgramData\VxAPO\backups\{设备名}_{连接名}.txt` 描述文件（非标准 .reg 格式）
 
 **禁止**：不依赖 `pipeline/`、`config/`
 

@@ -43,7 +43,7 @@ sys/
 - `windows::core::{IUnknown, IUnknown_Vtbl, Interface, interface, GUID, HRESULT, implement}`
 - `windows::Win32::System::Com::{IClassFactory, StringFromGUID2}`
 
-**导出给**：`sys/com/` 下所有子模块、`install/selector.rs`（`guid_to_string`）
+**导出给**：`sys/com/` 下所有子模块、`install/selector/operation.rs`（`guid_to_string`）
 
 **公开 API**：
 
@@ -107,6 +107,9 @@ pub use windows::Win32::Media::Audio::Apo::{
 
 > 这三个 `*_Impl` trait 由 windows-rs `define_interface!` 宏生成，`#[implement(...)]` 派生时需要；
 > 自定义 APO 对象（`object/apo.rs`）通过实现这些 trait 提供方法。
+>
+> **措辞澄清**：允许 re-export `*_Impl` traits（仅方法签名，供实现方实现/派生），
+> 禁止的是**业务函数体实现**（即本文件不得写任何 COM 方法的具体实现逻辑）。
 
 #### 接口 re-export（windows-rs 结构体，4 个）
 
@@ -442,7 +445,7 @@ pub struct RegKey {
 | `read_multi_value` | `fn read_multi_value(&self, name: &str) -> Result<Vec<String>>` | 读取 REG_MULTI_SZ |
 | `value_exists` | `fn value_exists(&self, name: &str) -> Result<bool>` | 检查当前键下指定值是否存在 |
 | `key_exists_child` | `fn key_exists_child(&self, sub_key: &str) -> Result<bool>` | 检查当前键下指定子键是否存在 |
-| `enum_sub_keys` | `fn enum_sub_keys(&self) -> Result<Vec<String>>` | 枚举所有子键名称 |
+| `enum_sub_keys` | `fn enum_sub_keys(&self) -> Result<Vec<String>>` | 枚举所有子键名称。**设备枚举的底层能力源**（供 `install/device/info::enumerate_devices` 遍历 MMDevices 子键；本模块不认识设备） |
 | `enum_values` | `fn enum_values(&self) -> Result<Vec<String>>` | 枚举所有值名称（含默认值 `""`） |
 | `get_guid_string` | `fn get_guid_string(&self, name: &str) -> Result<String>` | 读取 GUID，支持 REG_BINARY（16 字节 LE，通过 `GUID::from_values` 转换后 `format!("{guid}")`）和 REG_SZ |
 
