@@ -1,4 +1,4 @@
-## 三、`sys/` 模块规范（最终版）
+﻿## 三、`sys/` 模块规范（最终版）
 
 **边界**：不知道 VxAPO 是什么。不知道音频处理。不知道安装。不知道配置。
 
@@ -37,20 +37,30 @@ sys/
 
 ### 3.1 `sys/com/prelude.rs`
 
-**职责**：重导出 `windows-rs` 的 COM 基础类型与 HRESULT 常量
+**职责**：重导出 `windows-rs` 的 COM 基础类型、HRESULT 常量，以及 GUID 格式化安全操作辅助
 
 **引用来源**：
-- `windows::core::{IUnknown, Interface, GUID, HRESULT, implement}`
-- `windows::Win32::System::Com::IClassFactory`
+- `windows::core::{IUnknown, IUnknown_Vtbl, Interface, interface, GUID, HRESULT, implement}`
+- `windows::Win32::System::Com::{IClassFactory, StringFromGUID2}`
 
-**导出给**：`sys/com/` 下所有子模块
+**导出给**：`sys/com/` 下所有子模块、`install/selector.rs`（`guid_to_string`）
 
 **公开 API**：
 
 ```rust
 // ── 类型重导出 ──
-pub use windows::core::{IUnknown, Interface, GUID, HRESULT, implement};
-pub use windows::Win32::System::Com::IClassFactory;
+pub use windows::core::{
+    IUnknown, IUnknown_Vtbl, Interface, interface, GUID, HRESULT, implement,
+};
+pub use windows::Win32::System::Com::{IClassFactory, StringFromGUID2};
+
+// ── GUID 格式化辅助（唯一允许的"自定义函数"特例） ──
+/// 将 GUID 格式化为标准字符串 `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`。
+///
+/// 理由：`windows::core::GUID` 未实现 `Display`/`ToString`，若直接使用 `Debug`
+/// 输出依赖不稳定格式；官方 FFI 绑定 `StringFromGUID2` 需要 `unsafe` 调用，
+/// 此函数将该 `unsafe` 收窄为单一安全边界，属系统层职责。
+pub fn guid_to_string(g: &GUID) -> String;
 
 // ── HRESULT 常量 ──
 pub const S_OK: HRESULT = HRESULT(0);
@@ -65,25 +75,40 @@ pub const E_OUTOFMEMORY: HRESULT = HRESULT(0x8007_000Eu32 as i32);
 pub const CLASS_E_NOAGGREGATION: HRESULT = HRESULT(0x8004_0110u32 as i32);
 ```
 
-**禁止**：不包含任何自定义类型、函数或逻辑
+**禁止**：不包含任何自定义类型或业务逻辑。**唯一例外**：`guid_to_string` 函数——
+GUID 未实现 `Display` 的必要安全操作扩展，属系统层职责；其余不得新增函数。
 
 ---
 
 ### 3.2 `sys/com/apo_interfaces.rs`
 
-**职责**：使用 `#[interface]` 定义 APO 需自行实现的 4 个 COM 接口 trait；导出全部 7 个接口 IID 常量
+**职责**：re-export windows-rs 0.62.2 已提供的 4 个 APO 接口结构体 + 3 个对应 `*_Impl` traits（`#[implement]` 实现对象必需）；导出全部 7 个接口 IID 常量
 
 **引用来源**：
 - `crate::sys::com::prelude::*`
 - `crate::sys::com::apo_types::*`（`REFERENCE_TIME`、`APO_REG_PROPERTIES`、`APO_CONNECTION_DESCRIPTOR`、`APO_CONNECTION_PROPERTY`、`UNCOMPRESSED_AUDIO_FORMAT`）
-- `windows::core::Interface`（取 `::IID`）
-- `windows::Win32::Media::Audio::Apo::{IAudioProcessingObjectNotifications, IAudioSystemEffects, IAudioSystemEffects2}`（仅取 IID，不定义接口）
+- `windows::Win32::Media::Audio::Apo`（4 个 APO 接口结构体直接 re-export：`IAudioMediaType`、`IAudioProcessingObject`、`IAudioProcessingObjectRT`、`IAudioProcessingObjectConfiguration`）
+- `windows::Win32::Media::Audio::Apo::{IAudioProcessingObjectNotifications, IAudioSystemEffects, IAudioSystemEffects2}`（3 个系统接口结构体 re-export，仅取 IID）
+- `windows::core::{Interface, IUnknown}`（取 `::IID`、作为接口根基）
 
 **导出给**：`object/apo.rs`、`object/child.rs`、`object/factory.rs`
 
 ---
 
-#### 接口定义（`#[interface]`，4 个）
+#### `*_Impl` traits re-export（`#[implement]` 实现 COM 对象必需）
+
+```rust
+pub use windows::Win32::Media::Audio::Apo::{
+    IAudioProcessingObject_Impl,
+    IAudioProcessingObjectRT_Impl,
+    IAudioProcessingObjectConfiguration_Impl,
+};
+```
+
+> 这三个 `*_Impl` trait 由 windows-rs `define_interface!` 宏生成，`#[implement(...)]` 派生时需要；
+> 自定义 APO 对象（`object/apo.rs`）通过实现这些 trait 提供方法。
+
+#### 接口 re-export（windows-rs 结构体，4 个）
 
 **`IAudioMediaType`**（IID: `4e997f73-b71f-4798-873b-ed7dfcf15b4d`）：
 
@@ -125,7 +150,7 @@ pub const CLASS_E_NOAGGREGATION: HRESULT = HRESULT(0x8004_0110u32 as i32);
 
 #### IID 导出常量（7 个）
 
-**自定义接口 IID（4 个）**：
+**APO 接口 IID（4 个）**：
 
 ```rust
 pub const IID_IAPO: GUID = IAudioProcessingObject::IID;
@@ -155,12 +180,11 @@ pub const IID_IAUDIO_PROCESSING_OBJECT_NOTIFICATIONS: GUID =
 
 ### 3.3 `sys/com/apo_types.rs`
 
-**职责**：定义 `#[repr(C)]` POD 结构体、枚举、常量，以及从 `windows-rs` 重导出的 SDK 类型
+**职责**：**re-export windows-rs 0.62.2 已提供的 APO 类型（POD 结构体、APO_FLAG、APO_BUFFER_FLAGS 及其常量）**；仅自定义 windows-rs 缺失项（UNCOMPRESSED_AUDIO_FORMAT、AUDIO_FLOW_TYPE、REFERENCE_TIME、签名/比较常量、APOERR 错误码）
 
 **引用来源**：
 - `windows::core::{GUID, HRESULT}`
-- `windows::Win32::Media::Audio::Apo::APO_FLAG`（及全部关联常量，直接 re-export）
-- `windows::Win32::Media::Audio::Apo::APO_BUFFER_FLAGS as WinAPO_BUFFER_FLAGS`（对外交互用）
+- `windows::Win32::Media::Audio::Apo::{APO_FLAG, APO_BUFFER_FLAGS, APO_REG_PROPERTIES, APO_CONNECTION_DESCRIPTOR, APO_CONNECTION_PROPERTY}`（及全部关联常量，直接 re-export）
 
 **导出给**：`sys/com/apo_interfaces.rs`、`pipeline/`、`install/`、`object/`、`config/`
 
@@ -187,51 +211,39 @@ pub use windows::Win32::Media::Audio::Apo::{
 >
 > **流向**：单向输出。APO 构建 `APO_REG_PROPERTIES` 时设置 `Flags` 字段 → Windows 引擎读取。Windows 不会向 APO 回写 `APO_FLAG`。
 
-**`WinAPO_BUFFER_FLAGS`**（windows-rs 类型，供对外交互时使用）：
+**`APO_BUFFER_FLAGS` 及关联常量**（windows-rs 类型，直接使用，不自定义枚举）：
+
+```rust
+pub use windows::Win32::Media::Audio::Apo::{
+    APO_BUFFER_FLAGS,
+    BUFFER_INVALID,   // 0
+    BUFFER_VALID,     // 1
+    BUFFER_SILENT,    // 2
+};
+// 供内部语义引用：BUFFER_INVALID / BUFFER_VALID / BUFFER_SILENT
+```
+
+**`WinAPO_BUFFER_FLAGS`**（windows-rs 类型别名，供对外交互时使用）：
 
 ```rust
 pub use windows::Win32::Media::Audio::Apo::APO_BUFFER_FLAGS as WinAPO_BUFFER_FLAGS;
 ```
 
+**POD 结构体**（windows-rs 0.62.2 已提供，直接 re-export，不自定义）：
+
+```rust
+pub use windows::Win32::Media::Audio::Apo::{
+    APO_REG_PROPERTIES,          // 注册属性（1092 字节 conformant array）
+    APO_CONNECTION_DESCRIPTOR,   // 连接描述符（x64=40 / x86=20 字节）
+    APO_CONNECTION_PROPERTY,     // 连接属性（x64=24 / x86=16 字节）
+};
+```
+
+> 结构体大小/偏移由 windows-rs 绑定保证，**不再需要** 3.3.8 中针对这些结构体的编译期断言。
+
 ---
 
-#### 3.3.2 自定义枚举
-
-**`APO_BUFFER_FLAGS`**（内部使用的 Rust 枚举）：
-
-```rust
-#[repr(u32)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum APO_BUFFER_FLAGS {
-    Invalid = 0,
-    Valid = 1,
-    Silent = 2,
-}
-```
-
-> `windows-rs` 的 `WinAPO_BUFFER_FLAGS` 底层是 `repr(i32)` 结构体（保持 C 风格），不便于内部 Rust 代码使用。自定义枚举保持 Rust 风格，通过 `From`/`TryFrom` 双向转换。
-
-**双类型转换实现**：
-
-```rust
-impl From<APO_BUFFER_FLAGS> for WinAPO_BUFFER_FLAGS {
-    fn from(f: APO_BUFFER_FLAGS) -> Self {
-        Self(f as i32)
-    }
-}
-
-impl TryFrom<WinAPO_BUFFER_FLAGS> for APO_BUFFER_FLAGS {
-    type Error = ();
-    fn try_from(f: WinAPO_BUFFER_FLAGS) -> Result<Self, Self::Error> {
-        match f.0 {
-            0 => Ok(Self::Invalid),
-            1 => Ok(Self::Valid),
-            2 => Ok(Self::Silent),
-            _ => Err(()),
-        }
-    }
-}
-```
+#### 3.3.2 自定义枚举（windows-rs 缺失项）
 
 **`AUDIO_FLOW_TYPE`**：
 
@@ -268,62 +280,9 @@ pub type REFERENCE_TIME = i64;
 
 ---
 
-#### 3.3.4 POD 结构体
+#### 3.3.4 自定义 POD 结构体（windows-rs 缺失项）
 
-**`APO_REG_PROPERTIES`**（1092 字节，conformant array 模式）：
-
-```rust
-#[repr(C)]
-#[derive(Clone)]
-pub struct APO_REG_PROPERTIES {
-    pub clsid: GUID,
-    pub flags: APO_FLAG,
-    pub sz_friendly_name: [u16; 256],
-    pub sz_copyright_info: [u16; 256],
-    pub major_version: u32,
-    pub minor_version: u32,
-    pub min_input_connections: u32,
-    pub max_input_connections: u32,
-    pub min_output_connections: u32,
-    pub max_output_connections: u32,
-    pub max_instances: u32,
-    pub num_apo_interfaces: u32,
-    pub iid_apo_interface_list: [GUID; 1],
-}
-```
-
-> `iid_apo_interface_list` 使用 `[GUID; 1]` 映射 SDK 的 `IID iidAPOInterfaceList[1]` conformant array。`num_apo_interfaces` 指示实际元素数量。调用方通过 `CoTaskMemAlloc` 分配 `sizeof(APO_REG_PROPERTIES) + (n-1) * sizeof(GUID)` 的连续内存块。定长 1092 字节。
-
-**`APO_CONNECTION_DESCRIPTOR`**：
-
-```rust
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct APO_CONNECTION_DESCRIPTOR {
-    pub buffer_type: APO_CONNECTION_BUFFER_TYPE,
-    pub buffer: usize,
-    pub max_frame_count: u32,
-    pub format: *mut std::ffi::c_void,
-    pub signature: u32,
-}
-```
-
-> x64 = 40 字节，x86 = 20 字节。含指针成员，需平台感知的编译期断言。
-
-**`APO_CONNECTION_PROPERTY`**：
-
-```rust
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct APO_CONNECTION_PROPERTY {
-    pub p_buffer: usize,
-    pub valid_frame_count: u32,
-    pub buffer_flags: APO_BUFFER_FLAGS,
-    pub signature: u32,
-}
-```
-
-> x64 = 24 字节，x86 = 16 字节。`buffer_flags` 使用自定义 `APO_BUFFER_FLAGS` 枚举，与 `windows-rs` 交互时通过 `From`/`TryFrom` 转换。
+> `APO_REG_PROPERTIES`（1092 字节）、`APO_CONNECTION_DESCRIPTOR`（x64=40/x86=20 字节）、`APO_CONNECTION_PROPERTY`（x64=24/x86=16 字节）已由 windows-rs 0.62.2 提供并在 3.3.1 re-export，此处仅保留自定义项。
 
 **`UNCOMPRESSED_AUDIO_FORMAT`**（36 字节，无指针，跨平台一致）：
 
@@ -379,17 +338,16 @@ pub const APOERR_INVALID_INPUTID:              HRESULT = HRESULT(0x887D_000Eu32 
 
 #### 3.3.8 编译期断言
 
-使用 `const _: () = { ... };` 块，包含以下断言：
+使用 `const _: () = { ... };` 块，仅针对**自定义项**（windows-rs 提供的结构体大小/偏移由绑定保证，不再重复断言）：
 
-**基础类型大小**：
+**自定义枚举大小**：
 
 | 断言 | 预期值 |
 |------|--------|
-| `size_of::<APO_FLAG>()` | 4 |
 | `size_of::<AUDIO_FLOW_TYPE>()` | 4 |
 | `size_of::<APO_CONNECTION_BUFFER_TYPE>()` | 4 |
 
-**枚举 repr 语义**：
+**自定义枚举 repr 语义**：
 
 | 断言 | 预期值 |
 |------|--------|
@@ -397,19 +355,11 @@ pub const APOERR_INVALID_INPUTID:              HRESULT = HRESULT(0x887D_000Eu32 
 | `APO_CONNECTION_BUFFER_TYPE::EXTERNAL as i32` | 1 |
 | `APO_CONNECTION_BUFFER_TYPE::DEPENDANT as i32` | 2 |
 
-**无指针结构体（跨平台一致）**：
+**自定义无指针结构体（跨平台一致）**：
 
 | 结构体 | 大小 | offset 断言 |
 |--------|------|------------|
 | `UNCOMPRESSED_AUDIO_FORMAT` | 36 字节 | `guid_format_type`=0, `dw_samples_per_frame`=16, `dw_bytes_per_sample_container`=20, `dw_valid_bits_per_sample`=24, `f_frames_per_second`=28, `dw_channel_mask`=32 |
-| `APO_REG_PROPERTIES` | 1092 字节 | `clsid`=0, `flags`=16, `sz_friendly_name`=20, `sz_copyright_info`=532, `major_version`=1044, `minor_version`=1048, `min_input_connections`=1052, `max_input_connections`=1056, `min_output_connections`=1060, `max_output_connections`=1064, `max_instances`=1068, `num_apo_interfaces`=1072, `iid_apo_interface_list`=1076 |
-
-**含指针结构体（平台感知，`#[cfg(target_pointer_width)]`）**：
-
-| 结构体 | x64 大小 | x64 offset | x86 大小 | x86 offset |
-|--------|---------|------------|---------|------------|
-| `APO_CONNECTION_DESCRIPTOR` | 40 字节 | `buffer_type`=0, `buffer`=8, `max_frame_count`=16, `format`=24, `signature`=32 | 20 字节 | 按 32 位布局 |
-| `APO_CONNECTION_PROPERTY` | 24 字节 | `p_buffer`=0, `valid_frame_count`=8, `buffer_flags`=12, `signature`=16 | 16 字节 | `p_buffer`=0, `valid_frame_count`=4, `buffer_flags`=8, `signature`=12 |
 
 **禁止**：不包含业务逻辑
 
@@ -535,7 +485,7 @@ pub struct RegKey {
 **引用来源**：
 - `windows::Win32::Media::KernelStreaming::SPEAKER_*`（re-export 优先，缺失位自定义补齐）
 
-**导出给**：`install/device/format.rs`（`default_channel_mask` 兜底）、`config/parser.rs`、`config/commands/channel.rs`（`get_channel_names`）、`object/apo.rs`（`get_channel_names`）
+**导出给**：`install/device/format.rs`（`default_channel_mask` 兜底）、`object/apo.rs`（`get_channel_names`，构造 `DspContext.channel_names` 后注入 config）
 
 **公开 API**：
 

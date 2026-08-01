@@ -95,7 +95,7 @@ pipeline/
 | `pipeline/realtime/contract.rs` | `core` | 其他 |
 | `pipeline/realtime/ring.rs` | `core` | 其他 |
 | `pipeline/dsp/filter.rs` | `utils/` | `install/`、`config/`、`object/` |
-| `pipeline/dsp/factory.rs` | `dsp/filter`、`utils/` | `install/`、`config/`、`object/` |
+| `pipeline/dsp/factory.rs` | `dsp/filter`、`dsp/*`（**仅为注册实例化具体类型的必要例外**）、`utils/` | `install/`、`config/`、`object/` |
 | `pipeline/dsp/transition.rs` | 无 | `install/`、`config/`、`object/` |
 | `pipeline/dsp/*.rs`（具体 Filter） | `dsp/filter`、`dsp/biquad`（如需要）、`utils/` | `install/`、`config/`、`object/` |
 
@@ -909,7 +909,10 @@ pub trait ConfigLoader {
 
 **引用来源**：
 - `crate::pipeline::dsp::filter::*`
+- `crate::pipeline::dsp/*.rs`（**具体 Filter 实现：工厂注册中心必要例外**——注册必须实例化具体类型）
 - `crate::utils::vx_error::VxApoError`
+
+> **例外说明**：工厂注册中心必须直接引用具体 Filter 类型（`biquad`/`peq`/`convolution`/`copy`/`delay`/`graphic_eq`/`hp_lp`/`loudness`/`vst` 等）才能实例化并注册工厂。此例外仅适用于 `factory.rs`；`config/` 仍禁止直接引用具体实现。
 
 **导出给**：`config/commands/*.rs`、`config/parser.rs`
 

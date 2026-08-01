@@ -7,7 +7,7 @@
 - `utils/`
 - `pipeline/dsp/filter.rs`（Filter trait + ConfigLoader trait）
 - `pipeline/dsp/factory.rs`（FilterFactory、FilterRegistry、DspContext）
-- `sys/audio_defs.rs`（`default_channel_mask`、`get_channel_names`）
+- （通道名由调用方注入 `DspContext.channel_names`，config **不直接依赖** `sys/audio_defs`）
 
 **禁止依赖**：
 - `install/`、`object/`
@@ -46,10 +46,10 @@ config/
 | 模块 | 可依赖 | 不可依赖 |
 |------|--------|----------|
 | `config/error.rs` | `std` | 所有其他 |
-| `config/parser.rs` | `config/error`、`config/commands/*`、`pipeline/dsp/filter`、`pipeline/dsp/factory`、`sys/audio_defs`、`sys/registry`、`utils/` | `install/`、`object/`、`pipeline/chain`、`pipeline/process`、`pipeline/context`、任何 `pipeline/dsp/*.rs` 具体实现 |
+| `config/parser.rs` | `config/error`、`config/commands/*`、`pipeline/dsp/filter`、`pipeline/dsp/factory`、`sys/registry`、`utils/` | `install/`、`object/`、`pipeline/chain`、`pipeline/process`、`pipeline/context`、任何 `pipeline/dsp/*.rs` 具体实现、`sys/audio_defs` |
 | `config/watcher.rs` | `config/error`、`utils/` | 其他 |
 | `config/commands.rs` | `config/commands/*`、`pipeline/dsp/factory` | 其他 |
-| `config/commands/channel.rs` | `config/error`、`config/parser`(ParseContext)、`pipeline/dsp/filter`(Filter)、`sys/audio_defs` | `pipeline/chain` |
+| `config/commands/channel.rs` | `config/error`、`config/parser`(ParseContext)、`pipeline/dsp/filter`(Filter) | `pipeline/chain` |
 | `config/commands/cond.rs` | `config/error`、`config/parser`(ParseContext) | `pipeline/` |
 | `config/commands/device.rs` | `config/error`、`config/parser`(ParseContext) | `pipeline/` |
 | `config/commands/expr.rs` | `config/error` | `pipeline/` |
@@ -97,7 +97,7 @@ impl std::error::Error for ConfigError {}
 - `crate::config::commands::*`（所有命令处理器）
 - `crate::pipeline::dsp::filter::{Filter, DspContext, DeviceType, ProcessingStage as DspProcessingStage}`
 - `crate::pipeline::dsp::factory::{FilterFactory, FilterRegistry}`
-- `crate::sys::audio_defs::*`
+- （通道名由 `DspContext.channel_names` 注入，config 不直接依赖 `sys/audio_defs`）
 
 **导出给**：`object/apo.rs`、`config/commands/*`
 
@@ -362,7 +362,7 @@ pub fn register_all_commands(registry: &mut FilterRegistry) {
 - `crate::config::error::ConfigError`
 - `crate::config::parser::ParseContext`
 - `crate::pipeline::dsp::filter::Filter`
-- `crate::sys::audio_defs::*`（`get_channel_names`）
+- （通道名由 `DspContext.channel_names` **注入**，config 不直接依赖 `sys/audio_defs`）
 
 **导出给**：`config/commands.rs`
 

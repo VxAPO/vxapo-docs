@@ -18,10 +18,8 @@ install/
 │   ├── format.rs          # WAVEFORMATEX 解析 + 通道掩码兜底（只读）
 │   ├── slots.rs           # 5 槽位读取 + 3 模式 + GUID 回退（只读）
 │   └── info.rs            # 组合查询层（只读）
-├── selector.rs            # CLI 选择界面
-├── audiodg.rs             # DisableProtectedAudioDG 检查与修复
-├── install.rs             # 设备级 APO 安装/卸载（写操作）
-└── rollback.rs            # 事务回滚 + .reg 备份
+├── selector.rs            # 设备选择 + 安装/卸载执行 + 事务回滚（合并原 install+rollback）
+└── audiodg.rs             # DisableProtectedAudioDG 检查与修复
 ```
 
 ---
@@ -34,10 +32,8 @@ install/
 | `install/device/format.rs` | `sys/registry`、`utils/error`、`sys/audio_defs`（仅 `default_channel_mask`） | `config/` |
 | `install/device/slots.rs` | `sys/registry`、`utils/guid` | `pipeline/`、`config/` |
 | `install/device/info.rs` | `device/endpoint`、`device/format`、`device/slots`、`sys/registry`、`object/vx_reg_props`、`utils/error` | `pipeline/`、`config/` |
-| `install/selector.rs` | `install/device/info` | `pipeline/`、`config/` |
+| `install/selector.rs` | `install/device/slots`、`install/device/format`、`sys/registry`、`object/vx_reg_props`、`sys/com/prelude`（`guid_to_string`）、`utils/error` | `pipeline/`、`config/` |
 | `install/audiodg.rs` | `sys/registry` | `pipeline/`、`config/` |
-| `install/install.rs` | `device/slots`、`device/format`、`rollback`、`sys/registry`、`object/vx_reg_props`、`utils/error`、`utils/guid` | `pipeline/`、`config/` |
-| `install/rollback.rs` | `sys/registry`、`utils/error` | `pipeline/`、`config/` |
 
 ---
 
@@ -154,7 +150,7 @@ pub fn read_audio_format(
 - `crate::sys::registry::RegKey`
 - `crate::utils::guid::{format_guid, parse_guid_from_bytes}`
 
-**导出给**：`install/device/info.rs`、`install/install.rs`
+**导出给**：`install/device/info.rs`、`install/selector.rs`
 
 **5 个槽位**（Note 25）：
 
@@ -303,27 +299,79 @@ pub fn enumerate_devices() -> Result<Vec<DeviceInfo>, VxApoError>;
 
 ### 5.5 `install/selector.rs`
 
-**职责**：CLI 选择界面。枚举设备、列出名称、让用户选择，调用 `install.rs` 执行操作。
+**职责**：**设备选择 + 安装/卸载执行 + 事务回滚**（原 `install.rs` + `rollback.rs` 合并至此，v6.3 定稿）。
 
 **引用来源**：
-- `install/device/info::DeviceInfo`
-- `install/device/info::enumerate_devices`
-- `install/install::{install_endpoint, uninstall_endpoint, InstallConfig}`
+- `install/device/slots::*`（ApoSlot / InstallMode / SlotValue / read_all_slots / FX_PROPERTIES_KEY / INSTALL_VERSION）
+- `install/device/format::*`
+- `crate::sys::registry::{RegKey, RegValue}`
+- `crate::object::vx_reg_props::{CLSID_VXAPO_PRE_MIX, CLSID_VXAPO_POST_MIX}`
+- `crate::sys::com::prelude::guid_to_string`（GUID 格式化）
+- `crate::utils::vx_error::{Result, VxApoError}`
 
 **导出给**：外部 CLI
 
 **公开 API**：
 
 ```rust
+// ── 设备选择 ──
 pub fn list_devices() -> Result<Vec<DeviceInfo>>;
 pub fn select_device() -> Result<Option<DeviceInfo>>;
 pub fn run_install_flow() -> Result<()>;
 pub fn run_uninstall_flow() -> Result<()>;
 pub fn print_device_list(devices: &[DeviceInfo]);
 pub fn prompt_user(devices: &[DeviceInfo]) -> Result<usize>;
+
+// ── 安装/卸载（原 install.rs 职责，合并至此） ──
+pub struct InstallConfig { ... }  // 字段同原 InstallConfig
+impl InstallConfig {
+    pub fn default_config() -> Self;  // SfxEfx, 双向安装, allow_silent = true
+}
+
+pub fn install_endpoint(
+    device_guid: &str,
+    device_name: &str,
+    connection_name: &str,
+    config: &InstallConfig,
+) -> Result<()>;
+
+pub fn uninstall_endpoint(device_guid: &str) -> Result<()>;
 ```
 
-**禁止**：不直接操作注册表（通过 `install.rs`）
+**Note 47 安装流程**（7 步）：
+1. 创建 Child APOs 键
+2. FxProperties 不存在则创建（失败则权限提升重试，Note 31）
+3. 已存在则备份原始 GUID（best-effort）+ 记录槽位回滚
+4. 写入子 APO 配置（childGuid / allowSilentBuffer / autoAdjust / version）
+5. 按模式写入 APO GUID（删除非当前模式的旧槽位）
+6. 写入默认处理模式 GUID（AUDIO_SIGNALPROCESSINGMODE_DEFAULT）
+7. 删除 DisableEnhancements
+
+整个安装在 `Transaction`（Drop 时逆序回滚）保护下执行，任何步骤失败时自动回滚。
+
+**卸载流程**：
+1. 定位端点 FxProperties（不存在 → 视为未安装，返回成功）
+2. 读取当前槽位，删除 VxAPO 的 CLSID
+3. 删除子 APO 配置值（childGuid / allowSilentBuffer / autoAdjust / version）
+4. 删除 DisableEnhancements
+
+**事务回滚（原 rollback.rs 职责，合并至此）**：
+
+```rust
+enum RollbackAction {
+    DeleteKey(String),
+    RestoreValue { key_path: String, name: String, backup: Vec<u8> },
+}
+
+struct Transaction { ... }
+// Drop 时未 commit 则逆序执行全部回滚动作
+```
+
+**已知待办**（v6.3 如实描述当前实现）：
+- `list_endpoints()` 返回空列表——依赖 sys/registry 的键枚举能力，当前为占位实现，由上层通过已知设备 GUID 直接调用 `install_endpoint`
+- .reg 备份为简化实现：实际写入 `C:\ProgramData\VxAPO\backups\{设备名}_{连接名}.txt` 描述文件（非标准 .reg 格式）
+
+**禁止**：不依赖 `pipeline/`、`config/`
 
 ---
 
@@ -376,147 +424,5 @@ pub fn ensure_can_load() -> Result<()>;
 - `disable()` 使用 `RegKey::create()` 获取可写句柄，`write_dword()` 写入 1，`handle()` 获取底层 HKEY
 - `restore()` 使用 `RegKey::open()` 获取句柄，`handle()` 获取底层 HKEY，`delete_value()` 删除值（值不存在静默返回）
 - 不使用 unsafe 指针转换（pre 的 `RegKey::handle()` 已暴露底层句柄）
-
----
-
-### 5.7 `install/rollback.rs`
-
-**职责**：安装事务管理与 .reg 备份。RAII Drop 保证安装失败时自动回滚。
-
-**引用来源**：
-- `crate::sys::registry::{read, write}`
-- `crate::utils::error::Result`
-
-**导出给**：`install/install.rs`
-
-**公开 API**：
-
-```rust
-/// 安装操作的回滚项。
-#[derive(Debug)]
-pub enum RollbackAction {
-    DeleteKey(String),
-    RestoreValue { root: HKEY, key: String, name: String, backup: Vec<u8> },
-    DeleteClsidKey(String),
-}
-
-/// 分层事务管理器。
-///
-/// 安装过程中记录所有操作。失败时 Drop 自动按逆序回滚。
-/// 成功时调用 `commit()` 禁用回滚。
-#[derive(Debug)]
-pub struct Transaction;
-
-impl Transaction {
-    pub fn new() -> Self;
-    pub fn record(&mut self, action: RollbackAction);
-    pub fn commit(&mut self);
-    pub fn rollback(&mut self);
-    pub fn action_count(&self) -> usize;
-    pub fn is_committed(&self) -> bool;
-}
-// Drop 时未 commit 则自动 rollback
-
-/// 备份设备 FxProperties 到 .reg 文件（Note 32）。
-/// 文件名格式：`backup_{设备名}_{连接名}.reg`
-pub fn backup_fx_properties(
-    device_name: &str,
-    connection_name: &str,
-    fx_properties_path: &str,
-    output_dir: &str,
-) -> Result<String>;
-```
-
----
-
-### 5.8 `install/install.rs`
-
-**职责**：设备级 APO 安装与卸载。实现 Note 47 定义的完整 7 步安装流程。
-
-**引用来源**：
-- `install/device/slots::*`
-- `install/device/format::*`
-- `install/rollback::{Transaction, RollbackAction}`
-- `crate::sys::registry::{read, write}`
-- `crate::object::vx_reg_props::{CLSID_VXAPO_PRE_MIX, CLSID_VXAPO_POST_MIX}`
-- `crate::utils::error::*`
-- `crate::utils::guid::*`
-
-**导出给**：`install/selector.rs`
-
----
-
-#### InstallConfig
-
-```rust
-/// 安装参数。
-pub struct InstallConfig {
-    /// 是否安装 PreMix APO。
-    pub install_premix: bool,
-    /// 是否安装 PostMix APO。
-    pub install_postmix: bool,
-    /// 安装模式（决定使用哪两个槽位）。
-    pub install_mode: InstallMode,
-    /// 是否保留原有 PreMix APO 作为子 APO。
-    /// true 时读取当前 PreMix 槽位 GUID 写入 childGuid。
-    pub use_original_apo_premix: bool,
-    /// 是否保留原有 PostMix APO 作为子 APO。
-    pub use_original_apo_postmix: bool,
-    /// 是否允许静音缓冲区快速路径（Note 11）。
-    pub allow_silent_buffer: bool,
-}
-
-impl InstallConfig {
-    pub fn default_config() -> Self;  // SfxEfx, 双向安装, allow_silent = true
-}
-```
-
----
-
-#### 7 步安装流程（Note 47）
-
-```rust
-/// 安装 VxAPO 到指定音频端点。
-///
-/// Note 47 完整流程：
-/// 1. 创建 Child APOs 键
-/// 2. FxProperties 不存在则创建（失败则权限提升重试，Note 31）
-/// 3. 已存在则备份原始 GUID 到 .reg（Note 32）+ 记录回滚
-/// 4. 写入子 APO 配置（childGuid / allowSilentBuffer / autoAdjust / version）
-/// 5. 按模式写入 APO GUID（删除非当前模式的旧槽位）
-/// 6. 写入默认处理模式 GUID（AUDIO_SIGNALPROCESSINGMODE_DEFAULT）
-/// 7. 删除 DisableEnhancements
-///
-/// 整个安装在 Transaction 保护下执行，任何步骤失败时自动逆序回滚。
-pub fn install_endpoint(
-    device_guid: &str,
-    device_name: &str,
-    connection_name: &str,
-    config: &InstallConfig,
-) -> Result<()>;
-```
-
-**注册表路径**：
-- `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Render\{device}\FxProperties`
-- `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Capture\{device}\FxProperties`
-
-**安装写入**（与 pre 规范一致）：
-- `LfxGfx`：PreMix → LFX(0)，PostMix → GFX(1)，删除 SFX/MFX/EFX
-- `SfxMfx`：PreMix → SFX(2)，PostMix → MFX(3)，删除 LFX/GFX/EFX
-- `SfxEfx`：PreMix → SFX(2)，PostMix → EFX(4)，删除 LFX/GFX/MFX
-
----
-
-#### 卸载流程
-
-```rust
-/// 从指定音频端点卸载 VxAPO。
-///
-/// 1. 定位端点 FxProperties
-/// 2. 读取当前槽位，删除 VxAPO 的 CLSID
-/// 3. 删除子 APO 配置值（childGuid / allowSilentBuffer / autoAdjust / version）
-/// 4. 删除 DisableEnhancements
-pub fn uninstall_endpoint(device_guid: &str) -> Result<()>;
-```
 
 **禁止**：不知道 `pipeline/` 的存在
