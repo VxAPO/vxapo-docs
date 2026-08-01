@@ -1279,6 +1279,7 @@ const _: () = {
 - `crate::object::ref_count`
 - `crate::object::vx_reg_props`
 - `crate::sys::com::prelude::*`
+- `crate::sys::registry`（CLSID 键写入，HKCR 根键）
 - `crate::telemetry`
 
 ---
@@ -1364,11 +1365,24 @@ pub extern "system" fn DllCanUnloadNow() -> HRESULT {
 pub extern "system" fn DllRegisterServer() -> HRESULT;
 ```
 
+**职责边界（v7.1 澄清）**：`regsvr32` 调用本函数时**无设备参数**，因此本函数**只能**完成
+**全局 COM 类注册**——使 DLL 可被 `CoCreateInstance` 实例化（`object/factory.rs`）。
+**不包含** APO 设备挂载 / FxProperties 绑定——那属于 `install_endpoint`（`install 5.5.2`），
+由 `vxapo-cli install -d <device>` 触发。二者分层，`regsvr32` 不绑定设备。
+
 **流程**：
-1. 获取 DLL 路径（`GetModuleFileNameW` + `MODULE_HANDLE`）
-2. 按注册顺序（PostMix → PreMix）逐个注册 CLSID
-3. 每个 CLSID 写入 `HKCR\CLSID\{GUID}\InprocServer32`（路径 + `ThreadingModel = "Both"`）
-4. 注册失败时回滚已注册条目
+1. 获取 DLL 路径（`GetModuleFileNameW` + `MODULE_HANDLE`；失败 → `SELFREG_E_CLASS`）
+2. 按 `vx_reg_props::registration_order()`（PostMix → PreMix）逐个注册 CLSID
+3. 每个 CLSID：
+   - 创建/打开 `HKCR\CLSID\{GUID}\InprocServer32`（经 `sys/registry`）
+   - 写 `(Default)` = DLL 路径，`ThreadingModel` = `"Both"`
+4. **幂等性**：键已存在时覆盖写入（重复 `regsvr32` 安全）
+5. 任一步失败 → 按已注册条目的逆序回滚 → 返回 `SELFREG_E_CLASS`
+6. 全部成功 → `S_OK`
+
+**禁止**：
+- 触碰 `MMDevices` / `FxProperties`（设备绑定属 `install_endpoint`）
+- 在函数内创建线程 / 初始化 COM（`CoInitializeEx` 由 regsvr32 宿主进程负责）
 
 ---
 
@@ -1379,10 +1393,14 @@ pub extern "system" fn DllRegisterServer() -> HRESULT;
 pub extern "system" fn DllUnregisterServer() -> HRESULT;
 ```
 
+**职责边界**：仅删除 `DllRegisterServer` 创建的全局 COM 类键。**不触碰设备关联**。
+
 **流程**：
-1. 按注销顺序（PreMix → PostMix，与注册相反）
-2. 先删 `InprocServer32` 子键，再删 `CLSID` 父键
-3. 尽力清理，即使某条目注销失败也继续
+1. 按 `vx_reg_props::unregistration_order()`（PreMix → PostMix，与注册相反）
+2. 每个 CLSID：先删 `InprocServer32` 子键，再删 `CLSID\{GUID}` 父键
+3. **幂等性**：键不存在视为成功（重复 `regsvr32 /u` 安全）
+4. 尽力清理：某条目失败也继续后续
+5. 全部完成 → `S_OK`
 
 ---
 
@@ -1393,9 +1411,14 @@ pub extern "system" fn DllUnregisterServer() -> HRESULT;
 fn get_dll_path() -> Option<String>;
 
 /// 注册单个 CLSID 的 COM 类。
+///
+/// 写入 `HKCR\CLSID\{GUID}\InprocServer32`（创建/打开 + 写值，经 `sys/registry`）。
+/// 失败返回具体 HRESULT，由 `DllRegisterServer` 统一回滚。
 fn register_com_class(entry: &vx_reg_props::ClsidEntry, dll_path: &str) -> Result<(), HRESULT>;
 
 /// 注销单个 CLSID 的 COM 类。
+///
+/// 先删 `InprocServer32` 子键，再删 `CLSID\{GUID}` 父键；键不存在视为成功（幂等）。
 fn unregister_com_class(entry: &vx_reg_props::ClsidEntry) -> Result<(), HRESULT>;
 
 /// 将字符串转为注册表所需的 null-terminated UTF-16 字节数组。

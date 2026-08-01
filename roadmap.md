@@ -24,14 +24,20 @@
 
 > 达标口径：regsvr32 注册 → Windows 加载 → 按设备读 config.txt → passthrough + 热重载生效。
 
-### P0-1  DllRegisterServer 补全（APO 注册 + FxProperties 绑定）
-- 状态：Backlog
+### P0-1  DllRegisterServer 补全（COM 类注册，APO 可加载）
+- 状态：Spec-Finalized
 - 优先级：P0 ｜ 关联 Phase：Phase 1-9
-- 目标：DLL 可 `regsvr32` 注册，APO 正确挂载到端点，FxProperties 设备绑定完整
-- 影响模块：`object/dll_exports.rs`、`install/device/slots.rs`、`object/vx_reg_props.rs`
-- 规范落点：（定稿时回填）
+- 目标：DLL 可 `regsvr32` 注册（2 个 CLSID 的 COM 类键 + ThreadingModel），APO 对象可被 `CoCreateInstance` 实例化
+- 影响模块：`object/dll_exports.rs`、`object/vx_reg_props.rs`
+- 规范落点：`object 7.6`（DllRegisterServer/DllUnregisterServer 职责边界 + 完整流程）、`主规范 十一`（dll_exports 依赖补 sys/registry）
 - 依赖：无
-- DoD：☐ 规范定稿 ☐ 实现 ☐ 测试
+- DoD：☑ 规范定稿（v7.1）☐ 实现 ☐ 测试
+
+> **分工澄清（v7.1 定稿）**：`regsvr32` 无设备参数，只做全局 COM 类注册（DLL 可加载）；
+> "挂载到端点 + FxProperties 设备绑定"由 `install_endpoint`（`install 5.5.2`）承担，经 `vxapo-cli install -d <device>` 触发。两者分层，regsvr32 不绑定设备。
+>
+> **合规性**：引用约束总表已更新（dll_exports 增 `sys/registry`）；不触碰 RT；不触碰 MMDevices/FxProperties（边界清晰）。
+> **实现验收**：`regsvr32 vxapo.dll` → `CoCreateInstance` 两个 CLSID 均可实例化；`regsvr32 /u` 后键清理、重复注册/注销幂等。
 
 ### P0-2  config.txt 解析链路补齐（命令工厂替换 NoMatch）
 - 状态：Backlog

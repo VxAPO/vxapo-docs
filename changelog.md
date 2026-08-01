@@ -1,5 +1,16 @@
 # Changelog
 
+## v7.1 — 2026-08-01
+
+变更类型：`实现对齐`（P0-1 DllRegisterServer 规范补齐）
+
+- **regsvr32 职责边界澄清**：`DllRegisterServer` 无设备参数，只做全局 COM 类注册（2 个 CLSID 的 COM 类键 + ThreadingModel）；设备挂载/FxProperties 绑定归 `install_endpoint`，经 `vxapo-cli install -d` 触发——**对应章节**：`object 7.6`
+- **DllRegisterServer 完整流程**：注册顺序（PostMix→PreMix）+ 幂等覆盖 + 失败逆序回滚（`SELFREG_E_CLASS`）+ 禁止触碰 MMDevices/FxProperties——**对应章节**：`object 7.6`
+- **DllUnregisterServer 幂等**：键不存在视为成功（重复 `regsvr32 /u` 安全），尽力清理——**对应章节**：`object 7.6`
+- **dll_exports 依赖补全**：引用约束总表增加 `sys/registry`（CLSID 键写入）——**对应章节**：`主规范 十一`、`object 7.6`
+
+> 对应 commit：`待提交回填`
+
 ## v7.0 — 2026-08-01
 
 变更类型：`结构重构`（引入路线清单治理机制，v6.9 → v7.0 major 递增）
