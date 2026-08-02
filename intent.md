@@ -250,8 +250,8 @@ roadmap.md（路线清单——要做什么）
 实现（执行端 agent）
 ```
 
-> **intent 对 roadmap/规范的约束规则独立维护于 `intent-rule.md`**——本文件只承载产品定义本身，
-> 不承载治理规则（规则见 `intent-rule.md`）。
+> **intent 对 roadmap/规范的约束规则独立维护于 `.clinerules/intent-rule.md`**——本文件只承载产品定义本身，
+> 不承载治理规则（规则见 `.clinerules/intent-rule.md`）。
 >
 > **本文件变更不需要 changelog、不需要主规范版本递增**——intent 是产品意愿的反馈、
 > 与规范实现解耦；它只影响 roadmap 的决策（何时规划、如何规划），不直接改变规范语义。
