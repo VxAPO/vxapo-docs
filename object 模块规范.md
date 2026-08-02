@@ -258,6 +258,14 @@ pub struct ApoObjectInner {
     /// 触发一次的 hot_reload 会将此置回 false；期间新变更请求被忽略，
     /// 避免 pending_reload 被连续变更覆盖。
     pub reloading: bool,
+    /// 生效配置指纹（v7.9，P0-4 配置变更检测）——
+    /// **当前正在生效的音频处理链的 filter_spec 有序序列**（config 6.1 定义）。
+    /// - LockForProcess：建立基线（本次解析产出）
+    /// - hot_reload：解析成功后**立即**更新（与 current_chain 指向新链同步）
+    /// - 过渡在途时不变更（hot_reload 阻塞退出，无竞态）
+    /// - UnlockForProcess / Reset：清空（重新 Lock 重新建基线）
+    /// 类型：`Vec<config::parser::FilterSpec>`（FilterSpec = String）。
+    pub active_spec: Vec<String>,
 }
 ```
 
@@ -479,24 +487,26 @@ fn Initialize(&self, cb_data_size: u32, pby_data: *mut u8) -> HRESULT {
     //    c. 拼接：{Documents}\VxAPO\{GUID}\  → config_path
     //    d. 目录不存在 → std::fs::create_dir_all 创建
     //    e. config.txt 不存在 → 写入默认 passthrough（空文件或仅注释行）
-    // 6. 启动 watcher（v7.8，P0-4——事件驱动，废弃 v7.3 轮询）：
-    //    watch_dir = config_path 父目录（Documents\VxAPO\{GUID}）
-    //    经 config/watcher.rs::ConfigWatcher::new(watch_dir, shutdown_event)
-    //    FindFirstChangeNotificationW 阻塞等待 → 文件名筛选 == config.txt → hot_reload（7.1.18）
+    // 6. 记录 config_path（watcher **不在 Initialize 启动**——v7.9 修订：
+    //    此时未锁定（无 current_chain/active_spec），hot_reload 无处放新链；
+    //    watcher 改在 LockForProcess 末尾启动（7.1.9），生命周期随锁定周期）
     // 7. self.config_path = path；返回 S_OK
 }
 ```
 
-**watcher 启动约定（v7.8 修订，P0-4——v7.3 轮询废弃，改事件驱动对齐 EAPO）**：
+**watcher 启动约定（v7.9 修订，P0-4——v7.8 事件驱动 + v7.9 生命周期随锁定周期）**：
 > - 监控对象 = **config_path 父目录**（`Documents\VxAPO\{GUID}`），**非 config.txt 文件本身**——
 >   监控文件在文件被删除重建时句柄可能失效，监控目录天然健壮（对齐 EAPO `FindFirstChangeNotificationW` 目录用法）
 > - **事件驱动**（v7.8，`config 6.2`）：`FindFirstChangeNotificationW` + `WaitForMultipleObjects`
 >   阻塞等待，替代旧 2000ms 轮询——延迟 10ms 级、无空闲 CPU
-> - **去重窗口 10ms**（v7.8，对齐 EAPO + 旧框架 Note 72）：编辑器「写临时文件 + rename」的多次通知在 10ms 内合并
-> - 事件触发 → **校验文件名 == "config.txt"**（目录下其他文件变更忽略）→ `hot_reload`（7.1.18）
-> - **退出**：APO 实例持有 `shutdown_event`，析构/UnlockForProcess 时 `SetEvent` + join watcher 线程
-> - `ConfigWatcher` 生命周期与 APO 实例一致（`ApoObject.watcher` 字段持有）；
->   `UnlockForProcess` / `Reset` 不停止 watcher（配置热重载跨锁定周期持续生效）
+> - **去重窗口 10ms**（v7.8，对齐 EAPO + 旧框架 Note 72）：编辑器「写临时文件 + rename」的多次通知在 10ms 内合并——但**内容未变的变更（注释/空白/重存）经 spec 比对短路跳过**（7.1.18）
+> - **事件触发 → `hot_reload`（7.1.18）**：目录级通知**不提供具体文件名**（`FindFirstChangeNotificationW`
+>   语义限制），不做逐文件过滤；hot_reload 内 128KB 闸门 + spec 指纹比对决定是否真正切换
+> - **生命周期随锁定周期（v7.9 修订）**：`LockForProcess` 末尾**启动**（7.1.9）、
+>   `UnlockForProcess` **停止**（7.1.10，`SetEvent` + join）；unlocked 期间无音频流，
+>   配置更新无意义，重新 Lock 必然重读 config 建立新基线——unlocked 期间的变更在重新 Lock 时自然生效
+> - **退出**：APO 实例持有 `shutdown_event`，UnlockForProcess 时 `SetEvent` + join watcher 线程
+> - `ConfigWatcher` 由 `ApoObject.watcher` 字段持有（`Option<ConfigWatcher>`），生命周期与锁定周期一致
 
 **config_path 确定规则（v7.2，P0-3）**：
 
@@ -575,7 +585,9 @@ fn LockForProcess(&self, num_input, pp_inputs, num_output, pp_outputs) -> HRESUL
         stage: ProcessingStage::None,
         variables: HashMap::new(),
     };
-    let filters = self.config_parser.parse_file(&self.config_path, &dsp_ctx)?;
+    // v7.9 修订：parse_file_with_spec → (滤波器列表, spec chain) 双返回。
+    // active_spec 即本次解析产出的配置指纹（LockForProcess 建立基线）。
+    let (filters, spec_chain) = self.config_parser.parse_file_with_spec(&self.config_path, &dsp_ctx)?;
     let mut chain = Chain::new();
     for f in filters { chain.add_filter(f)?; }
     let total_latency = chain.total_latency();
@@ -602,6 +614,9 @@ fn LockForProcess(&self, num_input, pp_inputs, num_output, pp_outputs) -> HRESUL
     inner.temp_buffer_new = temp_buffer_new;
     inner.pending_reload = false;
     inner.reloading = false;      // R2：新锁定周期无加载在途
+    // v7.9：active_spec 建立基线（当前生效链的配置指纹）。
+    // 此后 hot_reload 与此基线比较决定是否真正切换。
+    inner.active_spec = spec_chain;
 
     // 写入两个原子延迟值
     self.latency_samples.store(total_latency, Ordering::SeqCst);
@@ -615,6 +630,19 @@ fn LockForProcess(&self, num_input, pp_inputs, num_output, pp_outputs) -> HRESUL
 
     // 成功：disarm guard，不回退
     guard.disarm();
+
+    // v7.9（P0-4）：LockForProcess 末尾**启动 watcher**（事件驱动热重载）。
+    // - 启动时机：此处而非 Initialize——此刻 state=Locked、
+    //   config_path/current_chain/active_spec 三件套就绪，hot_reload 回调时
+    //   所有依赖必存在，杜绝"未锁定时新链无处放"分支。
+    // - 前置 I/O 已完成：Initialize 的目录创建/默认 config 写入不会触发 watcher 空转。
+    // - 对齐 EAPO：startMonitorThread() 在 LockForProcess 内调用。
+    // - watch_dir = config_path 父目录（Documents\VxAPO\{GUID}）；
+    //   shutdown_event 由 APO 实例持有（UnlockForProcess 时 SetEvent + join）。
+    // - 启动失败：降级（watcher=None，仅日志），不阻塞锁定——配置热重载失效但音频链路正常。
+    if let Err(e) = self.start_watcher() {
+        self.logger.log(LogLevel::Warn, &format!("LockForProcess: watcher start failed: {e}"));
+    }
     S_OK
 }
 ```
@@ -649,8 +677,19 @@ fn UnlockForProcess(&self) -> HRESULT {
     inner.temp_buffers.clear();
     inner.temp_buffer_old.clear();
     inner.temp_buffer_new.clear();
+    // v7.9：释放配置指纹基线（重新 Lock 时重建）。
+    inner.active_spec.clear();
     self.latency_samples.store(0, Ordering::SeqCst);
     self.latency_frames_atomic.store(0, Ordering::SeqCst);
+
+    // v7.9（P0-4）：**停止 watcher**（生命周期随锁定周期，7.1.8 约定）。
+    // unlocked 期间无音频流，配置热重载无意义；重新 Lock 必然重读 config
+    // 建立新基线，unlocked 期间的变更在重新 Lock 时自然生效。
+    // SetEvent + join watcher 线程（shutdown_event 由 APO 实例持有）。
+    drop(inner);
+    if let Some(watcher) = self.watcher.take() {
+        watcher.shutdown();
+    }
     S_OK
 }
 ```
@@ -802,6 +841,8 @@ fn Reset(&self) -> HRESULT {
     inner.temp_buffers.clear();
     inner.temp_buffer_old.clear();
     inner.temp_buffer_new.clear();
+    // v7.9：清空配置指纹基线（重新 Lock 重新建立）。
+    inner.active_spec.clear();
     self.latency_samples.store(0, Ordering::SeqCst);
     self.latency_frames_atomic.store(0, Ordering::SeqCst);
     S_OK
@@ -929,17 +970,40 @@ fn hot_reload(&self) {
         }
     }
 
-    // 2. 锁外解析配置（不持有 mutex）。此刻保证无过渡在途。
+    // 2. 文件大小闸门（v7.9，P0-4）：config 超过 128KB 拒绝读取——
+    //    控制线程 IO 安全上限；主文件与每个 Include 子文件**逐文件**判定
+    //    （config 6.1 parse_file_with_spec 内统一执行，此处为提前短路）。
+    //    正常 config.txt < 1KB；超限视为异常文件，保留当前链 + 日志告警。
+    if std::fs::metadata(&self.config_path).map(|m| m.len() > MAX_CONFIG_FILE_SIZE).unwrap_or(false) {
+        self.logger.log(LogLevel::Error, "hot_reload: config exceeded 128KB — keeping old chain");
+        return;
+    }
+
+    // 3. 锁外解析配置（不持有 mutex）。此刻保证无过渡在途。
+    //    v7.9：parse_file_with_spec → (滤波器列表, spec chain) 双返回。
     let current_ctx = { self.mutex.lock().unwrap().pipeline_context.clone() };
-    let filters = match self.config_loader.parse_file(&self.config_path, &mut ctx) {
-        Ok(f) => f,
+    let (filters, new_spec) = match self.config_parser.parse_file_with_spec(&self.config_path, &current_ctx) {
+        Ok(result) => result,
         Err(_) => {
-            // v7.8 修订（EAPO 对齐）：解析失败**保留旧链**（log::warn + 返回，不建新链）——
-            // 用户 EQ 不受影响；仅 LockForProcess **首次加载**失败才建空链直出（无旧链可保留）。
+            // v7.9：解析失败 = 整体失败（语法错误 / Include 失败 / 任一文件
+            // 超 128KB）→ **保留旧链、不更新 active_spec**（v7.8 对齐 EAPO：
+            // log::warn + 返回）。仅 LockForProcess 首次加载失败才建空链直出。
             self.logger.log(LogLevel::Error, "hot_reload: config parse failed — keeping old chain");
             return;
         }
     };
+    {
+        let inner = self.mutex.lock().unwrap();
+        // 4. spec 指纹短路（v7.9，P0-4）：与 active_spec 逐项比较——
+        //    相同 → 配置实质未变（注释/空白/重存/无关目录文件变更），
+        //    跳过，不构建新链、不触发过渡、日志 debug。
+        if new_spec == inner.active_spec {
+            log::debug!("hot_reload: config unchanged — skip");
+            return;
+        }
+    }
+
+    // 5. 构建新链（锁外）
     let mut new_chain = Chain::new(current_ctx.max_frame_count);
     for f in filters {
         if let Err(_) = new_chain.add_filter(f) {
@@ -948,13 +1012,16 @@ fn hot_reload(&self) {
         }
     }
 
-    // 3. 短锁内交换（仅交换指针）
+    // 6. 短锁内交换（仅交换指针）
     let mut inner = self.mutex.lock().unwrap();
     if inner.transition.is_some() {
         // 竞态兜底：解析期间可能已有新过渡启动，退回阻塞。
         inner.pending_reload = true;
         return;
     }
+    // v7.9：**构建成功即更新 active_spec**（与 current_chain 指向新链同步，
+    // 避免"过渡完成忘记更新"记忆负担；过渡期间 hot_reload 阻塞退出无竞态）。
+    inner.active_spec = new_spec;
 
     let old = std::mem::replace(&mut inner.current_chain, Box::new(new_chain));
     // 旧链进 outgoing（过渡窗口内由 RT 双处理）；
@@ -967,6 +1034,18 @@ fn hot_reload(&self) {
     inner.reloading = false;
     // 当前过渡在途；下次变更由 APOProcess 过渡完成后触发（reloading 防覆盖）。
 }
+```
+
+> **解析失败语义（v7.9 修订，P0-4）**：`parse_file_with_spec` 返回 `Err`（语法错误 /
+> Include 失败 / 任一文件超 128KB）→ **整体解析失败 → 保留旧链、不更新 active_spec**
+> （v7.8 对齐 EAPO：log::warn + 返回；v7.9 明确 Include 失败 = 整体失败，杜绝
+> "残缺 spec 污染基线"）。仅 LockForProcess **首次加载**失败才建空链直出（无旧链可保留）。
+>
+> **规格：128KB 逐文件上限**（v7.9，P0-4，`config 6.1`）：`MAX_CONFIG_FILE_SIZE` 常量；
+> 主文件与每个 Include 子文件分别 check，任一超限 → 整体解析失败。
+>
+> **spec 比对位置**（v7.9）：在**短锁内**比较 `new_spec == active_spec`（避免锁外读取
+> 与交换的 TOCTOU）；比较在构建链以先（成本 O(n) 字符串相等，远小于解析/构建）。
 ```
 
 ---

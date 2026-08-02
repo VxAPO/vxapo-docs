@@ -257,20 +257,39 @@
 - 状态：Spec-Finalized
 - 优先级：P0 ｜ 关联 Phase：Phase 10
 - 目标：监控线程检测 config.txt 变更 → swap 串联 → 升余弦过渡；修改文件实时生效且无爆音（对齐 v6.9 R1-R4）
-- 影响模块：`config/watcher.rs`、`object/apo.rs`（hot_reload/APOProcess）
-- 规范落点：`object 7.1.8`（watcher 启动约定：**v7.8 事件驱动**父目录监控 + 10ms 去重 + shutdown 事件）、`config 6.2`（v7.8 FindFirstChangeNotificationW 事件驱动）、`object 7.1.9`（过渡缓冲预分配，v7.8）、`object 7.1.18`（热重载失败保留旧链，v7.8）
+- 影响模块：`config/watcher.rs`、`config/parser.rs`（filter_spec 产出，v7.9）、`object/apo.rs`（hot_reload/APOProcess）
+- 规范落点：`config 6.1`（filter_spec 契约 + parse_file_with_spec + 128KB 逐文件闸门，v7.9）、`config 6.2`（目录级事件驱动 + DirectoryChanged，v7.8/v7.9）、`object 7.1.8`（watcher 生命周期随锁定周期，v7.9）、`object 7.1.9`（末尾启动 watcher + active_spec 基线，v7.9）、`object 7.1.18`（spec 短路 + 保留旧链，v7.9）、`intent.md`（产品意图）
 - 依赖：P0-3（已 Done ✅）
-- DoD：☑ 规范定稿（v7.3/v7.8）☐ 实现 ☐ 测试（含手动听感验证）
+- DoD：☑ 规范定稿（v7.3/v7.8/v7.9）☐ 实现 ☐ 测试（含手动听感验证）
 
-> **定稿说明（v7.3，v7.8 修订）**：watcher 能力由**轮询（2000ms + 500ms 去重）**升级为
+> **定稿说明（v7.3，v7.8/v7.9 修订）**：watcher 能力由**轮询（2000ms + 500ms 去重）**升级为
 > **Win32 事件驱动**（`FindFirstChangeNotificationW` + `WaitForMultipleObjects` + 10ms 去重 +
-> shutdown_event 退出）——对齐 EAPO `notificationThread`（v7.8，`config 6.2`）。
-> 同时：热重载解析失败**保留旧链**（EQ 不消失）、过渡缓冲 LockForProcess **预分配充足容量**
-> （杜绝 RT resize）。
+> shutdown_event 退出）——对齐 EAPO `notificationThread`。
+> v7.9（执行端反馈 → 方案定型）：
+> - 目录级语义：`FindFirstChangeNotificationW` 不提供文件名，旧「校验 config.txt」无法实现
+>   → 统一 `DirectoryChanged`，hot_reload 内 spec 指纹比对决定是否切换。
+> - 配置指纹：parser 产出 `FilterSpec`（命令名 + `\x1F` + token 规范化），
+>   `parse_file_with_spec` 双返回；Include 失败 = 整体失败。
+> - 行为链：目录变更 → 128KB 闸门 → 重新解析 + spec 比对 → 相同幂等跳过 / 不同建新链过渡。
+> - watcher 生命周期随锁定周期：Lock 末尾启动、Unlock 停止。
+> - 同时：热重载解析失败**保留旧链**、过渡缓冲 LockForProcess **预分配充足容量**（v7.8）。
 >
 > **合规性**：watcher 为后台线程（控制路径，I/O 允许）；事件仅在非过渡期触发 hot_reload；
 > 不触碰 RT 分配/锁。**实现验收**：修改 `Documents\VxAPO\{GUID}\config.txt` → 音频变化无爆音；
-> 10ms 内生效；解析出错时旧 EQ 保持。
+> 10ms 内生效；解析出错时旧 EQ 保持；无关文件变更/内容未变不触发过渡（spec 短路）。
+>
+> ### 执行端反馈（v7.9，P0-4 目录级语义矛盾）
+> - **问题**：config 6.2 事件驱动流程「校验文件名 == config.txt」与
+>   `FindFirstChangeNotificationW` 语义矛盾——目录级通知**不提供具体文件名**，
+>   无法逐文件过滤（文件名信息只有 `ReadDirectoryChangesW` 扩展才有）。
+> - **方案定型（用户）**：不做文件名校验；目录任何变更 → hot_reload → 128KB 闸门 →
+>   重新解析 + `parse_file_with_spec` 产出 spec chain → 与 active_spec 比较 →
+>   相同幂等跳过 / 不同建新链过渡。**根因**：不比较文件内容（哈希/String），
+>   而比较**解析后的配置指纹**（含 Include 递归展开）——"配置实质变了"的真实语义。
+> - **规范修订（v7.9）**：config 6.1（FilterSpec 契约 + parse_file_with_spec + 裸命令可达性）、
+>   config 6.2（DirectoryChanged 目录级）、object 7.1.8/7.1.9/7.1.10（watcher 生命周期）、
+>   object 7.1.18（spec 短路 + 128KB 闸门）、object 7.1.3（active_spec 字段）——
+>   **对应章节**：`config 6.1/6.2`、`object 7.1.3/7.1.8/7.1.9/7.1.10/7.1.18`、`intent.md`
 
 ### P0-5  RT 入口 panic 防护（catch_unwind）
 - 状态：Backlog

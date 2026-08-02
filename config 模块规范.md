@@ -90,7 +90,8 @@ impl std::error::Error for ConfigError {}
 
 ### 6.1 `config/parser.rs`
 
-**职责**：配置文件解析器。读取文件、逐行分发到命令处理器，返回 `Vec<Box<dyn Filter>>`。
+**职责**：配置文件解析器。读取文件、逐行分发到命令处理器，返回 `Vec<Box<dyn Filter>>`，
+并产出配置指纹（filter_spec 序列，v7.9——供 object 层热重载判定配置是否实质变化）。
 
 **引用来源**：
 - `crate::config::error::ConfigError`
@@ -106,6 +107,17 @@ impl std::error::Error for ConfigError {}
 #### ConfigParser
 
 ```rust
+/// 一条成功解析命令的规范化指纹（v7.9，配置变更检测）。
+///
+/// **单一字符串**：命令名（小写）+ `\x1F` + token 级规范化参数。
+/// 仅用于 `==` 等值比较（有序 spec chain 逐项比较）；不可逆向还原 config 原文。
+/// 分隔符 `\x1F`（ASCII Unit Separator）——config.txt 文本中不可能出现，杜绝冲突。
+pub type FilterSpec = String;
+
+/// 配置指纹（spec chain）：一次完整解析产出的 filter_spec 有序序列。
+/// 保持 config.txt 原始行顺序（滤波器串联顺序影响处理结果）。
+pub type SpecChain = Vec<FilterSpec>;
+
 /// 配置文件解析器。
 ///
 /// 持有 FilterRegistry，提供文件/字符串/行列表三种解析入口。
@@ -121,6 +133,17 @@ impl ConfigParser {
     /// 返回 Vec<Box<dyn Filter>>。
     pub fn parse_file(&self, path: &str, ctx: &DspContext) -> Result<Vec<Box<dyn Filter>>, ConfigError>;
 
+    /// 解析配置文件，同时产出配置指纹（v7.9，P0-4 配置变更检测主入口）。
+    ///
+    /// - 返回 `(滤波器列表, SpecChain)` 双元组；
+    /// - 128KB **逐文件**上限：主文件与每个 Include 子文件分别判定
+    ///   （`MAX_CONFIG_FILE_SIZE = 128 * 1024`），任一超限 → 整体解析失败；
+    /// - Include 子文件在 parser 层递归展开，子文件命令的 filter_spec 内联到
+    ///   主 spec chain——子文件变更经「重读主 config → 递归展开」自然反映；
+    /// - Include 失败 = 整体解析失败（与语法错误同级，杜绝"残缺 spec 污染基线"）。
+    pub fn parse_file_with_spec(&self, path: &str, ctx: &DspContext)
+        -> Result<(Vec<Box<dyn Filter>>, SpecChain), ConfigError>;
+
     /// 解析配置字符串。
     pub fn parse_string(&self, content: &str, ctx: &DspContext) -> Result<Vec<Box<dyn Filter>>, ConfigError>;
 
@@ -128,6 +151,58 @@ impl ConfigParser {
     pub fn parse_lines(&self, lines: &[String], ctx: &DspContext) -> Result<Vec<Box<dyn Filter>>, ConfigError>;
 }
 ```
+
+---
+
+##### filter_spec 产出契约（v7.9，P0-4）
+
+**原则**：spec 是**文本指纹**，非 "DSP 语义等价"——由 parser 在 **分发层** 统一产出，
+不侵入各 handle 内部（各 handle 只保留原解析职责），零 DSP 知识（不剥离单位）。
+
+```rust
+/// 产出单条 filter_spec。**统一在分发层调用**（显式 handle 命令与裸注册表命令同走此路径）。
+fn produce_spec(cmd: &str, value: &str) -> String {
+    let sep = '\x1F';
+    if value.is_empty() {
+        // 无冒号行（IIR, PK, Fc 1000 Hz, ...）：整行小写 + token 规范化
+        normalize_tokens(cmd, sep)
+    } else {
+        // 有冒号行（Preamp: -6.0 dB）：命令名小写 + 分隔符 + 参数体 token 规范化
+        format!("{}{}{}", cmd.to_ascii_lowercase(), sep, normalize_tokens(value, sep))
+    }
+}
+
+/// token 级规范化：按逗号/空格拆 token；可 parse 为 f64 的经 normalize_number，
+/// 其余原样（'dB'、路径 'impulse.wav' 等不变）；用 sep 重新连接。
+fn normalize_tokens(s: &str, sep: char) -> String { ... }
+
+/// 数值规范化：去尾零 + 统一有效数字精度（如 6 位），
+/// 使 `1000.0`/`1e3`/`1000` 归一为同一 spec。
+fn normalize_number(f: f64) -> String { ... }
+```
+
+**产出规则**：
+
+| 行格式 | 例子 | 产出 |
+|--------|------|------|
+| 冒号分隔 | `Preamp: -6.0 dB` | `preamp\x1F-6\x1FdB` |
+| 无冒号（裸命令） | `IIR, PK, Fc 1000 Hz, Gain +3.2 dB, Q 1.4` | `iir\x1Fpk\x1F1000\x1F3.2\x1F1.4`（整行 token 规范化） |
+| 注释/空行 | `# 注释` | 不产出 |
+| 纯配置命令（Device/If/Eval/Stage/Channel） | `Device: AbortFile` | 不产出自身；仅间接影响后续命令 |
+| Include | `Include: "sub.txt"` | 不产出自身；递归展开子文件，子文件命令各自产出并内联 |
+| DSP 显式 handle（Filter/GraphicEQ/Preamp/Copy/Delay/REW） | `Filter: OFF PK Fc 500 Hz Gain 0 dB Q 1.0` | `filter\x1Foff\x1Fpk\x1F500\x1F0\x1F1`（分发层对**原始行**产出，标准化由 handle 解析后的语义归一） |
+
+> **单位 token 边界**：token 规范化只对可 parse 为 f64 的 token 做 `normalize_number`，
+> **不剥离单位**（`-6.0 dB` → `-6\x1FdB` ≠ `-6`）。单位 token 属 DSP 知识，
+> 剥离会违背「spec 由 parser 产出、零 DSP 知识」原则。单位差异（`-6.0 dB` vs `-6.0`）
+> 触发一次过渡——手动改文件本就是边缘场景，过渡有升余弦无听感爆音，可接受（intent.md）。
+
+**裸命令可达性修正（v7.9，P0-2 遗留补齐）**：`parse_lines_impl` 对裸无冒号命令
+（如 `PK Fc 1000`）当前 `split_command_value` 把整行放 cmd、value="" → try_create 收空串
+→ Unmatched，**实际到达不了工厂**。v7.9 在分发层补一条：值空且非条件/配置关键字时，
+`try_create(cmd)`（整行作参数）。由此裸命令经 `FilterAdded` 分支产出
+`produce_spec(cmd, "")` = 整行小写 + token 规范化；`MatchedNoFilter`/`Aborted`/`Unmatched`
+**不产出**（与「未创建滤波器则无指纹」一致）。
 
 ---
 
@@ -299,34 +374,38 @@ if !ctx.cond_stack.is_empty() {
 /// 监控到的变更事件类型。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WatchEvent {
-    ConfigFileChanged(PathBuf),   // config.txt（文件名筛选后）
-    ConfigFileDeleted(PathBuf),
+    /// 监控目录内发生变更（**目录级通知**——`FindFirstChangeNotificationW`
+    ///   不提供具体文件名（v7.9 澄清），无法逐文件过滤）。
+    /// 触发方（object/apo.rs hot_reload）重新解析 config.txt，经 spec 指纹
+    /// 比对决定是否真正切换（内容未变 → 幂等跳过，无听感副作用）。
+    DirectoryChanged(PathBuf),    // watch_dir
     RegistryChanged,              // 保留：poll_registry 哈希兜底（低频）
 }
 
-/// 配置目录变更监控器（v7.8 事件驱动）。
+/// 配置目录变更监控器（v7.8/v7.9 事件驱动）。
 ///
 /// 核心：监控 **目录**（非文件——文件被删除重建时句柄失效，目录天然健壮）。
 /// 线程模型：
 ///   - watcher 线程（控制路径）：FindFirstChangeNotificationW 阻塞等待变更
 ///   - 去重窗口 10ms（对齐 EAPO：FindNextChangeNotification 后 WaitFor(1,10ms)
 ///     合并编辑器「写临时文件 + rename」的多次通知）
-///   - 退出：shutdown_event 置位 → 线程退出（APO 实例析构时 join）
+///   - 退出：shutdown_event 置位 → 线程退出（UnlockForProcess 时 SetEvent + join，v7.9）
 pub struct ConfigWatcher { ... }
 
 impl ConfigWatcher {
     /// 创建监控器并启动 watcher 线程。
     ///
     /// - watch_dir：**监控目录**（如 `Documents\VxAPO\{GUID}`），非 config.txt 文件本身
-    /// - shutdown_event：外部持有的退出事件（APO 实例 `SetEvent` 后 join 线程）
+    /// - shutdown_event：外部持有的退出事件（由 APO 实例持有；UnlockForProcess 时
+    ///   `SetEvent` 后 join 线程——v7.9 生命周期随锁定周期）
     /// - 去重窗口固定 10ms（v7.8，对齐 EAPO 实战；旧 500ms 过保守，延迟过高）
     ///
     /// 线程内循环：
     ///   1. FindFirstChangeNotificationW(watch_dir, TRUE, FILE_NAME | LAST_WRITE)
     ///   2. WaitForMultipleObjects(shutdown_event | notification_handle)  → 异步等事件（非轮询）
-    ///   3. 变更 → 校验文件名 == "config.txt"（目录下其他文件变更忽略）
+    ///   3. 变更（**目录级，不区分文件**）→ 触发回调（object 层 hot_reload 处理）
     ///   4. FindNextChangeNotification → WaitForMultipleObjects(1, handle, 10ms)【去重】
-    ///   5. 触发回调（object 层 hot_reload；加载闸门由 reloading 防覆盖）
+    ///   5. 触发回调（object 层 hot_reload；spec 指纹短路 + 加载闸门由 reloading 防覆盖）
     pub fn new(watch_dir: PathBuf, shutdown_event: HANDLE) -> Self;
 
     /// 等待并处理一个事件（阻塞直到文件变更或 shutdown）。
@@ -336,11 +415,23 @@ impl ConfigWatcher {
     /// 检查注册表变更（哈希比对，低频；与目录监控并行）。
     pub fn poll_registry(&mut self, current_hash: u64) -> Option<WatchEvent>;
 
-    /// 停止监控（SetEvent + join watcher 线程）。
+    /// 停止监控（SetEvent + join watcher 线程）。v7.9：仅在 UnlockForProcess 调用；
+    /// 重新 Lock 时重新创建实例。
     pub fn shutdown(self);
 }
 ```
 
+> **目录级语义（v7.9 澄清，P0-4）**：`FindFirstChangeNotificationW` 是**目录级通知**——
+> 只告知"监控目录下有变更"，**不提供具体文件名**（文件名信息只有 `ReadDirectoryChangesW`
+> 扩展才有）。因此 `WatchEvent::ConfigFileChanged(PathBuf)` / 文件名校验（旧 6.2）
+> **无法实现**，v7.9 移除，统一为 `DirectoryChanged(watch_dir)`。
+> object 层 `hot_reload`（7.1.18）对任何目录变更：128KB 闸门 → 重新解析 →
+> spec 指纹比对（与 active_spec 逐项比较）——内容未变（无关文件/注释/重存）幂等跳过。
+>
+> **生命周期（v7.9）**：`ConfigWatcher` 由 `ApoObject.watcher: Option<ConfigWatcher>` 持有，
+> `LockForProcess` 末尾创建（7.1.9）、`UnlockForProcess` `SetEvent` + join（7.1.10）。
+> unlocked 期间无音频流，配置热重载无意义；重新 Lock 必然重读 config 建立新基线。
+>
 > **旧轮询模式废弃（v7.8）**：`poll()` / `should_poll()` / `poll_interval_ms` / `Deduplicator(500ms)`
 > 移除——事件驱动 + 10ms 去重启用了相同防雨强语义，但延迟从 2000ms 级降至 10ms 级且无空闲 CPU。
 > 仅 `poll_registry`（哈希比对）保留，因配置目录监控不依赖注册表、频次极低，无实时性要求。

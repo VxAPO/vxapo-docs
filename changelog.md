@@ -1,5 +1,27 @@
 # Changelog
 
+## v7.9 — 2026-08-02
+
+变更类型：`结构重构`（P0-4 配置变更检测方案定稿——filter_spec 指纹 + 目录级事件驱动语义落定）
+
+- **目录级语义澄清（执行端反馈 → 方案定型）**：`FindFirstChangeNotificationW` 是**目录级通知**、不提供具体文件名——
+  旧 6.2「校验文件名 == config.txt」无法实现；统一为 `DirectoryChanged(watch_dir)`，hot_reload 内 spec 指纹比对决定是否真正切换——
+  **对应章节**：`config 6.2`、`object 7.1.8`
+- **filter_spec 配置指纹（用户方案）**：parser 分发层统一产出 `produce_spec(cmd, value)`（命令名小写 + `\x1F` 分隔 + token 级规范化）；
+  `FilterSpec = String`（单一规范化字符串，含无冒号裸命令整行处理）；`parse_file_with_spec` 双返回 `(滤波器列表, SpecChain)`——
+  **对应章节**：`config 6.1`
+- **配置变更检测行为链**：目录变更 → 128KB 逐文件闸门 → 重新解析 + spec 比对（与 active_spec）→ 相同幂等跳过 / 不同构建新链 + 双链过渡；
+  **Include 失败 = 整体解析失败**（不更新 active_spec）；active_spec 构建成功即更新——
+  **对应章节**：`object 7.1.18`、`object 7.1.3`、`object 7.1.9`
+- **watcher 生命周期随锁定周期**：Initialize 不再启动（未锁定无可放新链）；`LockForProcess` 末尾启动、`UnlockForProcess` 停止（对齐 EAPO startMonitorThread）——
+  **对应章节**：`object 7.1.8/7.1.9/7.1.10`
+- **裸命令可达性修正**：无冒号行（`PK Fc 1000`）当前 value="" → try_create 收空串 → Unmatched 到不了工厂；值空且非配置关键字时 `try_create(cmd)`（整行作参数）——
+  **对应章节**：`config 6.1`
+- **产品意图文档**：新建 `intent.md`（产品定位 / 用户行为模型——正常路径 CLI/UI 管理、手动改文件为边缘降级 / 驱动-应用层边界 / 治理地位：规范上位）——
+  **对应章节**：`intent.md`（根目录新文档）
+
+> 对应 commit：`（待提交）`
+
 ## v7.8 — 2026-08-02
 
 变更类型：`外部借鉴`（EqualizerAPO 源码二次检查 → P0-4 热重载事件驱动 + 容错对齐）
