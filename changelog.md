@@ -9,7 +9,7 @@
 - **过渡缓冲预分配**：LockForProcess 按 `max_frame_count × max_ch` 预分配 temp_buffer_old/new，杜绝 RT 首次过渡 `resize()` 扩容——**对应章节**：`object 7.1.9`
 - **EAPO 对比澄清**：R1（退役链零析构）与 EAPO `previousConfig` 为**等价对齐**（EAPO 也在控制线程 loadConfig 析构，非我此前误述的"我们更优"）——**对应章节**：`object 7.1.3`（R1 注）
 
-> 对应 commit：`待提交回填`
+> 对应 commit：`2c304e4`
 
 ## v7.7 — 2026-08-02
 
