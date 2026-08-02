@@ -6,9 +6,10 @@
 
 - **APOInitSystemEffects 提取路径修订**：`pSystemEffectsProperties->pEndpointGuid` → `pAPOSystemEffectsProperties`（`IPropertyStore`）取 `PKEY_AudioEndpoint_GUID`（PROPVARIANT VT_CLSID 的 `puuid`）——windows-rs 0.62.2 实测结构（P0-3 实现反馈①）——**对应章节**：`object 7.1.8`、`sys 3.3.1b`
 - **无 GUID 兜底描述同步**：`PKEY_AudioEndpoint_GUID` 提取失败/为空时回退 `_default`（原 `pEndpointGuid` 残留修正）——**对应章节**：`object 7.1.8`
+- **apo.rs 二次检查对齐（规范侧实读 881 行）**：① 7.1.11 过渡完成不再先置 `reloading=true` 再调 hot_reload（会短锁拦截自身），改为不置位直接调用 + pending 残留 bypass 防御 + advance None→factor=1.0；② 7.1.8 Initialize 非法数据降级默认配置仍返回 Ok（非 E_INVALIDARG，SDK 容错）；③ 7.1.8 补 `documents_folder()` 失败→固定 `C:\ProgramData\VxAPO\config.txt` 二级兜底——**对应章节**：`object 7.1.8/7.1.11`
 - **P0-3 per-device 配置路径进入 Done**：实现完成（441 passed，含 known_folder/config_path 测试）+ 合规核对通过；watcher 接线留待 P0-4（v7.3 约定，属 P0-4 职责）
 
-> 对应 commit：`待提交回填`
+> 对应 commit：`ed8557b`
 
 ## v7.5 — 2026-08-02
 
