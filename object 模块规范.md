@@ -463,10 +463,13 @@ pub struct LockConfig {
 ```rust
 fn Initialize(&self, cb_data_size: u32, pby_data: *mut u8) -> HRESULT {
     // 1. 参数校验：pby_data 非空、cb_data_size >= size_of::<APOInitSystemEffects>()
-    //    非法 → E_INVALIDARG
+    //    非法 → 不返回错误，**降级默认配置**（log::warn + resolve_config_path(None)），
+    //    仍返回 Ok（v7.6 修订，P0-3 实现对齐②）：Initialize 失败会使 APO 无法加载、
+    //    音频流停摆；降级到默认 passthrough 比硬失败更稳健（SDK 容错惯例）。
     // 2. state_cell.transition(Created, Initialized)；失败 → 对应 HRESULT
     // 3. 解析 APOInitSystemEffects（强制类型转换 pby_data）：
-    //    - pSystemEffectsProperties->pEndpointGuid → 设备 endpoint GUID
+    //    - pAPOSystemEffectsProperties（IPropertyStore）→ GetValue(PKEY_AudioEndpoint_GUID)
+    //      → PROPVARIANT（VT_CLSID）→ puuid → 设备 endpoint GUID（v7.6 修订，P0-3 现实反馈①）
     //    - 提取子 APO CLSID（无子 APO → None，降级模式 Note 57）
     // 4. 如有子 APO CLSID，创建 ChildApo（失败降级为无子 APO，不阻塞初始化）
     // 5. 确定 per-device 配置路径（load_device_config）：
@@ -498,13 +501,17 @@ fn Initialize(&self, cb_data_size: u32, pby_data: *mut u8) -> HRESULT {
 Documents\VxAPO\{GUID}\config.txt
 ```
 
-- `{GUID}`：`APOInitSystemEffects.pSystemEffectsProperties->pEndpointGuid`
+- `{GUID}`：从 `APOInitSystemEffects.pAPOSystemEffectsProperties`（`IPropertyStore`）取
+  `PKEY_AudioEndpoint_GUID`（PROPVARIANT VT_CLSID 的 `puuid`）获得端点 GUID（v7.6 修订），
   经 `sys/com/prelude::guid_to_string` 格式化为大写 `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`
 - **目录自动创建**：`VxAPO\{GUID}` 目录不存在时 `std::fs::create_dir_all` 创建
 - **config 默认写入**：config.txt 不存在时写入默认 passthrough（空文件或仅注释行，
   DLL 不创建预设——预设由 App/CLI 管理，dll 只兜底 passthrough）
-- **无设备 GUID 兜底**：`pEndpointGuid` 为空 / 解析失败时，回退单实例共用路径
-  `Documents\VxAPO\_default\config.txt`（日志告警，不阻断初始化）
+- **无设备 GUID 兜底**：`PKEY_AudioEndpoint_GUID` 提取失败 / 值为空（无端点属性）时，
+  回退单实例共用路径 `Documents\VxAPO\_default\config.txt`（日志告警，不阻断初始化）
+- **Documents 路径获取失败兜底（v7.6 修订，P0-3 实现对齐③）**：`documents_folder()` 失败时
+  回退**固定单实例路径** `C:\ProgramData\VxAPO\config.txt`（`DEFAULT_CONFIG_PATH` 常量，
+  非 `_default` 子目录——Documents 本身不可用时库路径也无意义，取系统级固定位置）
 
 **引用来源**（追加）：
 - `crate::sys::known_folder::documents_folder`
@@ -698,18 +705,22 @@ fn APOProcess(&self, input_props, output_props, params: &ProcessParams) {
         }
         output_props[0].buffer_flags = APO_BUFFER_FLAGS::Valid;
 
-        // 过渡完成
-        if factor >= 1.0 {
-            // R1（v6.9）：旧链移入退役槽——仅移动 Box 所有权，零析构。
-            // 析构由控制线程在锁内统一完成（hot_reload / UnlockForProcess / Reset）。
-            inner.retired_chain = inner.outgoing_chain.take();
+        // 过渡完成（v7.6 修订，P0-3 实现对齐①）：
+        // - 旧链移入退役槽（R1，仅移动所有权零析构，控制线程锁内统一 drop）
+        // - 触发重载时**不**先置 `reloading=true`——`reloading` 表示"正在解析中"
+        //   （hot_reload 自己会置位）；若先置 true 再调 hot_reload，短锁检查
+        //   `reloading==true` 会直接 return → 延迟重载被自己拦截。
+        // - 防御 pending 残留但 transition 已被清空（无混合器）→ 直接复制输入到输出
+        //   （bypass，APO 契约：每帧必须写输出）+ 旧链退役 + 可重载则补重载。
+        // - advance() 返回 None（过渡已达上限）→ 按 factor=1.0（纯新链）输出。
+        if finished {
+            // R1：旧链移入退役槽（零析构），控制线程锁内统一析构。
+            inner.retired_chain = outgoing.take();
             inner.transition = None;
-            // R2（v6.9，阻塞式重载）：过渡完成触发一次 hot_reload。
-            // 仅当过渡期间有变更请求（pending_reload）且当前不在加载中。
-            if inner.pending_reload && !inner.reloading {
+            // R2 修正：保持 pending 语义，直接触发（不置 reloading）。
+            if pending && !inner.reloading {
                 inner.pending_reload = false;
-                inner.reloading = true;
-                drop(inner); // 释放锁，避免递归死锁
+                drop(inner);
                 self.hot_reload();
                 return;
             }

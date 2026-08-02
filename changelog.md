@@ -1,5 +1,15 @@
 # Changelog
 
+## v7.6 — 2026-08-02
+
+变更类型：`实现对齐`（P0-3 实现反馈闭环 → APOInitSystemEffects 提取路径实测化）
+
+- **APOInitSystemEffects 提取路径修订**：`pSystemEffectsProperties->pEndpointGuid` → `pAPOSystemEffectsProperties`（`IPropertyStore`）取 `PKEY_AudioEndpoint_GUID`（PROPVARIANT VT_CLSID 的 `puuid`）——windows-rs 0.62.2 实测结构（P0-3 实现反馈①）——**对应章节**：`object 7.1.8`、`sys 3.3.1b`
+- **无 GUID 兜底描述同步**：`PKEY_AudioEndpoint_GUID` 提取失败/为空时回退 `_default`（原 `pEndpointGuid` 残留修正）——**对应章节**：`object 7.1.8`
+- **P0-3 per-device 配置路径进入 Done**：实现完成（441 passed，含 known_folder/config_path 测试）+ 合规核对通过；watcher 接线留待 P0-4（v7.3 约定，属 P0-4 职责）
+
+> 对应 commit：`待提交回填`
+
 ## v7.5 — 2026-08-02
 
 变更类型：`实现对齐`（正式 CLSID GUID 落定）

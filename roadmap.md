@@ -150,13 +150,13 @@
 - 已归档至本文件「已完成」区（保留章节号便于追溯）。
 
 ### P0-3  per-device 配置路径
-- 状态：Spec-Finalized
+- 状态：Done（v7.6 合规核对通过）
 - 优先级：P0 ｜ 关联 Phase：Phase 10
 - 目标：`APOInitSystemEffects` 反查设备 GUID → `Documents\VxAPO\{GUID}\config.txt`；目录不存在自动创建，config 不存在写入默认 passthrough
 - 影响模块：`object/apo.rs`（Initialize）、`config/watcher.rs`、`install/device`
-- 规范落点：`sys 3.6`（known_folder）、`sys 3.3.1b`（APOInitSystemEffects）、`object 7.1.8`（Initialize per-device 路径解析 + config_path 规则）、`主规范 十一`（引用约束同步）
-- 依赖：P0-1、P0-2（已 Spec-Finalized ✅）
-- DoD：☑ 规范定稿（v7.2）☐ 实现 ☐ 测试
+- 规范落点：`sys 3.6`（known_folder）、`sys 3.3.1b`（APOInitSystemEffects，v7.6 实测路径）、`object 7.1.8`（Initialize per-device 路径解析 + config_path 规则 + 二级兜底）、`object 7.1.11`（过渡完成 reloading 修正）、`主规范 十一`（引用约束同步）
+- 依赖：P0-1、P0-2（已 Done ✅）
+- DoD：☑ 规范定稿（v7.2/v7.6）☑ 实现 ☑ 测试
 
 > **定稿说明（v7.2）**：新增 `sys/known_folder.rs`（SHGetKnownFolderPath FFI 收窄）、
 > re-export `APOInitSystemEffects`（端点 GUID 提取）、`object 7.1.8` 定义
@@ -218,6 +218,30 @@
      已在 v7.3 定义（`object 7.1.8`），但 P0-3 实现未接线 watcher（`config/watcher.rs` 未
      创建实例）——P0-4 实现时补（config_path 字段已就位，watch_dir = config_path 父目录）。
 - 建议：规范侧核对以上 2 点；执行端 DoD 已全通过（cargo test 441 + 验收 4 项：路径/目录/文件/兜底）。
+
+### 反馈修订记录（v7.6，规范侧处理）
+- 反馈①（APOInitSystemEffects 实测结构）：**已修订** —— `object 7.1.8` + `sys 3.3.1b` +
+  `sys 3.3` 引用来源更新为 `pAPOSystemEffectsProperties`（IPropertyStore）→
+  `PKEY_AudioEndpoint_GUID`（PROPVARIANT VT_CLSID `puuid`）——**对应章节**：`object 7.1.8`、`sys 3.3.1b`
+- 反馈②（watcher 接线）：**确认为 P0-4 职责**（config_path 已就位；watch_dir = 父目录，
+  v7.3 已定义启动约定，P0-4 实现时补 ConfigWatcher 实例）——**对应章节**：`object 7.1.8`（watcher 约定）
+- **二次检查（规范侧实读 apo.rs 881 行后补充 3 项对齐）**：
+  - 对齐①（7.1.11 过渡完成 reloading 拦截）：规范伪代码原写"先 `reloading=true` 再调
+    hot_reload"→ 与实装矛盾（`reloading` 表示"正在解析中"，hot_reload 自己会置位；
+    先置 true 会短锁直接 return → 延迟重载被拦截）。修订为**不置位直接调用** + 补
+    pending 残留防御（transition=None → bypass 输出 + 旧链退役）+ advance None →
+    factor=1.0——**对应章节**：`object 7.1.11`
+  - 对齐②（7.1.8 Initialize 非法数据）：规范原写"非法 → E_INVALIDARG"；实装为
+    **降级默认配置（log::warn + resolve_config_path(None)）仍返回 Ok**（SDK 容错：
+    Initialize 失败 APO 无法加载/音频停摆，降级 passthrough 更稳健）——**对应章节**：`object 7.1.8`
+  - 对齐③（7.1.8 Documents 二级兜底）：规范只写"无 GUID → `_default`"；实装另有
+    `documents_folder()` 失败 → **固定 `C:\ProgramData\VxAPO\config.txt`**（DEFAULT_CONFIG_PATH）
+    ——**对应章节**：`object 7.1.8`
+
+### 合规核对记录（v7.6）
+- 核对结果：**通过**——实现报告自查（RT 无违规/引用约束无打破/触碰文件 ⊆ 影响模块）
+  与规范落点一致；441 passed；v7.4/v7.6 反馈均已纳入修订（config 3 点 + APOInit 结构 + 过渡修正 3 点）。
+- 已归档至本文件「已完成」区（保留章节号便于追溯）。
 
 ### P0-4  配置热重载全链路（watcher + swap + 过渡）
 - 状态：Spec-Finalized
@@ -309,3 +333,9 @@
 - 实现：`src/config/parser.rs`（重写逐行分发）、`src/config/commands/{include,filter,rew,cond,expr,channel,device}.rs`（修复）
 - 验收：436 passed（原 417 + 新增 19）；样例无 NoMatch；无未使用警告
 - 反馈闭环：3 点实现反馈 → v7.4 规范修订（见「主规范 十七」）
+
+### P0-3  per-device 配置路径 — Done @ v7.6
+- 规范落点：`sys 3.6`（known_folder）、`sys 3.3.1b`（APOInitSystemEffects，v7.6 实测路径）、`object 7.1.8`（per-device 路径 + 二级兜底）、`object 7.1.11`（过渡完成 reloading 修正）
+- 实现：`src/sys/known_folder.rs`（新建）、`src/sys/com/apo_types.rs`（re-export）、`src/object/apo.rs`（extract_endpoint_guid/resolve_config_path/Initialize 重写 + 过渡修正）、`src/sys.rs`
+- 验收：441 passed；路径/目录/文件/`_default` 兜底 4 项；真实端点 GUID 提取留手动验收
+- 反馈闭环：APOInit 实测结构（v7.6）+ 过渡 3 点修正（v7.6 二次检查对齐）+ watcher 接线留 P0-4（v7.3 已定义）

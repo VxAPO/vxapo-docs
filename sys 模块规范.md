@@ -217,7 +217,7 @@ pub const IID_IAPO_AUXILIARY_INPUT_RT: GUID = IApoAuxiliaryInputRT::IID;
 **引用来源**：
 - `windows::core::{GUID, HRESULT}`
 - `windows::Win32::Media::Audio::Apo::{APO_FLAG, APO_BUFFER_FLAGS, APO_REG_PROPERTIES, APO_CONNECTION_DESCRIPTOR, APO_CONNECTION_PROPERTY}`（及全部关联常量，直接 re-export）
-- `windows::Win32::Media::Audio::Apo::APOInitSystemEffects`（Initialize 初始化结构体，含 `pSystemEffectsProperties`、设备 GUID 提取）
+- `windows::Win32::Media::Audio::Apo::APOInitSystemEffects`（Initialize 初始化结构体，含 `pAPOSystemEffectsProperties`（IPropertyStore）、设备 GUID 提取）
 
 **导出给**：`sys/com/apo_interfaces.rs`、`pipeline/`、`install/`、`object/`、`config/`
 
@@ -283,8 +283,9 @@ pub use windows::Win32::Media::Audio::Apo::APOInitSystemEffects;
 ```
 
 > 由 windows-rs 0.62.2 提供，直接 re-export 不自定义。Initialize（`object 7.1.8`）接收
-> `pby_data` 指向 `APOInitSystemEffects`，从 `pSystemEffectsProperties->pEndpointGuid`
-> 提取设备 GUID（v7.2，P0-3 per-device 配置路径）。
+> `pby_data` 指向 `APOInitSystemEffects`，从 `pAPOSystemEffectsProperties`（`IPropertyStore`）
+> 取 `PKEY_AudioEndpoint_GUID`（PROPVARIANT VT_CLSID 的 `puuid`）提取设备 GUID
+> （v7.2 定义，v7.6 修订为实测路径）。
 
 ---
 
