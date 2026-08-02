@@ -1,5 +1,13 @@
 # Changelog
 
+## v7.7 — 2026-08-02
+
+变更类型：`缺陷修复`（实现缺陷反馈：IsInputFormatSupported 时序错误）
+
+- **补关键时序约束（object 7.1.16）**：`IsInputFormatSupported`/`IsOutputFormatSupported` 在 `LockForProcess` 之前被引擎调用，此时 `pipeline_context` 为全零 `PipelineContext::new()`——**禁止依赖 pipeline_context 做等值比较**（真实格式 vs 全零永远不等 → 拒绝所有格式、APO 无法协商）。正确做法是对请求格式做**独立属性检查**（浮点格式 + 44.1k~192k + 1~8 通道），属性在协商时已确定、与锁定后上下文无关——**对应章节**：`object 7.1.16`
+
+> 对应 commit：`待提交回填`
+
 ## v7.6 — 2026-08-02
 
 变更类型：`实现对齐`（P0-3 实现反馈闭环 → APOInitSystemEffects 提取路径实测化）

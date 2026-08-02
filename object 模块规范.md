@@ -851,6 +851,13 @@ fn GetRegistrationProperties(&self, pp_props: *mut *mut APO_REG_PROPERTIES) -> H
 
 #### 7.1.16 `IsInputFormatSupported` / `IsOutputFormatSupported`
 
+> **关键时序约束（v7.7 修订，P0-3 实现缺陷反馈）**：`IsInputFormatSupported`/`IsOutputFormatSupported`
+> 由 Windows 引擎在**格式协商阶段**调用，**早于 `LockForProcess`**——此时 `pipeline_context` 仍为
+> `PipelineContext::new()`（全零默认值）。因此本方法**禁止依赖 `pipeline_context` 做等值比较**
+> （如 `fmt.channels == ctx.input_channels`——请求的真实格式 vs 全零永远不等 → 拒绝所有格式，
+> APO 无法协商）。正确做法是对请求格式做**独立属性检查**（下述浮点格式 + 采样率范围 + 通道数范围），
+> 而这些属性在协商时即已确定、与锁定后上下文无关。
+
 ```rust
 fn IsInputFormatSupported(&self, p_opposite, p_requested, pp_supported) -> HRESULT {
     if pp_supported.is_null() { return E_POINTER; }

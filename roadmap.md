@@ -243,6 +243,16 @@
   与规范落点一致；441 passed；v7.4/v7.6 反馈均已纳入修订（config 3 点 + APOInit 结构 + 过渡修正 3 点）。
 - 已归档至本文件「已完成」区（保留章节号便于追溯）。
 
+### 实现缺陷反馈（v7.7，用户反馈 → 规范补齐）
+- **问题**：`IsInputFormatSupported` 在 `LockForProcess` **之前**被引擎调用，此时 `pipeline_context`
+  为 `PipelineContext::new()`（全零）——实装的等值比较（`fmt.channels == ctx.input_channels`
+  `&& fmt.sample_rate == ctx.sample_rate`）**永远不成立** → 拒绝所有格式、APO 无法协商。
+- **规范修订**：object 7.1.16 补**关键时序约束**——协商阶段禁止依赖 pipeline_context；
+  正确做法为对请求格式做**独立属性检查**（浮点格式 + 44.1k~192k + 1~8 通道）——
+  **对应章节**：`object 7.1.16`（主规范 v7.7）
+- **实现端待办**：`IsInputFormatSupported`/`IsOutputFormatSupported` 需按 7.1.16 独立属性检查实现
+  （去掉 pipeline_context 等值比较），并补范围检查（实现端接单）。
+
 ### P0-4  配置热重载全链路（watcher + swap + 过渡）
 - 状态：Spec-Finalized
 - 优先级：P0 ｜ 关联 Phase：Phase 10
