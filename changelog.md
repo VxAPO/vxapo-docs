@@ -1,5 +1,15 @@
 # Changelog
 
+## v7.5 — 2026-08-02
+
+变更类型：`实现对齐`（正式 CLSID GUID 落定）
+
+- **正式 GUID 替换占位值**：`CLSID_VXAPO_PRE_MIX = 41C34613-D391-459D-A039-72B2B15A1A1D`、
+  `CLSID_VXAPO_POST_MIX = B4A97313-ABC0-45ED-9C33-428B20D39428`（用户确定）；
+  涉及 `vxapo.def` / `sys/com/apo_types` / `install/device/slots` / `object/vx_reg_props` 同步更新——**对应章节**：`object 7.5`
+
+> 对应 commit：`待提交回填`
+
 ## v7.4 — 2026-08-02
 
 变更类型：`缺陷修复`（P0-1/P0-2 实现反馈闭环 → config 规范修订）

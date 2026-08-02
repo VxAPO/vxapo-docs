@@ -167,6 +167,58 @@
 > **实现验收**：Initialize 后 `config_path` == `Documents\VxAPO\{GUID}\config.txt`；
 > 目录不存在自动创建；config 缺失写默认 passthrough；无 GUID 时回退 `_default`。
 
+### 实现完成报告
+- DoD：☑ 实现 ☑ 测试
+- 自查结果：
+  - RT 无违规：per-device 路径解析全部在 Initialize（控制线程，I/O 允许）；
+    APOProcess 过渡修正（transition=None 写 bypass / advance None→factor=1.0）为纯
+    栈上计算，无分配/锁/I/O 新增。
+  - 引用约束无打破：`sys/known_folder.rs` 仅依赖 windows crate（`Win32_UI_Shell` +
+    `Win32_System_Com`，v7.2 主规范十一已声明）；`object/apo.rs` 增 `sys/known_folder`/
+    `sys/com/apo_types`（APOInitSystemEffects）依赖（v7.2 已声明）。
+  - 未引入未声明依赖：windows features 增加 `Win32_UI_Shell`、
+    `Win32_UI_Shell_PropertiesSystem`、`Win32_System_Variant`、
+    `Win32_System_Com_StructuredStorage`（均为 sys 3.6 / 3.3.1b 实现必需，规范已声明）。
+- 新增/修改文件（⊆ 影响模块 `object/apo.rs`、`config/watcher.rs`、`install/device`；sys 侧为 v7.2 新增模块）：
+  - `src/sys/known_folder.rs`（新建，v7.2 规范 3.6）：`documents_folder()` 封装
+    `SHGetKnownFolderPath(FOLDERID_Documents)`（实测返回 `Result<PWSTR>`），
+    `CoTaskMemGuard` RAII 释放（所有路径含错误均释放），`PWSTR::to_string` 转 String。
+  - `src/sys/com/apo_types.rs`：re-export `APOInitSystemEffects` / `APOInitBaseStruct` /
+    `PKEY_AudioEndpoint_GUID` / `IPropertyStore` / `PROPVARIANT` / `VT_CLSID` 等。
+  - `src/object/apo.rs`：
+    - `ApoObject.config_path: Mutex<String>`（Initialize 确定，LockForProcess/hot_reload 复用）
+    - `extract_endpoint_guid`：`APOInitSystemEffects.pAPOSystemEffectsProperties`
+      ->`IPropertyStore::GetValue(PKEY_AudioEndpoint_GUID)` -> PROPVARIANT `puuid`（VT_CLSID）
+    - `resolve_config_path`：`{Documents}\VxAPO\{GUID}\config.txt`，目录自动创建、config 缺失
+      写默认 passthrough、无 GUID/Documents 失败回退 `_default` / 默认路径
+    - `Initialize` 重写：参数校验（pby_data 非空 + cbSize 足够）+ 状态机 + per-device 路径
+  - `src/sys.rs`：`pub mod known_folder`。
+- 测试：437 → 441 passed（新增 sys/known_folder::documents_folder + object/apo
+  config_path 3 测试：`_default` 兜底/目录创建/文件写入/幂等/init=None）。
+- 遗留问题：
+  1. **APOProcess 过渡缺陷修复（独立发现 + 用户确认）**：① `finished` 分支先置
+     `reloading=true` 再调 `hot_reload()` → 短锁检查 `reloading==true` 直接 return，
+     延迟重载被自己拦截——已修正为**不置位直接调用**（hot_reload 自己管理 reloading）；
+     ② `transition=None` 但 `pending` 残留（无混合器）→ 本帧不写输出，违反 APO 契约——
+     已加防御分支：直接复制输入到输出（bypass）+ 旧链退役 + 触发补重载；
+     ③ 混合 `advance()` 返回 None（过渡已达上限）→ 本帧不写输出——已修正为按 factor=1.0
+     （纯新链）输出。
+  2. 真实端点 GUID 提取需 Windows 音频引擎真实 APOInitSystemEffects 环境验证
+     （单测以 `_default` 兜底覆盖 None 分支；VT_CLSID/puuid 分支留手动验收）。
+
+### 反馈
+- 状态建议：Spec-Finalized → Spec-Finalized（无需状态回退；规范文本澄清 2 点）
+- 问题：
+  1. **object 7.1.8 原型 `pSystemEffectsProperties->pEndpointGuid` 与 windows-rs 0.62.2
+     实测不符**：`APOInitSystemEffects` 无 `pSystemEffectsProperties` 字段，而是
+     `pAPOSystemEffectsProperties: ManuallyDrop<Option<IPropertyStore>>`；端点 GUID 经
+     `IPropertyStore::GetValue(&PKEY_AudioEndpoint_GUID)` 返回 PROPVARIANT（VT_CLSID）
+     的 `puuid` 提取。已按实测实现。建议规范侧在 7.1.8 更新提取路径描述。
+  2. **7.1.8 步骤 6「启动 watcher」为 P0-4 依赖**：Initialize 中 watcher 启动时机/生命周期
+     已在 v7.3 定义（`object 7.1.8`），但 P0-3 实现未接线 watcher（`config/watcher.rs` 未
+     创建实例）——P0-4 实现时补（config_path 字段已就位，watch_dir = config_path 父目录）。
+- 建议：规范侧核对以上 2 点；执行端 DoD 已全通过（cargo test 441 + 验收 4 项：路径/目录/文件/兜底）。
+
 ### P0-4  配置热重载全链路（watcher + swap + 过渡）
 - 状态：Spec-Finalized
 - 优先级：P0 ｜ 关联 Phase：Phase 10
@@ -247,9 +299,10 @@
 > 移出活跃清单的功能（`Done`）归档至此，保留关键章节号便于追溯。
 
 ### P0-1  DllRegisterServer 补全（COM 类注册，APO 可加载）— Done @ v7.4
-- 规范落点：`object 7.6`（职责边界 + 完整流程）、`主规范 十一`（dll_exports 增 sys/registry）
+- 规范落点：`object 7.6`（职责边界 + 完整流程）、`object 7.5`（正式 GUID，v7.5）、`主规范 十一`（dll_exports 增 sys/registry）
 - 实现：`src/object/dll_exports.rs`（DllRegisterServer/失败 SELFREG_E_CLASS 逆序回滚 + DllUnregisterServer 幂等）
 - 验收：单元测试幂等语义覆盖；手动 `regsvr32`/`CoCreateInstance` 留待真实 Windows 环境
+- **v7.5 更新**：CLSID 正式 GUID 落定——`PRE_MIX = 41C34613-D391-459D-A039-72B2B15A1A1D`、`POST_MIX = B4A97313-ABC0-45ED-9C33-428B20D39428`
 
 ### P0-2  config.txt 解析链路补齐（命令工厂替换 NoMatch）— Done @ v7.4
 - 规范落点：`config 6.0/6.1/6.3/6.4-6.15`（v7.4 修订 current_file/REW 分发/注册意图）、`pipeline 4.x factory`

@@ -1147,17 +1147,22 @@ pub fn is_zero() -> bool;
 
 ---
 
-#### CLSID 常量（2 个）
+#### CLSID 常量（2 个，v7.5 正式 GUID）
+
+> **v7.5 变更（用户确定正式 GUID）**：CLSID 由占位值替换为正式生成值——
+> `PRE_MIX = 41C34613-D391-459D-A039-72B2B15A1A1D`、`POST_MIX = B4A97313-ABC0-45ED-9C33-428B20D39428`。
+> 变更涉及面：`vxapo.def` 导出、`sys/com/apo_types` 的 APOInitSystemEffects 路由、
+> `install/device/slots` 设备绑定、`object/vx_reg_props`（本文件）——同步更新。
 
 ```rust
 pub const CLSID_VXAPO_PRE_MIX: GUID = GUID::from_values(
-    0xA1B2C3D4, 0x1234, 0x5678,
-    [0x9A, 0xBC, 0xDE, 0xF0, 0x12, 0x34, 0x56, 0x78],
+    0x41C34613, 0xD391, 0x459D,
+    [0xA0, 0x39, 0x72, 0xB2, 0xB1, 0x5A, 0x1A, 0x1D],
 );
 
 pub const CLSID_VXAPO_POST_MIX: GUID = GUID::from_values(
-    0xD4C3B2A1, 0x4321, 0x8765,
-    [0x9A, 0xBC, 0xDE, 0xF0, 0x12, 0x34, 0x56, 0x79],
+    0xB4A97313, 0xABC0, 0x45ED,
+    [0x9C, 0x33, 0x42, 0x8B, 0x20, 0xD3, 0x94, 0x28],
 );
 ```
 
