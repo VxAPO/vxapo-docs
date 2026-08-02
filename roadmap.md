@@ -258,17 +258,43 @@
 - 优先级：P0 ｜ 关联 Phase：Phase 10
 - 目标：监控线程检测 config.txt 变更 → swap 串联 → 升余弦过渡；修改文件实时生效且无爆音（对齐 v6.9 R1-R4）
 - 影响模块：`config/watcher.rs`、`object/apo.rs`（hot_reload/APOProcess）
-- 规范落点：`object 7.1.8`（watcher 启动约定：父目录监控、轮询 2000ms/去重 500ms、跨锁定周期持续）、`config 6.2`（ConfigWatcher 已有）、`object 7.1.18`（hot_reload 已有，R2 阻塞式 + R1 退役链）
-- 依赖：P0-3（已 Spec-Finalized ✅）
-- DoD：☑ 规范定稿（v7.3）☐ 实现 ☐ 测试（含手动听感验证）
+- 规范落点：`object 7.1.8`（watcher 启动约定：**v7.8 事件驱动**父目录监控 + 10ms 去重 + shutdown 事件）、`config 6.2`（v7.8 FindFirstChangeNotificationW 事件驱动）、`object 7.1.9`（过渡缓冲预分配，v7.8）、`object 7.1.18`（热重载失败保留旧链，v7.8）
+- 依赖：P0-3（已 Done ✅）
+- DoD：☑ 规范定稿（v7.3/v7.8）☐ 实现 ☐ 测试（含手动听感验证）
 
-> **定稿说明（v7.3）**：watcher 能力（轮询 + 500ms 去重）与过渡机制（R1 退役链/R2 阻塞式/R4 10ms）
-> 已在 `config 6.2` / `object 7.1.11/7.1.18` 覆盖；本次补齐 Initialize 中 watcher **启动时机与生命周期**
-> （watch_dir = config_path 父目录；UnlockForProcess/Reset 不停止）。
+> **定稿说明（v7.3，v7.8 修订）**：watcher 能力由**轮询（2000ms + 500ms 去重）**升级为
+> **Win32 事件驱动**（`FindFirstChangeNotificationW` + `WaitForMultipleObjects` + 10ms 去重 +
+> shutdown_event 退出）——对齐 EAPO `notificationThread`（v7.8，`config 6.2`）。
+> 同时：热重载解析失败**保留旧链**（EQ 不消失）、过渡缓冲 LockForProcess **预分配充足容量**
+> （杜绝 RT resize）。
 >
 > **合规性**：watcher 为后台线程（控制路径，I/O 允许）；事件仅在非过渡期触发 hot_reload；
 > 不触碰 RT 分配/锁。**实现验收**：修改 `Documents\VxAPO\{GUID}\config.txt` → 音频变化无爆音；
-> chan 一致（过渡无排队重复解析）。
+> 10ms 内生效；解析出错时旧 EQ 保持。
+
+### P0-5  RT 入口 panic 防护（catch_unwind）
+- 状态：Backlog
+- 优先级：P0 ｜ 关联 Phase：Phase 1-9
+- 目标：`APOProcess` / `CalcInputFrames` / `CalcOutputFrames` RT 入口 `catch_unwind` 包裹——捕获 → 输出清零 + BUFFER_SILENT + stats.error_count++，杜绝 panic 跨 FFI unwind 到 audiodg 崩溃
+- 影响模块：`object/apo.rs`（RT 三入口）
+- 规范落点：（定稿时回填；对象层 RT 入口）
+- 依赖：无
+- DoD：☐ 规范定稿 ☐ 实现 ☐ 测试（debug panic=unwind 下模拟 panic 验证不崩溃）
+
+> **说明**：release（`panic="abort"`，O3）时 catch_unwind 为空操作——真防线是 panic hook + abort；
+> debug/unwind 测试态才有防御意义（旧框架 Note 60/68 已澄清）。属 P0 尾巴（威胁 audiodg 稳定性）。
+
+### P1-5  子 APO 委托实现（object/child.rs 落地）
+- 状态：Backlog
+- 优先级：P1 ｜ 关联 Phase：Phase 10T
+- 目标：`object/child.rs` 规范已完备（三接口类型化持有 + 委托），实现缺——补 `ApoObject.child_apo` 字段 + CoCreateInstance + Initialize/LockForProcess/UnlockForProcess/APOProcess 完整委托（对齐 EAPO childAPO/childRT/childCfg）
+- 影响模块：`object/child.rs`、`object/apo.rs`、`install/device/slots.rs`（子 APO GUID 读取）
+- 规范落点：（定稿时回填；`object 7.1.3` child_apo 字段 + `object 7.2` child.rs 方法）
+- 依赖：P0-4、P0-5
+- DoD：☐ 规范定稿 ☐ 实现 ☐ 测试
+
+> **说明**：EAPO 在 Initialize 中 `CoCreateInstance(子 APO GUID)` → QI 三接口 → 委托全部方法
+> （v7.8 EAPO 源码二次检查确认）；VxAPO 规范 object 7.2 已有定义，实现尚缺——P0 链路之后补。
 
 ---
 

@@ -281,11 +281,15 @@ if !ctx.cond_stack.is_empty() {
 
 ### 6.2 `config/watcher.rs`
 
-**职责**：配置文件变更监控。
+**职责**：配置文件变更监控（**Win32 事件驱动**，v7.8 修订——对齐 EAPO `notificationThread`）。
+**不再使用轮询模式**（旧 2000ms 轮询延迟高、浪费 CPU）。
 
 **引用来源**：
 - `crate::config::error::ConfigError`
 - `crate::utils::vx_error::VxApoError`
+- `windows::Win32::Storage::FileSystem::{FindFirstChangeNotificationW, FindNextChangeNotification, FindCloseChangeNotification}`
+- `windows::Win32::System::Threading::{WaitForMultipleObjects, WaitForSingleObject, CreateEventW, SetEvent}`
+- `windows::Win32::Foundation::{HANDLE, WAIT_OBJECT_0}`
 
 **导出给**：`object/apo.rs`
 
@@ -295,37 +299,51 @@ if !ctx.cond_stack.is_empty() {
 /// 监控到的变更事件类型。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WatchEvent {
-    ConfigFileChanged(PathBuf),
+    ConfigFileChanged(PathBuf),   // config.txt（文件名筛选后）
     ConfigFileDeleted(PathBuf),
-    RegistryChanged,
+    RegistryChanged,              // 保留：poll_registry 哈希兜底（低频）
 }
 
-/// 事件去重器（Note 50：500ms 窗口内相同事件只触发一次）。
-pub struct Deduplicator;
-
-/// 配置目录变更监控器。
+/// 配置目录变更监控器（v7.8 事件驱动）。
 ///
-/// 轮询模式：每 poll_interval_ms 毫秒扫描一次目录。
-/// 支持文件修改时间比对 + 注册表变更哈希比对。
+/// 核心：监控 **目录**（非文件——文件被删除重建时句柄失效，目录天然健壮）。
+/// 线程模型：
+///   - watcher 线程（控制路径）：FindFirstChangeNotificationW 阻塞等待变更
+///   - 去重窗口 10ms（对齐 EAPO：FindNextChangeNotification 后 WaitFor(1,10ms)
+///     合并编辑器「写临时文件 + rename」的多次通知）
+///   - 退出：shutdown_event 置位 → 线程退出（APO 实例析构时 join）
 pub struct ConfigWatcher { ... }
 
 impl ConfigWatcher {
-    /// 创建监控器。
-    /// - watch_dir：监控目录
-    /// - poll_interval_ms：轮询间隔（默认 2000ms）
-    /// - dedup_window_ms：去重窗口（默认 500ms）
-    pub fn new(watch_dir: PathBuf, poll_interval_ms: u64, dedup_window_ms: u64) -> Self;
+    /// 创建监控器并启动 watcher 线程。
+    ///
+    /// - watch_dir：**监控目录**（如 `Documents\VxAPO\{GUID}`），非 config.txt 文件本身
+    /// - shutdown_event：外部持有的退出事件（APO 实例 `SetEvent` 后 join 线程）
+    /// - 去重窗口固定 10ms（v7.8，对齐 EAPO 实战；旧 500ms 过保守，延迟过高）
+    ///
+    /// 线程内循环：
+    ///   1. FindFirstChangeNotificationW(watch_dir, TRUE, FILE_NAME | LAST_WRITE)
+    ///   2. WaitForMultipleObjects(shutdown_event | notification_handle)  → 异步等事件（非轮询）
+    ///   3. 变更 → 校验文件名 == "config.txt"（目录下其他文件变更忽略）
+    ///   4. FindNextChangeNotification → WaitForMultipleObjects(1, handle, 10ms)【去重】
+    ///   5. 触发回调（object 层 hot_reload；加载闸门由 reloading 防覆盖）
+    pub fn new(watch_dir: PathBuf, shutdown_event: HANDLE) -> Self;
 
-    /// 执行一次轮询扫描，返回去重后的变更事件列表。
-    pub fn poll(&mut self) -> Vec<WatchEvent>;
+    /// 等待并处理一个事件（阻塞直到文件变更或 shutdown）。
+    /// 返回 false 表示 shutdown（线程应退出）。
+    pub fn wait_and_handle(&mut self) -> bool;
 
-    /// 检查注册表变更（传入当前哈希，与上次比对）。
+    /// 检查注册表变更（哈希比对，低频；与目录监控并行）。
     pub fn poll_registry(&mut self, current_hash: u64) -> Option<WatchEvent>;
 
-    /// 是否到达轮询时间。
-    pub fn should_poll(&self) -> bool;
+    /// 停止监控（SetEvent + join watcher 线程）。
+    pub fn shutdown(self);
 }
 ```
+
+> **旧轮询模式废弃（v7.8）**：`poll()` / `should_poll()` / `poll_interval_ms` / `Deduplicator(500ms)`
+> 移除——事件驱动 + 10ms 去重启用了相同防雨强语义，但延迟从 2000ms 级降至 10ms 级且无空闲 CPU。
+> 仅 `poll_registry`（哈希比对）保留，因配置目录监控不依赖注册表、频次极低，无实时性要求。
 
 ---
 

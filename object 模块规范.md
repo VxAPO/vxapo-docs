@@ -479,20 +479,23 @@ fn Initialize(&self, cb_data_size: u32, pby_data: *mut u8) -> HRESULT {
     //    c. 拼接：{Documents}\VxAPO\{GUID}\  → config_path
     //    d. 目录不存在 → std::fs::create_dir_all 创建
     //    e. config.txt 不存在 → 写入默认 passthrough（空文件或仅注释行）
-    // 6. 启动 watcher（v7.3，P0-4）：
+    // 6. 启动 watcher（v7.8，P0-4——事件驱动，废弃 v7.3 轮询）：
     //    watch_dir = config_path 父目录（Documents\VxAPO\{GUID}）
-    //    经 config/watcher.rs::ConfigWatcher::new(watch_dir, poll_interval_ms, dedup_window_ms)
-    //    轮询检测变更 → WatchEvent::ConfigFileChanged → hot_reload（7.1.18）
+    //    经 config/watcher.rs::ConfigWatcher::new(watch_dir, shutdown_event)
+    //    FindFirstChangeNotificationW 阻塞等待 → 文件名筛选 == config.txt → hot_reload（7.1.18）
     // 7. self.config_path = path；返回 S_OK
 }
 ```
 
-**watcher 启动约定（v7.3，P0-4）**：
-> - 监控目录 = `config_path` 父目录（`Documents\VxAPO\{GUID}`），非 config.txt 文件本身
-> - 轮询间隔默认 2000ms、去重窗口默认 500ms（`config 6.2`）
-> - `ConfigFileChanged` / `ConfigFileDeleted` 事件经 `hot_reload`（7.1.18）处理：
->   R2 阻塞式（过渡在途/加载中直接返回）、过渡完成触发、退役链 R1 控制线程析构
-> - `ConfigWatcher` 生命周期与 APO 实例一致（`ApoObject.watcher` 字段持有），
+**watcher 启动约定（v7.8 修订，P0-4——v7.3 轮询废弃，改事件驱动对齐 EAPO）**：
+> - 监控对象 = **config_path 父目录**（`Documents\VxAPO\{GUID}`），**非 config.txt 文件本身**——
+>   监控文件在文件被删除重建时句柄可能失效，监控目录天然健壮（对齐 EAPO `FindFirstChangeNotificationW` 目录用法）
+> - **事件驱动**（v7.8，`config 6.2`）：`FindFirstChangeNotificationW` + `WaitForMultipleObjects`
+>   阻塞等待，替代旧 2000ms 轮询——延迟 10ms 级、无空闲 CPU
+> - **去重窗口 10ms**（v7.8，对齐 EAPO + 旧框架 Note 72）：编辑器「写临时文件 + rename」的多次通知在 10ms 内合并
+> - 事件触发 → **校验文件名 == "config.txt"**（目录下其他文件变更忽略）→ `hot_reload`（7.1.18）
+> - **退出**：APO 实例持有 `shutdown_event`，析构/UnlockForProcess 时 `SetEvent` + join watcher 线程
+> - `ConfigWatcher` 生命周期与 APO 实例一致（`ApoObject.watcher` 字段持有）；
 >   `UnlockForProcess` / `Reset` 不停止 watcher（配置热重载跨锁定周期持续生效）
 
 **config_path 确定规则（v7.2，P0-3）**：
@@ -577,9 +580,11 @@ fn LockForProcess(&self, num_input, pp_inputs, num_output, pp_outputs) -> HRESUL
     for f in filters { chain.add_filter(f)?; }
     let total_latency = chain.total_latency();
 
-    // 预分配过渡缓冲区
+    // 预分配过渡缓冲区（v7.8 修订，杜绝 RT 线程 resize 扩容——EAPO 对齐：
+    // 所有缓冲区 initialize 阶段预分配，RT 零分配。按最大帧数 × 输出通道数
+    // 预分配充足容量，保证过渡模式 process_chain_interleaved 写入不触发扩容）
     let max_ch = ctx.input_channels.max(ctx.output_channels) as usize;
-    let max_samples = ctx.max_frame_count * ctx.input_channels.max(ctx.output_channels) as usize;
+    let max_samples = ctx.max_frame_count * max_ch;
     let temp_buffer_old = vec![0.0f32; max_samples];
     let temp_buffer_new = vec![0.0f32; max_samples];
 
@@ -929,7 +934,9 @@ fn hot_reload(&self) {
     let filters = match self.config_loader.parse_file(&self.config_path, &mut ctx) {
         Ok(f) => f,
         Err(_) => {
-            self.logger.log(LogLevel::Error, "hot_reload: config parse failed");
+            // v7.8 修订（EAPO 对齐）：解析失败**保留旧链**（log::warn + 返回，不建新链）——
+            // 用户 EQ 不受影响；仅 LockForProcess **首次加载**失败才建空链直出（无旧链可保留）。
+            self.logger.log(LogLevel::Error, "hot_reload: config parse failed — keeping old chain");
             return;
         }
     };

@@ -1,5 +1,16 @@
 # Changelog
 
+## v7.8 — 2026-08-02
+
+变更类型：`外部借鉴`（EqualizerAPO 源码二次检查 → P0-4 热重载事件驱动 + 容错对齐）
+
+- **ConfigWatcher 事件驱动**：`FindFirstChangeNotificationW` + `WaitForMultipleObjects` 替代 2000ms 轮询（延迟 10ms 级、无空闲 CPU）；**监控目录**（非文件——文件删除重建时句柄失效）；去重窗口 500ms→10ms（对齐 EAPO + Note 72）；shutdown_event 退出 + join——**对应章节**：`config 6.2`、`object 7.1.8`
+- **热重载失败保留旧链**：解析失败不再变空链直出（EQ 消失），保留 current_chain + log::warn（对齐 EAPO loadConfig 失败不替换）——**对应章节**：`object 7.1.18`
+- **过渡缓冲预分配**：LockForProcess 按 `max_frame_count × max_ch` 预分配 temp_buffer_old/new，杜绝 RT 首次过渡 `resize()` 扩容——**对应章节**：`object 7.1.9`
+- **EAPO 对比澄清**：R1（退役链零析构）与 EAPO `previousConfig` 为**等价对齐**（EAPO 也在控制线程 loadConfig 析构，非我此前误述的"我们更优"）——**对应章节**：`object 7.1.3`（R1 注）
+
+> 对应 commit：`待提交回填`
+
 ## v7.7 — 2026-08-02
 
 变更类型：`缺陷修复`（实现缺陷反馈：IsInputFormatSupported 时序错误）
