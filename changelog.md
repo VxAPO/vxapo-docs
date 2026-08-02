@@ -9,7 +9,7 @@
 - **config 6.1 补充 REW 动态命令名分发**：REW `Filter N:`（如 `Filter 12:`）命令关键字动态，静态 match 无法命中，补充 `starts_with("filter ")` 前缀分支——**对应章节**：`config 6.1`
 - **config 6.3 注册意图澄清**：`register_all_commands` 只注册 DSP 工厂——纯配置命令由 6.1 静态分发（`FilterFactory::create_filter` 只收 value 不含命令关键字，config 命令工厂注册后永远无法命中）——**对应章节**：`config 6.3`
 
-> 对应 commit：`待提交回填`
+> 对应 commit：`bf7a08e`
 
 ## v7.3 — 2026-08-01
 
