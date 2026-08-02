@@ -1,5 +1,16 @@
 # Changelog
 
+## v7.4 — 2026-08-02
+
+变更类型：`缺陷修复`（P0-1/P0-2 实现反馈闭环 → config 规范修订）
+
+- **实现反馈闭环机制**：新增「十七、实现反馈闭环」——执行端实现中发现规范不可行/遗漏 → 追加反馈段（不改状态）→ 规范侧修订 → 合规核对后标记 Done；零容忍绕过——**对应章节**：`主规范 十七`
+- **config 6.1 修订 current_file**：`ParseContext.current_file: &'a Path` → `PathBuf`（Include 子解析需独立持有子文件路径，借用跨递归层不安全，旧 `Box::leak` 致泄漏）——**对应章节**：`config 6.1`
+- **config 6.1 补充 REW 动态命令名分发**：REW `Filter N:`（如 `Filter 12:`）命令关键字动态，静态 match 无法命中，补充 `starts_with("filter ")` 前缀分支——**对应章节**：`config 6.1`
+- **config 6.3 注册意图澄清**：`register_all_commands` 只注册 DSP 工厂——纯配置命令由 6.1 静态分发（`FilterFactory::create_filter` 只收 value 不含命令关键字，config 命令工厂注册后永远无法命中）——**对应章节**：`config 6.3`
+
+> 对应 commit：`待提交回填`
+
 ## v7.3 — 2026-08-01
 
 变更类型：`实现对齐`（P0-4 配置热重载全链路规范补齐）

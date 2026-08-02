@@ -149,7 +149,11 @@ pub struct ParseContext<'a> {
     /// 当前设备类型（解析期间可变）。
     pub is_capture: bool,
     /// 当前文件路径（用于错误报告和 Include 相对路径）。
-    pub current_file: &'a Path,
+    ///
+    /// v7.4 修订（P0-2 实现反馈②）：由 `&'a Path` 改为所有权 `PathBuf`——
+    /// Include 子解析需独立持有子文件路径，借用无法跨递归层安全表达
+    /// （旧方案 `Box::leak` 会导致路径泄漏）。
+    pub current_file: PathBuf,
     /// 当前行号（用于错误报告）。
     pub line_number: usize,
     /// AbortFile 标志（Device: 命令设置）。
@@ -245,6 +249,11 @@ for (i, line) in content.lines().enumerate() {
         "Channel"   => channel::handle(value, &mut ctx)?,
         "Eval"      => expr::handle(value, &mut ctx)?,
         "Include"   => include::handle(value, &mut ctx)?,
+        // REW 动态命令名：Filter N:（命令关键字为动态 `Filter 1`/`Filter 12` 等，
+        // 静态 match 无法命中；v7.4 修订，P0-2 实现反馈③）
+        _ if command.to_ascii_lowercase().starts_with("filter ") => {
+            rew::handle(value, &mut ctx)?
+        }
         // DSP 命令通过 FilterRegistry 匹配
         _ => {
             let outcome = ctx.registry.try_create(value, ctx.dsp_ctx, ...);
@@ -334,23 +343,25 @@ impl ConfigWatcher {
 **公开 API**：
 
 ```rust
-/// 注册所有命令工厂和内置 DSP 过滤器工厂。
+/// 注册内置 DSP 过滤器工厂到 FilterRegistry。
+///
+/// v7.4 修订（P0-2 实现反馈①）：**只注册 DSP 工厂**——纯配置语义命令
+/// （Device:/If:/Eval:/Include:/Stage:/Channel:/Rew）由 `config/parser.rs`
+/// 的逐行分发逻辑（6.1）**静态分发**，不注册进 FilterRegistry。
+///
+/// 原因：FilterFactory::create_filter 只接收**冒号后的 value**（不含命令关键字），
+/// config 命令工厂无法从 value 反推命令名（`Filter:` 的 value 是 `ON PK...`、
+/// `Device:` 的 value 是设备路径），注册后永远无法命中。
+/// DSP 命令（Preamp:/Filter:/GraphicEQ:/Copy:/Delay: 等）仍通过 registry 动态创建。
 pub fn register_all_commands(registry: &mut FilterRegistry) {
     // DSP 工厂由 pipeline/dsp 统一注册（完全下沉）
     crate::pipeline::dsp::register_builtin_filters(registry);
-
-    // 纯配置语义命令由 config 自己注册
-    registry.register(DeviceFactory::new());      // Device:
-    registry.register(IfFactory::new());           // If:
-    registry.register(EvalFactory::new());         // Eval:
-    registry.register(IncludeFactory::new());      // Include:
-    registry.register(StageFactory::new());        // Stage:
-    registry.register(ChannelFactory::new());      // Channel:
-    registry.register(RewFactory::new());          // REW 格式
 }
 ```
 
-**工厂优先级**：`config/` 注册的工厂排在 `pipeline/dsp/` 工厂之前（`Device:` / `If:` 等需优先匹配）。
+> **分发权威**：纯配置命令的分发以 6.1 逐行分发逻辑为准（静态 `match` + REW `Filter N:` 前缀分支）；
+> `FilterRegistry` 仅承载 DSP 工厂，作为未知/动态参数的兜底创建路径。
+> 不再有"config 命令工厂注册进 registry"的意图；`config/commands.rs` 退化为 DSP 工厂注册入口。
 
 ---
 
