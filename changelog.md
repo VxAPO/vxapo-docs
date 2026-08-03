@@ -1,5 +1,19 @@
 # Changelog
 
+## v7.10 — 2026-08-03
+
+变更类型：`实现对齐`（P0-4 实现完成报告反馈①——watcher 线程模型澄清 + 对象层接线缺口确认）
+
+- **ConfigWatcher 外部驱动模型澄清（执行端反馈①）**：`config 6.2` 原「new 启动 watcher 线程」与 `wait_and_handle`
+  外部驱动矛盾——统一为 **`ConfigWatcher` 不自启线程**（new 只建句柄；线程由调用方 `object/apo.rs::start_watcher`
+  创建并循环驱动），`shutdown` 不 join（join 由 `stop_watcher` 负责：SetEvent → join → close）——
+  **对应章节**：`config 6.2`、`object 7.1.9`（start_watcher 定义）、`object 7.1.10`（stop_watcher 定义）、`object 7.1.3`（字段补 shutdown_event/watcher_thread）
+- **P0-4 对象层接线缺口确认（执行端遗留 1）**：`apo.rs` 尚未创建 watcher 线程（LockForProcess 末尾 start_watcher
+  + UnlockForProcess stop_watcher）——**属执行端 P0-4 剩余项**，规范本文件已完备，执行端补做后回归；
+  P0-4 **不标记 Done**（热重载链路未实际接通）——**对应章节**：`object 7.1.9/7.1.10`、`roadmap P0-4`
+
+> 对应 commit：`（待提交）`
+
 ## v7.9 — 2026-08-02
 
 变更类型：`结构重构`（P0-4 配置变更检测方案定稿——filter_spec 指纹 + 目录级事件驱动语义落定）

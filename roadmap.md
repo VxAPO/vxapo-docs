@@ -258,9 +258,9 @@
 - 优先级：P0 ｜ 关联 Phase：Phase 10
 - 目标：监控线程检测 config.txt 变更 → swap 串联 → 升余弦过渡；修改文件实时生效且无爆音（对齐 v6.9 R1-R4）
 - 影响模块：`config/watcher.rs`、`config/parser.rs`（filter_spec 产出，v7.9）、`object/apo.rs`（hot_reload/APOProcess）
-- 规范落点：`config 6.1`（filter_spec 契约 + parse_file_with_spec + 128KB 逐文件闸门，v7.9）、`config 6.2`（目录级事件驱动 + DirectoryChanged，v7.8/v7.9）、`object 7.1.8`（watcher 生命周期随锁定周期，v7.9）、`object 7.1.9`（末尾启动 watcher + active_spec 基线，v7.9）、`object 7.1.18`（spec 短路 + 保留旧链，v7.9）、`intent.md`（产品意图）
+- 规范落点：`config 6.1`（filter_spec 契约 + parse_file_with_spec + 128KB 逐文件闸门，v7.9）、`config 6.2`（目录级事件驱动 + DirectoryChanged + 外部驱动模型，v7.8/v7.9/v7.10）、`object 7.1.8`（watcher 生命周期随锁定周期，v7.9）、`object 7.1.9`（末尾启动 watcher + active_spec 基线 + start_watcher 定义，v7.9/v7.10）、`object 7.1.10`（stop_watcher 定义，v7.10）、`object 7.1.18`（spec 短路 + 保留旧链，v7.9）、`intent.md`（产品意图）
 - 依赖：P0-3（已 Done ✅）
-- DoD：☑ 规范定稿（v7.3/v7.8/v7.9）☐ 实现 ☐ 测试（含手动听感验证）
+- DoD：☑ 规范定稿（v7.3/v7.8/v7.9/v7.10）☐ 实现（部分：config/parser/watcher 已实装；对象层接线待补）☐ 测试（含手动听感验证）
 
 > **定稿说明（v7.3，v7.8/v7.9 修订）**：watcher 能力由**轮询（2000ms + 500ms 去重）**升级为
 > **Win32 事件驱动**（`FindFirstChangeNotificationW` + `WaitForMultipleObjects` + 10ms 去重 +
@@ -290,6 +290,65 @@
 >   config 6.2（DirectoryChanged 目录级）、object 7.1.8/7.1.9/7.1.10（watcher 生命周期）、
 >   object 7.1.18（spec 短路 + 128KB 闸门）、object 7.1.3（active_spec 字段）——
 >   **对应章节**：`config 6.1/6.2`、`object 7.1.3/7.1.8/7.1.9/7.1.10/7.1.18`、`intent.md`
+
+### 实现完成报告（commit ad6f203）
+- DoD：☑ 实现 ☑ 测试
+- 自查结果：
+  - RT 无违规：spec 产出/128KB 闸门/解析全部在控制线程（watcher 线程 + hot_reload）；
+    过渡缓冲预分配（max_frame_count × max_ch）杜绝 RT 过渡首次 resize。
+  - 引用约束无打破：config/parser.rs 增 `produce_spec`/`parse_file_with_spec`（config 6.1 允许）；
+    watcher.rs 增 `Win32_Storage_FileSystem`（config 6.2 目录级事件驱动必需）；
+    object/apo.rs 增 `config/watcher::ConfigWatcher` + `MAX_CONFIG_FILE_SIZE`（object 7.1.8/7.1.18）。
+  - 未引入未声明依赖：windows features 已含 Win32_Storage_FileSystem（v7.9 已声明）。
+- 新增/修改文件（⊆ 影响模块 `config/watcher.rs`、`config/parser.rs`、`object/apo.rs`）：
+  - `src/config/parser.rs`：`FilterSpec=String` / `SpecChain=Vec<FilterSpec>` / `MAX_CONFIG_FILE_SIZE`；
+    `produce_spec(cmd,value)`（命令名小写 + `\x1F` + token 级规范化；无冒号裸命令整行小写）；
+    `parse_file_with_spec`/`parse_content_with_spec` 双返回；裸命令可达性（value 空 → try_create(cmd)）。
+  - `src/config/watcher.rs`（重写）：`WatchEvent::DirectoryChanged(PathBuf)`；
+    `ConfigWatcher::new(watch_dir, shutdown_event)` + `wait_and_handle`（WaitForMultipleObjects
+    shutdown|notify + 10ms 去重 + FindNextChangeNotification）+ `shutdown` + `poll_registry` + Drop 兜底。
+  - `src/object/apo.rs`：`ApoObjectInner.active_spec`（Lock 基线/hot_reload 更新/Unlock·Reset 清空）；
+    `hot_reload` v7.9 六步（R2 阻塞 → 128KB 闸门 → 锁外 parse_file_with_spec → spec 短路 →
+    锁内交换 + active_spec 更新）；`LockForProcess` 预分配 temp_buffer_old/new。
+- 测试：428 → 434 passed（parser 新增 6：produce_spec 格式/复杂 config 混合 Include/spec 注释不变/
+  数值变化/未知命令+AbortFile/乱码 lossy + watcher 3：registry 哈希/不存在目录/空 shutdown）。
+  三类 config 复杂度（用户反馈）：正常复杂（条件+裸命令+Include+顺序）/携带错误（未闭合 If/
+  未知命令/AbortFile）/乱码（非 UTF-8 lossy 不 panic）/超限 Inclusion 整体拒绝。
+- 遗留问题：
+  1. **watcher 线程接线未落地**：ConfigWatcher 不自启线程（wait_and_handle 外部驱动，v7.9 API），
+     但 apo.rs 尚未创建 watcher 线程（LockForProcess 末尾 start_watcher + ApoObject 持有
+     shutdown_event + 循环 wait_and_handle → hot_reload）——因 ApoObject 生命周期/COM 边界
+     留待后续集成（P0-4 剩余项）。
+  2. 真实 Windows 音频引擎验证（目录变更 → 热重载无爆音）需真实 audiodg 环境。
+
+### 反馈（v7.9，执行端）
+- 状态建议：Spec-Finalized → Spec-Finalized（无需状态回退；规范文本澄清 1 点）
+- 问题：
+  1. **config 6.2 `new` 注释「启动 watcher 线程」与 `wait_and_handle` 外部驱动矛盾**：
+     6.2 `new` 注释写「启动 watcher 线程」，但 `wait_and_handle`（"等待并处理一个事件……
+     线程应退出"）暗示外部线程循环驱动；v7.9 生命周期声明「ConfigWatcher 由 ApoObject 持有、
+     UnlockForProcess SetEvent+join」——若 ConfigWatcher 自启线程则 wait_and_handle 无调用者、
+     shutdown 应 join 内部线程。当前实现按 2 参 API + 外部驱动。建议统一描述
+     （外部驱动或自启线程二选一，并明确 shutdown 是否 join）。
+- 建议：规范侧核对后决定；执行端 DoD 已全通过（cargo test 434 + check 0 warning）。
+
+### 反馈修订记录（v7.10，规范侧处理）
+- 反馈①（watcher 线程模型）：**已修订** —— 确立**外部驱动模型**：
+  - `config 6.2`：`ConfigWatcher` **不自启线程**（new 只建句柄）；`wait_and_handle` 由调用方线程循环驱动；
+    `shutdown` **不 join**（仅释放句柄）——原「启动 watcher 线程」注释删除，统一为「创建监控器（不启动线程）」。
+  - `object 7.1.9`：补 `start_watcher` 定义（CreateEventW → ConfigWatcher::new → spawn 线程循环
+    `wait_and_handle → hot_reload`）；失败降级（watcher=None，仅日志）不阻塞锁定。
+  - `object 7.1.10`：补 `stop_watcher` 定义（SetEvent → join → shutdown → 清空字段；幂等）。
+  - `object 7.1.3`：ApoObject 字段补 `watcher_thread: Option<JoinHandle>` + `watcher_shutdown_event: Option<HANDLE>`。
+  - **对应章节**：`config 6.2`、`object 7.1.3/7.1.9/7.1.10`
+- **执行端遗留 1（对象层接线）确认为 P0-4 剩余项**：`apo.rs` 尚未接线 `start_watcher`/`stop_watcher`
+  （未创建 watcher 线程）——热重载链路未实际接通。**P0-4 不标记 Done**，
+  规范侧已完备（v7.10 修订后），执行端补做后回归复核。
+  - **执行端待办**：① ApoObject 加 `watcher_thread`/`watcher_shutdown_event` 字段；
+    ② `LockForProcess` 末尾调 `start_watcher()`（spawn 线程 + 循环 wait_and_handle → hot_reload）；
+    ③ `UnlockForProcess` 调 `stop_watcher()`（SetEvent + join + close）；④ 回归测试。
+  - 遗留 2（真实音频引擎验证）保持，属手动验收项。
+- 状态保持：Spec-Finalized（P0-4 未进入 Implementing——执行端未改状态；规范侧补全后仍须执行端接线才能 DoD 全勾）
 
 ### P0-5  RT 入口 panic 防护（catch_unwind）
 - 状态：Backlog

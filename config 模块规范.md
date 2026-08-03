@@ -382,41 +382,47 @@ pub enum WatchEvent {
     RegistryChanged,              // 保留：poll_registry 哈希兜底（低频）
 }
 
-/// 配置目录变更监控器（v7.8/v7.9 事件驱动）。
+/// 配置目录变更监控器（v7.8/v7.9/v7.10 事件驱动——**外部驱动模型**）。
 ///
 /// 核心：监控 **目录**（非文件——文件被删除重建时句柄失效，目录天然健壮）。
-/// 线程模型：
-///   - watcher 线程（控制路径）：FindFirstChangeNotificationW 阻塞等待变更
+/// **线程模型（v7.10 澄清，P0-4 执行端反馈①）**：
+///   - `ConfigWatcher` **不自启线程**——只管理监控句柄 + 阻塞等待 API；
+///   - 线程由**调用方**（`object/apo.rs::start_watcher`，7.1.9）创建并驱动：
+///     循环调用 `wait_and_handle()` → 返回 `DirectoryChanged` 时触发 `hot_reload`（7.1.18）
 ///   - 去重窗口 10ms（对齐 EAPO：FindNextChangeNotification 后 WaitFor(1,10ms)
 ///     合并编辑器「写临时文件 + rename」的多次通知）
-///   - 退出：shutdown_event 置位 → 线程退出（UnlockForProcess 时 SetEvent + join，v7.9）
+///   - 退出：shutdown_event 置位 → `wait_and_handle` 返回 false → 调用方线程退出
+///     （UnlockForProcess 时 SetEvent + join 线程，v7.9 生命周期随锁定周期）
 pub struct ConfigWatcher { ... }
 
 impl ConfigWatcher {
-    /// 创建监控器并启动 watcher 线程。
+    /// 创建监控器（**不启动线程**，v7.10 澄清）——句柄创建 + 状态初始化。
     ///
     /// - watch_dir：**监控目录**（如 `Documents\VxAPO\{GUID}`），非 config.txt 文件本身
-    /// - shutdown_event：外部持有的退出事件（由 APO 实例持有；UnlockForProcess 时
-    ///   `SetEvent` 后 join 线程——v7.9 生命周期随锁定周期）
+    /// - shutdown_event：外部持有的退出事件句柄（由 APO 实例持有；UnlockForProcess 时
+    ///   `SetEvent` → `wait_and_handle` 返回 false → 调用方 join 线程——v7.9 生命周期随锁定周期）
     /// - 去重窗口固定 10ms（v7.8，对齐 EAPO 实战；旧 500ms 过保守，延迟过高）
     ///
-    /// 线程内循环：
+    /// **调用方接线（object 7.1.9 start_watcher）**：
+    ///   spawn 线程 → 循环 `wait_and_handle()`：
     ///   1. FindFirstChangeNotificationW(watch_dir, TRUE, FILE_NAME | LAST_WRITE)
     ///   2. WaitForMultipleObjects(shutdown_event | notification_handle)  → 异步等事件（非轮询）
-    ///   3. 变更（**目录级，不区分文件**）→ 触发回调（object 层 hot_reload 处理）
+    ///   3. 变更（**目录级，不区分文件**）→ 返回 `Some(DirectoryChanged)` → 触发 hot_reload
     ///   4. FindNextChangeNotification → WaitForMultipleObjects(1, handle, 10ms)【去重】
-    ///   5. 触发回调（object 层 hot_reload；spec 指纹短路 + 加载闸门由 reloading 防覆盖）
+    ///   5. 循环（spec 指纹短路 + 加载闸门由 reloading 防覆盖）
+    ///   `shutdown_event` 置位 → 返回 None/false → 线程退出
     pub fn new(watch_dir: PathBuf, shutdown_event: HANDLE) -> Self;
 
     /// 等待并处理一个事件（阻塞直到文件变更或 shutdown）。
-    /// 返回 false 表示 shutdown（线程应退出）。
+    /// 返回 false 表示 shutdown（`shutdown_event` 已置位，调用方线程应退出）。
     pub fn wait_and_handle(&mut self) -> bool;
 
     /// 检查注册表变更（哈希比对，低频；与目录监控并行）。
     pub fn poll_registry(&mut self, current_hash: u64) -> Option<WatchEvent>;
 
-    /// 停止监控（SetEvent + join watcher 线程）。v7.9：仅在 UnlockForProcess 调用；
-    /// 重新 Lock 时重新创建实例。
+    /// 停止监控并释放句柄（`FindCloseChangeNotification` + `CloseHandle`）。
+    /// **不 join 线程**——join 由调用方（`object 7.1.10 stop_watcher`）负责：
+    /// 先 `SetEvent(shutdown_event)` → join 线程 → 再 `watch.shutdown()`（v7.10 澄清）。
     pub fn shutdown(self);
 }
 ```

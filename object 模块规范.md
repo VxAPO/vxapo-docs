@@ -218,8 +218,12 @@ pub struct ApoObject {
     /// 配置加载器。
     pub(crate) config_loader: ConfigLoader,
 
-    /// 配置文件监控器（后台线程）。
+    /// 配置文件监控器（v7.10：外部驱动模型——不自启线程，句柄 + 等待 API）。
     pub(crate) watcher: Option<ConfigWatcher>,
+    /// watcher 线程句柄（v7.10 补充，start_watcher 创建 / stop_watcher join 后清空）。
+    pub(crate) watcher_thread: Option<std::thread::JoinHandle<()>>,
+    /// watcher 退出事件（v7.10 补充，start_watcher 创建 / stop_watcher CloseHandle）。
+    pub(crate) watcher_shutdown_event: Option<windows::Win32::Foundation::HANDLE>,
 
     /// 配置文件路径。
     pub(crate) config_path: String,
@@ -640,11 +644,39 @@ fn LockForProcess(&self, num_input, pp_inputs, num_output, pp_outputs) -> HRESUL
     // - watch_dir = config_path 父目录（Documents\VxAPO\{GUID}）；
     //   shutdown_event 由 APO 实例持有（UnlockForProcess 时 SetEvent + join）。
     // - 启动失败：降级（watcher=None，仅日志），不阻塞锁定——配置热重载失效但音频链路正常。
+    //   （v7.10 实现缺口确认：start_watcher 接线属执行端 P0-4 剩余项，见 7.1.9 注）
     if let Err(e) = self.start_watcher() {
         self.logger.log(LogLevel::Warn, &format!("LockForProcess: watcher start failed: {e}"));
     }
     S_OK
 }
+```
+
+> **`start_watcher` 定义（v7.10 补充，P0-4 外部驱动模型——config 6.2 澄清）**：
+> `ConfigWatcher` **不自启线程**（config 6.2 v7.10）；本方法负责**创建线程并驱动**：
+>
+> ```rust
+> /// 启动 watcher 线程（外部驱动模型）。
+> ///
+> /// 1. 创建 shutdown_event 句柄（CreateEventW，初始非触发态）
+> /// 2. 创建 ConfigWatcher::new(watch_dir = config_path 父目录, shutdown_event)
+> /// 3. spawn watcher 线程：
+> ///    loop {
+> ///        if !watcher.wait_and_handle() { break; }   // shutdown_event 置位 → false → 退出
+> ///        self.hot_reload();                          // 目录变更 → 热重载（spec 短路 + R2 闸门处理）
+> ///    }
+> ///    // 线程退出：shutdown_event 已置位；调用方负责 join
+> /// 4. 存入 self.watcher = Some(watcher)  // 线程句柄 + shutdown_event 由 ApoObject 持有（字段扩展）
+> /// 5. 失败（目录不存在/句柄创建失败）→ 返回 Err，调用方降级（watcher=None，仅日志）
+> ///
+> /// 启动失败不阻塞锁定——配置热重载失效但音频链路正常（7.1.9 共识，v7.9）。
+> fn start_watcher(&self) -> Result<(), VxApoError>;
+> ```
+>
+> **注意（v7.10 执行端反馈①）**：v7.9 伪代码已写「LockForProcess 末尾启动 watcher」，但执行端
+> 实现报告遗留「apo.rs 尚未创建 watcher 线程」——**属执行端 P0-4 剩余项**（ApoObject 需新增
+> `watcher: Option<ConfigWatcher>` + `shutdown_event: HANDLE` + `watcher_thread: Option<JoinHandle>` 字段，
+> 并接线上述 start_watcher/stop_watcher）。规范本文件已完备，执行端补做后回归。
 ```
 
 ---
@@ -685,13 +717,31 @@ fn UnlockForProcess(&self) -> HRESULT {
     // v7.9（P0-4）：**停止 watcher**（生命周期随锁定周期，7.1.8 约定）。
     // unlocked 期间无音频流，配置热重载无意义；重新 Lock 必然重读 config
     // 建立新基线，unlocked 期间的变更在重新 Lock 时自然生效。
-    // SetEvent + join watcher 线程（shutdown_event 由 APO 实例持有）。
+    // v7.10：stop_watcher（SetEvent + join + close），见下方定义。
     drop(inner);
-    if let Some(watcher) = self.watcher.take() {
-        watcher.shutdown();
-    }
+    self.stop_watcher();
     S_OK
 }
+```
+
+> **`stop_watcher` 定义（v7.10 补充，P0-4 外部驱动模型）**：
+> `ConfigWatcher::shutdown` 不 join 线程（config 6.2 v7.10）——join 由本方法负责：
+>
+> ```rust
+> /// 停止 watcher 线程并释放资源。
+> ///
+> /// 1. SetEvent(shutdown_event)            → wait_and_handle 返回 false → 线程循环退出
+> /// 2. join(watcher_thread)                → 确保线程已退出（无泄漏）
+> /// 3. watcher.shutdown()                  → FindCloseChangeNotification + CloseHandle
+> /// 4. 清空字段（watcher=None / thread=None / event 由 ApoObject 持有者 CloseHandle）
+> ///
+> /// 幂等：watcher 为 None（未启动/启动失败）时直接返回，不 panic。
+> fn stop_watcher(&mut self);
+> ```
+>
+> **线程退出时序**：`SetEvent` → 线程内 `wait_and_handle` 观察到 shutdown → 返回 false →
+> 线程自行退出 → 调用方 `join` 回收。不存在 RT 竞态（watcher 线程为控制路径，
+> 与 APOProcess 无共享状态；hot_reload 自身有 R2 闸门 + mutex 保护）。
 ```
 
 ---
