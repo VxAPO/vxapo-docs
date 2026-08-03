@@ -194,17 +194,16 @@
 > - ① **Unlock 失败语义**（EAPO 严格 return hr / VxAPO 容错不阻塞父）——P0-6 定稿时决策（默认 VxAPO 容错，7.1.10 一致）。
 > - ② **双链过渡下 child 委托时序**——**v8.1 收敛**：childRT->APOProcess **前置每帧一次**（双链共享同一份 child 输出作输入），
 >   child 不在 current/outgoing 任一链内（child 独立持有，过渡只切父内两链）；不需要"过渡期 child 双实例"设计。
-> - ③ **有 child 时 realChannelCount/通道数约束**——**v8.1 收敛为方案 A**（EAPO realChannelCount 语义澄清）：
->   - **无 child**：EAPO `realChannelCount = inFormat 通道`，输入→输出维度一致（VxAPO P0 现状强制 input==output 对齐）。
->   - **有 child**：EAPO `realChannelCount = outFormat 通道`（**信任 APO 链格式传递约定**——child 无报告通道数接口，
->     父只能按自身输出格式假设 child 已就位为输出布局）；「不支持下混」（IsInputFormatSupported S_FALSE 硬拒）为兜底。
->   - **VxAPO 显式约束**（child 无法报告通道数，无法"显式约束 child"——只能**声明 VxAPO 自身边界**）：
->     - LockForProcess 时校验三方一致：**child 输出（按父 outFormat 读）== 父链输入 == 最终输出通道数**——
->       不满足即拒绝/降级（无 child 直出）；P0 不引入 realChannelCount 多维机制。
->     - child 仅做**纯效果不改通道**；如未来 FxSound 效果需改通道，走 EAPO 方案 B（realChannelCount 维度切换 +
->       仅 mono→stereo 上混特例 + Copy: 显式通道映射），留 P1 后按需（参考主规范新增「EAPO 对齐度」章节）。
+> - ③ **有 child 时 realChannelCount/通道数约束**——**v8.1 收敛为等价立场**（EAPO realChannelCount 语义澄清 + v8.1 补正）：
+>   - **APO 链格式授予语义**：in/outFormat 是父 APO 两个独立连接描述符（引擎分别授予）。
+>   - **无 child**：父承诺不转换（协商拒 in>out → in==out），`realChannelCount = inFormat`。
+>   - **有 child**：父把 in/out 描述符原样传 child（child 输入=in、输出=out，child 就地负责 in→out 转换）；
+>     父按 **out 布局**读 child 输出后的缓冲，`realChannelCount = outFormat`。
+>   - **协商委托**：有 child 时父先问 child 的 IsInputFormatSupported，child 成功即用 child 判定；仅 child 失败/缺失回落父自身检查——child 格式对接由 child 负责。
+>   - **仅有的上混特例 = mono→stereo**：补「无 APO 时 Windows 音频系统自动上混」的默认行为；其他上混/下降混父均不执行。
+>   - **VxAPO 等价实现**：协商期锁死「收到的输入 == 输出通道数」（父不转换的自身立场，同 EAPO）；**不引入 realChannelCount 维度切换机制**（EAPO 该分支在协商后为冗余路径）——实现简化，非更严谨；child 通道布局纯效果由契约声明（两方均无运行时布局检测）。
 >
-> ①②③ 收敛结论与 EAPO 通道机制详析见**主规范新增「EAPO 对齐度与差异化」章节（v8.1）**；此三点在 P0-6 Spec-Drafting 定稿时仅需**确认**（对照该章节）不再重开设计。
+> ①②③ 收敛结论与 EAPO 通道机制详析见**主规范「十八、EAPO 对齐度与差异化」**（18.2 APO 链格式授予语义 + D2/D3 等价立场）；此三点在 P0-6 Spec-Drafting 定稿时仅需**确认**（对照该章节）不再重开设计。
 
 ### P0-7  CLI 端到端验证（install/uninstall/config set/show/list/status + 回滚）
 - 状态：Backlog

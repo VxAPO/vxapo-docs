@@ -10,6 +10,8 @@
   差异化 D1-D5（父内双链 vs EAPO 单链配置级过渡 / realChannelCount 维度切换 vs VxAPO 显式约束 / child 输出通道数不可知的约定显式化 /
   Unlock 失败语义差异 / IsInputFormatSupported 委托失败回落）+ 差异化带来的设计影响（RT 成本叠加 3 次 DSP / 维度稳定前提 / 校验前置）——**对应章节**：`主规范 十八`
 
+> *v8.1 补正说明：撤销「显式约束/显式优于 EAPO 隐式信任」表述（语义保留于 roadmap P0-6、主规范 18.2/18.3，已同步重写为「等价立场」）——经推演，EAPO 靠「协商期锁死 in==out + 协商委托 child + mono→stereo 补系统默认」构成完整通道语义；VxAPO 与之**等价**，唯一区别是不引入 realChannelCount 维度切换机制（协商后冗余/死路径），属实现简化非更严谨。*
+>
 > 对应 commit：`8e5c54f`
 
 ## v8.0 — 2026-08-03
