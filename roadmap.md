@@ -65,13 +65,13 @@
 > 观察（v8.0 移出）：v7.6 二次检查 3 项对齐（reloading 拦截 / Initialize 降级 / Documents 兜底）——详见主规范对应章节，不再重复登记。
 
 ### P0-4  配置热重载全链路（watcher + swap + 过渡）
-- 状态：Spec-Finalized
+- 状态：Done（v8.0 合规核对通过）
 - 优先级：P0 ｜ 关联 Phase：Phase 10
 - 目标：监控线程检测 config.txt 变更 → swap 串联 → 升余弦过渡；修改文件实时生效且无爆音（对齐 v6.9 R1-R4）
 - 影响模块：`config/watcher.rs`、`config/parser.rs`（filter_spec 产出，v7.9）、`object/apo.rs`（hot_reload/APOProcess）
 - 规范落点：`config 6.1`（filter_spec 契约 + parse_file_with_spec + 128KB 逐文件闸门 + 单冒号校验 + 白名单三段式，v7.9/v7.11/v7.12）、`config 6.2`（目录级事件驱动 + DirectoryChanged + 外部驱动模型，v7.8/v7.9/v7.10）、`object 7.1.8`（watcher 生命周期随锁定周期，v7.9）、`object 7.1.9`（末尾启动 watcher + active_spec 基线 + start_watcher 定义，v7.9/v7.10）、`object 7.1.10`（stop_watcher 定义，v7.10）、`object 7.1.18`（spec 短路 + 保留旧链，v7.9）、`pipeline 4.19/4.20`（Convolution strict + VST 特判，v7.11/v7.12）、`intent.md`（产品意图 + 语法严格性 + 诊断日志归属）
 - 依赖：P0-3（已 Done ✅）
-- DoD：☑ 规范定稿（v7.3/v7.8/v7.9/v7.10/v7.11/v7.12）☐ 实现（部分：config/parser/watcher 已实装；对象层接线 + v7.11/v7.12 严格化待补）☐ 测试（含手动听感验证）
+- DoD：☑ 规范定稿（v7.3/v7.8/v7.9/v7.10/v7.11/v7.12）☑ 实现 ☑ 测试（436 passed；听感验证④ 留 P0-7 后手动验收）
 
 > **定稿说明（v7.3，v7.8/v7.9 修订）**：watcher 能力由**轮询（2000ms + 500ms 去重）**升级为
 > **Win32 事件驱动**（`FindFirstChangeNotificationW` + `WaitForMultipleObjects` + 10ms 去重 +
@@ -87,14 +87,55 @@
 >   `#P0-4-3`（v7.11 语法严格化）、`#P0-4-4`（v7.12 白名单三段式）
 >
 > **执行端待办**（补做后回归，DoD 方全勾）：
-> - ① **对象层接线**（v7.10 确认）：ApoObject 加 `watcher_thread`/`watcher_shutdown_event` 字段；
->   `LockForProcess` 末尾调 `start_watcher()`（spawn 循环 wait_and_handle → hot_reload）；
->   `UnlockForProcess` 调 `stop_watcher()`（SetEvent + join + close）；回归测试。
-> - ② **v7.11 严格化**：`split_command_value` 单冒号校验；`_` 分支 Unmatched → SyntaxError（删裸命令兜底）；
->   `parse_convolution_params` 改 `Result`；测试断言更新；错误日志写入 `log/`。
-> - ③ **v7.12 白名单**：`_` 分支补白名单校验（is_known_dsp_command + VSTPlugin 特判 + Unmatched 文案收窄）；
->   测试 `spec_with_unknown_command_reports_error`。
-> - ④ 真实音频引擎验证（无爆音）留手动验收。
+> - ① **对象层接线**（v7.10 确认）——**已完成**（commit 77bc68e）：ApoObject 加
+>   `watcher_state: Arc<Mutex<WatcherState>>`（`#[implement]` 无 &mut，方案 A）；
+>   `LockForProcess` 末尾 `start_watcher()`（CreateEventW → spawn 循环 wait_and_handle →
+>   hot_reload_impl）；`UnlockForProcess` `stop_watcher()`（SetEvent + join + close）；
+>   `ConfigWatcher` `unsafe impl Send`（HANDLE 句柄跨线程合法）。 ✅
+> - ② **v7.11 严格化**——**已完成**（commit 7b20619）：`split_command_value` 单冒号校验
+>   （缺/多余冒号 SyntaxError）；`_` 分支 Unmatched → SyntaxError；`parse_convolution_params`
+>   `Option`→`Result`（Empty/TooManyTokens/InvalidGain）；测试断言更新
+>   （spec_with_unknown_command_reports_error 等）。错误日志写 `log/`（待 P0-7 CLI）。
+> - ③ **v7.12 白名单**——**已完成**（commit 7b20619）：`is_known_dsp_command` 白名单校验
+>   （未知命令 → SyntaxError，不落 registry）+ VSTPlugin 特判「未启用（预留）」+
+>   Unmatched 收窄「命令无效 'X'：参数无法解析」；`spec_with_unknown_command_reports_error`
+>   已转绿。
+> - ④ 真实音频引擎验证（无爆音）留手动验收——**待 P0-7 CLI（install_endpoint/FxProperties
+>   挂载）落地后联调**（见 P0-7 验证边界：「真正 DSP 热重载生效由 P0-4 手动听感验证覆盖」）。
+
+### 合规核对记录（v8.0）
+- 核对结果：**通过**——实现完成报告自查（RT 无违规/引用约束无打破/无未声明依赖）与规范落点一致；
+  触碰文件 ⊆ 影响模块（config/parser.rs、config/watcher.rs、object/apo.rs）；测试 436 passed + check 0 error 0 warning。
+- 待办 ①（对象层接线）②③（v7.11/v7.12 严格化）：全部完成（commit 77bc68e / 7b20619）；
+  `Arc<Mutex<WatcherState>>` 聚合状态与规范 7.1.3 独立字段**语义等价**（规避 `#[implement]` 无 &mut，方案 A 可接受）。
+- 听感验证 ④ 遗留：**非实现缺口**（需真实 audiodg + P0-7 CLI FxProperties 挂载后联调）——参照 P0-1 先例（手动验收留真实环境仍标记 Done）判定 Done。
+- 已归档至本文件「已完成」区（保留章节号便于追溯）。
+
+### 实现完成报告（v7.9-v7.12，执行端）
+- DoD：☑ 实现 ☑ 测试（436 passed / 0 failed；cargo check 0 error 0 warning）
+- 自查结果：
+  - RT 无违规：watcher 线程（控制路径，I/O/锁允许）+ hot_reload 锁外解析；
+    APOProcess 过渡段保持零分配（Lock 预分配 temp_buffer）；退役链由控制线程析构（R1）。
+  - 引用约束无打破：config/parser.rs、config/watcher.rs、object/apo.rs 均 ⊆ 影响模块；
+    watcher.rs 增 `Win32_Storage_FileSystem`（config 6.2 目录监控必需）、apo.rs 增
+    `config/watcher`（object 7.1.9 已声明）；未触碰 install/、pipeline/ 其它模块。
+  - 未引入未声明依赖：windows features 已含 Win32_Storage_FileSystem/System_Threading/
+    Foundation（v7.8/v7.10 已声明）。
+- 实现文件（⊆ 影响模块）：
+  - `src/config/parser.rs`（v7.9-v7.12）：FilterSpec/SpecChain/MAX_CONFIG_FILE_SIZE/
+    produce_spec/parse_file_with_spec + v7.11 单冒号校验 + Unmatched→SyntaxError +
+    v7.12 白名单三段式（is_known_dsp_command + VSTPlugin 特判 + 文案收窄）
+  - `src/config/watcher.rs`（v7.8-v7.10）：事件驱动（DirectoryChanged/wait_and_handle/
+    shutdown/poll_registry）+ unsafe impl Send
+  - `src/object/apo.rs`（v7.10）：watcher 线程接线（Arc<Mutex<WatcherState>> +
+    start_watcher/stop_watcher + hot_reload_impl 模块级）——commit 77bc68e
+- 遗留问题：
+  1. 真实音频引擎听感验证（P0-4 待办 ④）依赖 P0-7 CLI 提供 FxProperties 挂载（install_endpoint）；
+     当前无端点 GUID 获取/挂载工具，无法在真实 audiodg 验收。
+  2. 错误日志写 `log/`（intent「诊断日志归属」）——待 P0-7 CLI/应用层呈现，DLL 仅 log。
+- 反馈引用：`feedback.md #P0-4-0`（v7.7 时序）、`#P0-4-1`（v7.9 目录级）、`#P0-4-2`
+  （v7.10 线程模型）、`#P0-4-3`（v7.11 严格化）、`#P0-4-4`（v7.12 白名单）——全部已修订。
+- 状态：仍 Spec-Finalized（DoD 实现/测试 ☑；真实听感验证 ④ 未勾——由规范侧核对后决定）
 
 ### P0-5  RT 入口 panic 防护（catch_unwind）
 - 状态：Backlog
@@ -230,3 +271,9 @@
 - 实现：`src/sys/known_folder.rs`（新建）、`src/sys/com/apo_types.rs`（re-export）、`src/object/apo.rs`（extract_endpoint_guid/resolve_config_path/Initialize 重写 + 过渡修正）、`src/sys.rs`
 - 验收：441 passed；路径/目录/文件/`_default` 兜底 4 项；真实端点 GUID 提取留手动验收
 - 反馈闭环：APOInit 实测结构（v7.6）+ 过渡 3 点修正（v7.6 二次检查对齐）+ watcher 接线留 P0-4（v7.3 已定义）
+
+### P0-4  配置热重载全链路 — Done @ v8.0
+- 规范落点：`config 6.1/6.2`（filter_spec + 目录级事件驱动 + 白名单三段式）、`object 7.1.8/7.1.9/7.1.10/7.1.18`（watcher 生命周期 + start/stop + spec 短路 + 保留旧链）、`pipeline 4.19/4.20`（Convolution strict + VST 特判）、`intent.md`
+- 实现：`src/config/parser.rs`（v7.9-v7.12 + 白名单三段式）、`src/config/watcher.rs`（事件驱动 + unsafe impl Send）、`src/object/apo.rs`（watcher 线程接线 Arc\<Mutex\<WatcherState\>\> + start/stop_watcher + hot_reload_impl）——commit 77bc68e / 7b20619
+- 验收：436 passed / 0 failed + check 0 error 0 warning；听感验证④留 P0-7 CLI 落地后手动并联调
+- 反馈闭环：`feedback.md #P0-4-0/1/2/3/4`（v7.7 时序 + v7.9 目录级 + v7.10 线程模型 + v7.11 严格化 + v7.12 白名单）——全部已修订
