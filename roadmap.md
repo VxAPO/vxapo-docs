@@ -174,14 +174,14 @@
 > **说明（v8.3 重评结论）**：旧说明「release 真防线是 panic hook + abort」**表述失准已修正**——release 防线是 **abort 兜底**（确定进程终止、无 UB），panic hook 仅为诊断工具非防线；catch_unwind 是 debug/测试态验证路径。策略本身合理：三层防护组合达成「**源头不 panic → 测试态验证防御 → release 确定性兜底**」。属 P0 尾巴（威胁 audiodg 稳定性）。
 
 ### P0-6  子 APO 委托实现（object/child.rs 落地）
-- 状态：Spec-Finalized（v8.1）
+- 状态：Spec-Finalized（v8.1，v8.5 槽位失守检测精确定性）
 - 优先级：P0 ｜ 关联 Phase：Phase 10T
 - 目标：`object/child.rs` 规范已完备（三接口类型化持有 + 委托），实现缺——补 `ApoObject.child_apo` 字段 + CoCreateInstance + Initialize/LockForProcess/UnlockForProcess/APOProcess 完整委托（对齐 EAPO childAPO/childRT/childCfg）
-- 影响模块：`object/child.rs`、`object/apo.rs`、`install/device/slots.rs`（子 APO GUID 读取）
-- 规范落点：`object 7.2`（子 APO 来源 = 接管槽位前任 + 应用层槽位失守检测 + 运行期前置委托，v8.1/v8.4）、`object 7.1.3`（child_apo 字段）、`object 7.1.7/7.1.8`（格式协商委托/Initialize 创建降级——**v8.4：子 APO GUID 来源 = 端点 GUID → `HKLM\SOFTWARE\VxAPO\Child APOs\{deviceGuid}\{PreMixChild|PostMixChild}`，APOInitSystemEffects 无子 APO 字段**）、`object 7.1.9/7.1.10`（Lock 委托/Unlock 容错）、`object 7.1.11`（APOProcess child 前置）、`install 5.3/5.5.2`（v8.4：VxAPO 独立安装信息区 + 路径隔离）、**`主规范 十八`（EAPO 对齐度与差异化 18.1-18.4，v8.1——开放决策 ①②③ 收敛依据）**
+- 影响模块：`object/child.rs`、`object/apo.rs`、`install/device/slots.rs`（子 APO GUID 读取 + child_apo_key_exists 全量判定）
+- 规范落点：`object 7.2`（子 APO 来源 = 接管槽位前任 + 应用层槽位失守检测（**v8.5 精确定性：安装模式槽位 + 覆盖备份 + 全量/非全量判定**）+ 运行期前置委托，v8.1/v8.4/v8.5）、`object 7.1.3`（child_apo 字段）、`object 7.1.7/7.1.8`（格式协商委托/Initialize 创建降级——**v8.4：子 APO GUID 来源 = 端点 GUID → `HKLM\SOFTWARE\VxAPO\Child APOs\{deviceGuid}\{PreMixChild|PostMixChild}`，APOInitSystemEffects 无子 APO 字段**）、`object 7.1.9/7.1.10`（Lock 委托/Unlock 容错）、`object 7.1.11`（APOProcess child 前置）、`install 5.3/5.5.2`（v8.4：VxAPO 独立安装信息区 + 路径隔离；**v8.5：`CHILD_APO_PATH_ROOT` + `child_apo_key_exists` + 全量/非全量判定 + 卸载删键**）、**`主规范 十八`（EAPO 对齐度与差异化 18.1-18.4，v8.1——开放决策 ①②③ 收敛依据）**
 - 依赖：P0-4、P0-5（均 Done/已定稿）
-- DoD：☑ 规范定稿（v8.1，v8.4 子 APO GUID 来源修正）☐ 实现 ☐ 测试
-> 反馈记录：feedback.md #P0-6-1（v8.3 EAPO 源码逐行查验揭示 5 处规范偏差 S1-S5——主规范 18.1/18.2、install 5.5.2、object 7.1.14/7.2 已同步修订）、#P0-6-2（v8.4 子 APO GUID 来源三处规范内部冲突消解——APOInit 无子 APO 字段 + 路径隔离：VxAPO 独立 `HKLM\SOFTWARE\VxAPO\Child APOs`，禁止污染 EAPO `HKLM\SOFTWARE\EqualizerAPO`）
+- DoD：☑ 规范定稿（v8.1，v8.4 子 APO GUID 来源修正 + v8.5 槽位失守检测精确定性）☐ 实现 ☐ 测试
+> 反馈记录：feedback.md #P0-6-1（v8.3 EAPO 源码逐行查验揭示 5 处规范偏差 S1-S5）、#P0-6-2（v8.4 子 APO GUID 来源三处规范内部冲突消解 + 路径隔离）、#P0-6-3（v8.5 槽位失守检测 + 全量/非全量备份判定——安装模式槽位检测 + 覆盖备份 childapo + childapo 键存在性判定 + 卸载必删键）
 
 > **定稿说明（v8.1，EAPO 源码精读闭环 + 用户决策；v8.4 路径隔离修正）**：
 > - **子 APO 来源** = 安装时被 VxAPO 接管槽位的**前任 APO**（`PreMixChild/PostMixChild` 存 **VxAPO 独立安装信息区** `HKLM\SOFTWARE\VxAPO\Child APOs\{deviceGuid}`——对齐 EAPO DeviceAPOInfo **机制**但**路径隔离**：**禁止**复用 EAPO `HKLM\SOFTWARE\EqualizerAPO\Child APOs`（RegistryHelper.h 33），避免污染 EAPO 安装信息区；备份全部槽位供回退、子 APO 仅对应实际装入槽位）。

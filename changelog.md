@@ -1,5 +1,15 @@
 # Changelog
 
+## v8.5 — 2026-08-03
+
+变更类型：`实现对齐`（槽位失守检测产品化 + 全量/非全量备份判定定稿 + driver 同步）
+
+- **intent.md 七节「槽位失守检测」v8.5（产品意图，用户指示补充）**：App/CLI 启动/切换设备时检测**安装模式用到的 fx 槽位**（非全部 5 槽）非 VxAPO CLSID → 提示重装；重装前把被夺占槽位当前值**覆盖备份**为 childapo（最新前任）；备份语义区分（全量备份回退基线 vs 槽位覆盖备份 childapo）；全量判定唯一依据 = `HKLM\SOFTWARE\VxAPO\Child APOs\{deviceGuid}` 键存在性（不存在=全量，存在=非全量）——**对应章节**：`intent.md 七/十三`
+- **全量判定收敛（用户指示）**：childapo 键**存在 = 非全量**、**不存在 = 全量**（初始/完全卸载后安装等价）；「第三方破坏安装信息区」不构成场景（VxAPO 私有路径，无第三方会写——EAPO 只写自己的 `HKLM\SOFTWARE\EqualizerAPO\Child APOs`）；**卸载必删 childapo 键**（用户确认）——**对应章节**：`intent.md 七`、`feedback.md #P0-6-3`
+- **install 5.3 slots.rs v8.5**：补 `CHILD_APO_PATH_ROOT` + `child_apo_key_exists`（全量判定依据检测 API）——**对应章节**：`install 5.3`
+- **install 5.5.2 v8.5**：安装流程补「0. 全量判定」+ Step 4 覆盖语义（失守时 childapo 覆盖为被夺占槽位值）；卸载流程补「删整个键」——**对应章节**：`install 5.5.2`
+- **object 7.2 v8.5**：槽位失守检测精确定性（安装模式槽位 + 覆盖备份 + 全量/非全量判定 + 卸载删键）——**对应章节**：`object 7.2`
+
 ## v8.4 — 2026-08-03
 
 变更类型：`实现对齐`（P0-6 子 APO GUID 来源三处矛盾消解 + 路径隔离修正）
@@ -18,6 +28,8 @@
 - **install 5.3/5.5.2 修正**：slots.rs 补子 APO 安装信息区读取职责 + 路径隔离注；
   安装流程 Step 1/4 + 卸载流程 Step 3 更新（`PreMixChild`/`PostMixChild` 值名，EAPO DeviceAPOInfo.cpp 558-563 对齐；
   废弃含糊「childGuid」表述）——**对应章节**：`install 5.3/5.5.2`
+
+> 对应 commit：`88b3384`
 
 ## v8.3 — 2026-08-03
 

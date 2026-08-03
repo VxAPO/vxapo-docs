@@ -161,6 +161,55 @@ DeviceProfile ──activates──► Preset ──contains──► Dimension 
   - 直接覆盖选项须附风险提示，让用户知情决定。
 - 与 Dolby Atmos、DTS、Realtek 厂商音效等其他 APO 不冲突。
 
+### 槽位失守检测（应用层，v8.5 补充产品意图）
+
+> 对齐 EAPO：Configurator 在**应用层切换设备时检测当前设备是否安装**（DeviceAPOInfo）；
+> VxAPO 同理由 **App/CLI（应用层）在启动 / 切换设备时**检测，**驱动层不负责**。
+
+- **检测对象 = 该设备安装模式用到的 fx 槽位**（`InstallMode::premix_slot` + `postmix_slot`，
+  如 SfxEfx → SFX(2) + EFX(4)）——**不是全部 5 个槽位**：只关心 VxAPO 实际占用、音频流实际经过的槽位。
+- **失守判定**：所需 slot 值非 VxAPO CLSID（被其他 APO 改写/占用）→ 提示「需重新安装」。
+- **产品语义**：用户切换/启动设备时，看到的应是 VxAPO 的完整链路（自己的 DSP + 前任 APO 子链路）；
+  槽位失守 = 第三方抢占了 VxAPO 的槽位 → 提示重装是让用户知情并可一键恢复，而非静默失效。
+- 检测与备份的**只读判定 API** 由 driver 提供（`install/device/info` + `install/device/slots`），
+  **写备份/重装动作仍走 `install_endpoint`**——应用层不自行写注册表（三层分离边界，五节）。
+
+#### 备份语义区分：全量备份 vs 槽位覆盖备份（v8.5 用户指示）
+
+两个场景的备份**范围、时机与目的不同**，必须区分：
+
+| 场景 | 时机 | 备份范围 | 写入值名 | 目的 |
+|------|------|----------|----------|------|
+| **全量备份**（安装时） | `install_endpoint` 初始安装 / 手动重装 | **全部 5 槽位**现值（含 NOKEY/NOVALUE 占位） | `VxAPO\Child APOs\{deviceGuid}` 下全部 GUID 值名（对齐 EAPO DeviceAPOInfo.cpp 529-548：`allGuidValueNames` 逐个备份） | **回退基线**：卸载时恢复原 APO 完整布局（含未占用槽位状态） |
+| **槽位覆盖备份**（失守重装前） | **应用层检测到槽位失守** → 用户确认重装 → `install_endpoint` 执行前 | 仅**当前被夺占的对应安装槽位**（premix/postmix 各自当前非 VxAPO 值） | 仅覆盖 `PreMixChild` / `PostMixChild` 两个值名 | **childapo 最新前任**：运行期子 APO 委托目标 = 被 VxAPO 接管前的**最新**前任 |
+
+- **全量备份永远做**（每个设备安装时都建立完整回退基线）；**槽位覆盖备份只在失守重装时做**（特殊场景，
+  且直接覆盖旧 childapo——保证子 APO 恒等于「最新一次被顶替时留下的前任」，即使 VxAPO 已被多个软件轮番顶替）。
+- 两者不冲突：全量备份的 5 个 GUID 值名是「回退完整性」；槽位覆盖的 `PreMixChild`/`PostMixChild` 是
+  「子 APO 委托目标」。失守重装时**同时**更新这两类（全量重新快照 + childapo 覆盖）。
+
+#### 全量备份发生条件判定（v8.5 用户收敛定稿）
+
+**判定依据唯一 = `VxAPO\Child APOs\{deviceGuid}` 键是否存在**（用户确认：**有 childapo 路径就不算全量，
+没有就是全量**）：
+
+| 场景 | 判定（childapo 路径是否存在） | 动作 |
+|------|--------------------------------|------|
+| **初始安装**（从未装过 VxAPO） | **不存在** → **全量备份** | 5 槽位完整快照 + 写 PreMix/PostMixChild + version |
+| **完全卸载后安装**（曾装但已卸载，安装信息区键已删） | **不存在** → **全量备份** | 同上（等价初始安装） |
+| **重装（含失守重装）**（安装信息区仍在） | **存在** → **非全量** | 槽位覆盖备份：仅覆盖 `PreMixChild`/`PostMixChild`（失守时 = 被夺占槽位当前值；无失守 = 保留旧 childapo）+ 全量重新快照维持回退基线最新 |
+
+- **判定实现**：`install_endpoint` 开头检查 `VxAPO\Child APOs\{deviceGuid}` 键是否存在——
+  不存在 → 全量备份路径；存在 → 非全量（槽位覆盖或保留）。
+- **卸载语义（v8.5 用户确认）**：**卸载一定要删除 `VxAPO\Child APOs\{deviceGuid}` 键（含全部备份）**——
+  与「彻底解绑」意图一致（九节卸载）；故再次安装回到「全量」判定（路径不存在）。
+- **「安装信息区被第三方破坏」不构成场景（v8.5 收敛）**：`VxAPO\Child APOs`（完整 `HKLM\SOFTWARE\VxAPO\Child APOs`）是 VxAPO
+  **私有路径**，只由 install_endpoint 写、uninstall_endpoint 删——**没有任何第三方软件会写它**：
+  各软件只操作自己的私有路径（如 EAPO 只写 `HKLM\SOFTWARE\EqualizerAPO\Child APOs`，RegistryHelper.h 33）——
+  无需「退化全量备份」兜底分支；路径存在性即充分判定。
+- **无需细分「手动重装 vs 失守重装」的 childapo 策略**（v8.5 收敛）：均走「存在 → 非全量」；
+  差异仅在失守时 `PreMixChild`/`PostMixChild` 被覆盖为当前被夺占槽位值（最新前任），非失守时保留。
+
 ---
 
 ## 八、Filter 类型边界
@@ -288,6 +337,9 @@ roadmap.md（路线清单——要做什么）
 | 配置指纹（filter_spec）比对 | 技术机制（判断"配置实质是否变化"），不在本文件定义；其产品语义根源于「用户行为模型」边缘情况⑤ |
 | 用户不直接操作文件 | 本文件「用户行为模型」核心意图 |
 | 槽位逻辑与 EAPO 相同，冲突仅限 EAPO | 本文件「与其他 APO 软件的共存」 |
+| 槽位失守检测 = 应用层（启动/切换设备时检测安装模式槽位非 VxAPO CLSID → 提示重装） | 本文件「与其他 APO 软件的共存」槽位失守检测（用户决策已固化于本文件） |
+| 备份语义：安装时全量备份回退基线；失守重装前槽位覆盖备份 childapo（最新前任） | 本文件「与其他 APO 软件的共存」备份语义区分（用户决策已固化于本文件） |
+| 全量判定：`VxAPO\Child APOs\{deviceGuid}` 存在 = 非全量、不存在 = 全量；卸载必删该键 | 本文件「与其他 APO 软件的共存」全量备份发生条件判定（用户决策已固化于本文件） |
 | v1 Filter 封闭枚举，不预留扩展点 | 本文件「Filter 类型边界」 |
 | config.txt 单向通道，无状态回传 | 本文件「三层分离」边界规则 |
 | CLI 是开发者工具，不面向终端用户 | 本文件「用户画像与界面理念」 |

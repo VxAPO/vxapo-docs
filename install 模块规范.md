@@ -260,6 +260,22 @@ pub fn get_original_pre_mix(slots: &[SlotValue; 5], mode: InstallMode) -> String
 pub fn get_original_post_mix(slots: &[SlotValue; 5], mode: InstallMode) -> String;
 ```
 
+**安装信息区存在性检测（v8.5，全量判定依据）**：
+
+```rust
+/// VxAPO 独立安装信息区键路径（v8.5）。
+pub const CHILD_APO_PATH_ROOT: &str = r"HKLM\SOFTWARE\VxAPO\Child APOs";
+
+/// 判断某设备是否有 VxAPO 安装信息区（全量/非全量判定的唯一依据，intent 七节 v8.5）。
+///
+/// - 不存在 → 初始安装 / 完全卸载后安装 → `install_endpoint` 走**全量备份路径**；
+/// - 存在 → 重装 / 失守重装 → 走**非全量路径**（槽位覆盖或保留旧 childapo）。
+///
+/// 私有路径保证：只由 install_endpoint 写、uninstall_endpoint 删（卸载必删整个键）；
+/// 第三方 APO 软件不会写它（各软件只操作自己的私有路径）——存在性即充分判定。
+pub fn child_apo_key_exists(device_guid: &str) -> bool;
+```
+
 ---
 
 ### 5.4 `install/device/info.rs`
@@ -444,7 +460,16 @@ pub fn uninstall_endpoint(device_guid: &str) -> Result<()>;
 > - EAPO 语义：`fail()` 抛 `DeviceException`（DeviceAPOInfo.cpp 817-822）——VxAPO 对齐为返回 `Err` 附明确错误，由 `select.rs` 提示用户
 > - 用户可选择忽略或回滚（`reinstall`/`uninstall` 显式操作）
 
-**Note 47 安装流程**（7 步）：
+**Note 47 安装流程**（7 步，v8.5 补全量/非全量判定）：
+
+**0. 全量判定（v8.5，产品意图「全量备份发生条件判定」）**：`install_endpoint` 开头检查
+`HKLM\SOFTWARE\VxAPO\Child APOs\{deviceGuid}` 键是否存在（`install/device/slots` 提供存在性检测）：
+- **不存在 → 全量备份路径**（初始安装 / 完全卸载后安装——卸载已删键故等价）：5 槽位完整快照
+  （含 NOKEY/NOVALUE 占位）+ 按 useOriginal 写 PreMix/PostMixChild + AllowSilent/DisableAutoAdjust/Version；
+- **存在 → 非全量路径**（重装/失守重装）：失守时（应用层检测到所需安装槽位非 VxAPO CLSID）仅**覆盖**
+  `PreMixChild`/`PostMixChild` 为当前被夺占槽位值（最新前任）；无失守保留旧 childapo；
+  并**全量重新快照**维持回退基线最新。
+
 1. 创建 **VxAPO 独立安装信息区** `HKLM\SOFTWARE\VxAPO\Child APOs\{deviceGuid}` 键
    （v8.4 路径隔离修正：**对齐 EAPO `HKLM\SOFTWARE\EqualizerAPO\Child APOs`（childApoPath，
    RegistryHelper.h 33 + DeviceAPOInfo.cpp 43）的机制，但用 VxAPO 自己的 SOFTWARE\VxAPO 根**；
@@ -453,20 +478,21 @@ pub fn uninstall_endpoint(device_guid: &str) -> Result<()>;
 2. FxProperties 不存在则创建（失败则权限提升重试，Note 31）
 3. 已存在则备份 FxProperties 至 `.reg`（通过 `sys::registry::save_to_file`）并记录槽位回滚
 4. 写入子 APO 配置到 **`HKLM\SOFTWARE\VxAPO\Child APOs\{deviceGuid}`**：
-   `PreMixChild` / `PostMixChild`（useOriginalAPOPreMix/PostMix 决定是否写，对齐 EAPO
-   DeviceAPOInfo.cpp 558-563）/ `AllowSilentBufferModification` / `DisableAutomaticAdjustment`（autoAdjust）/
-   `Version`
+   `PreMixChild` / `PostMixChild`（**全量路径按 useOriginalAPOPreMix/PostMix 决定是否写**，对齐 EAPO
+   DeviceAPOInfo.cpp 558-563；**非全量路径失守时覆盖为当前被夺占槽位值**）/ `AllowSilentBufferModification` /
+   `DisableAutomaticAdjustment`（autoAdjust）/ `Version`
 5. 按模式写入 APO GUID（删除非当前模式的旧槽位）
 6. 写入默认处理模式 GUID（AUDIO_SIGNALPROCESSINGMODE_DEFAULT）
 7. 删除 DisableEnhancements
 
 整个安装在 `Transaction`（Drop 时逆序回滚）保护下执行，任何步骤失败时自动回滚。
 
-**卸载流程**：
+**卸载流程**（v8.5 补删键）：
 1. 定位端点 FxProperties（不存在 → 视为未安装，返回成功）
 2. 读取当前槽位，删除 VxAPO 的 CLSID
-3. 删除 **`HKLM\SOFTWARE\VxAPO\Child APOs\{deviceGuid}`** 子 APO 配置值
-   （PreMixChild / PostMixChild / AllowSilentBufferModification / DisableAutomaticAdjustment / Version；v8.4 修正——旧「childGuid」表述含糊，实为 EAPO 式 VxAPO 独立路径值名）
+3. 删除 **`HKLM\SOFTWARE\VxAPO\Child APOs\{deviceGuid}` 整个键**（含全部备份值）——
+   **v8.5 产品意图确认：卸载一定要删除安装信息区键**（彻底解绑，九节 intent「卸载」）；
+   故再次安装回到「全量路径」判定（键不存在）
 4. 删除 DisableEnhancements
 
 **事务回滚**（原 rollback.rs 职责，合并至此）：

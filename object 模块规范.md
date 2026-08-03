@@ -1211,10 +1211,15 @@ const _: () = {
 - 运行期 `Initialize`（7.1.8）：读该备份值（v8.4 明确：**VxAPO 路径** `HKLM\SOFTWARE\VxAPO\Child APOs\{deviceGuid}`，
   非 EAPO 路径），非空且非特殊 GUID（APOGUID_NULL/NOKEY/NOVALUE）
   → `ChildApo::create`；否则 `child_apo = None`（无子 APO，降级直出，Note 57）。
-- **槽位失守检测（v8.1，用户决策——应用层，非 watcher）**：CLI/GUI 在 **启动 / 切换设备**
-  时检测当前设备所需槽位是否仍为 VxAPO CLSID；非 VxAPO CLSID → 提示「需重新安装」；
-  **重装前**把**当前**槽位 GUID 备份为新的 `PreMixChild/PostMixChild`（**最新前任**，
-  覆盖被其他软件改写后的情形），再覆盖槽位为 VxAPO CLSID（`install_endpoint`）。
+- **槽位失守检测（v8.1 定稿 + v8.5 精确定性，用户决策——应用层，非 watcher）**：CLI/GUI 在 **启动 / 切换设备**
+  时检测当前设备**安装模式用到的 fx 槽位**（`InstallMode::premix_slot` + `postmix_slot`，如 SfxEfx → SFX+EFX；
+  **非全部 5 槽**）是否仍为 VxAPO CLSID；非 VxAPO CLSID → 提示「需重新安装」。
+  **重装前（槽位覆盖备份，v8.5）**：把**被夺占的对应安装槽位当前值**（非 VxAPO GUID）**覆盖备份**为新的
+  `PreMixChild/PostMixChild`（**最新前任**——即使 VxAPO 已被多个软件轮番顶替也能正确回退），
+  再覆盖槽位为 VxAPO CLSID（`install_endpoint`）。
+  **全量/非全量判定（v8.5）**：`install_endpoint` 据 `install/device/slots::child_apo_key_exists`——
+  childapo 键不存在 = 全量备份路径（初始/完全卸载后安装）；存在 = 非全量（失守重装覆盖 childapo）。
+  **卸载必删 childapo 键**（v8.5，产品意图确认）——再次安装回全量路径。
   对齐 EAPO：Configurator 切换设备时检测安装态（`DeviceAPOInfo`），`watchRegistry` 仅用于
   readReg 引用键（VxAPO config 纯文件，无 readReg 命令 → **VxAPO 不需要注册表监视**）。
 - **运行期委托**：childRT->APOProcess **前置每帧一次**（作用于输入缓冲）→ VxAPO 双链处理其输出；
