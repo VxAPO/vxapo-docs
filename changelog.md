@@ -13,7 +13,7 @@
   子规范条目缺失 = 定稿不完整 = 执行端无法落地——**对应章节**：`.clinerules/skills/spec-finalize/SKILL.md`、`.clinerules/roadmap-rule.md`
 - **roadmap：P0-5 → Spec-Finalized**（落点回填 + DoD 规范定稿 ☑）——**对应章节**：`roadmap P0-5`
 
-> 对应 commit：`（待提交）`
+> 对应 commit：`d7b7920`
 
 ## v8.1 — 2026-08-03
 
