@@ -12,6 +12,14 @@
 
 > *v8.1 补正说明：撤销「显式约束/显式优于 EAPO 隐式信任」表述（语义保留于 roadmap P0-6、主规范 18.2/18.3，已同步重写为「等价立场」）——经推演，EAPO 靠「协商期锁死 in==out + 协商委托 child + mono→stereo 补系统默认」构成完整通道语义；VxAPO 与之**等价**，唯一区别是不引入 realChannelCount 维度切换机制（协商后冗余/死路径），属实现简化非更严谨。*
 >
+> *P0-6 定稿补记（v8.1，EAPO 源码精读闭环 + 用户决策）*：
+> - **子 APO 来源** = 安装时被 VxAPO 接管槽位的**前任 APO**（`PreMixChild/PostMixChild` 存 `childApoPath\{deviceGuid}`，对齐 EAPO DeviceAPOInfo；备份全部槽位供回退、子 APO 仅对应实际装入槽位）——**对应章节**：`object 7.2`
+> - **槽位失守检测 = 应用层**（CLI/GUI 启动/切换设备时检测槽位非 VxAPO CLSID → 提示重装 → 重装前把**当前**槽位备份为新 childapo「最新前任」）；**watcher 不负责**（对齐 EAPO Configurator）——**对应章节**：`object 7.2`
+> - **无需注册表监视**：EAPO `watchRegistryKey` 是 `readRegString/readRegDWORD` 配置命令副作用（RegistryFunctions.cpp 52/92）；VxAPO config 纯文件无 readReg → 不需要——**对应章节**：`object 7.2`
+> - **运行期委托**：childRT->APOProcess **前置每帧一次**（双链共享其输出）；child 不在 current/outgoing 链内——**对应章节**：`object 7.1.11/7.2`
+> - **Unlock 容错 + 重置防御**：child 解锁失败 → 父继续解锁（`UnlockForProcess(void)` 无重试语义已核证）+ child 标记需重置 → 下次 Lock 前 reset/重建——**对应章节**：`object 7.1.10`、`roadmap P0-6 开放决策①`
+> - **P0-6 状态 → Spec-Finalized**（roadmap），DoD 规范定稿 ☑——**对应章节**：`roadmap P0-6`
+>
 > 对应 commit：`8e5c54f`
 
 ## v8.0 — 2026-08-03

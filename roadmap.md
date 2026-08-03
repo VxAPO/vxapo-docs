@@ -150,13 +150,20 @@
 > debug/unwind 测试态才有防御意义（旧框架 Note 60/68 已澄清）。属 P0 尾巴（威胁 audiodg 稳定性）。
 
 ### P0-6  子 APO 委托实现（object/child.rs 落地）
-- 状态：Backlog
+- 状态：Spec-Finalized（v8.1）
 - 优先级：P0 ｜ 关联 Phase：Phase 10T
 - 目标：`object/child.rs` 规范已完备（三接口类型化持有 + 委托），实现缺——补 `ApoObject.child_apo` 字段 + CoCreateInstance + Initialize/LockForProcess/UnlockForProcess/APOProcess 完整委托（对齐 EAPO childAPO/childRT/childCfg）
 - 影响模块：`object/child.rs`、`object/apo.rs`、`install/device/slots.rs`（子 APO GUID 读取）
-- 规范落点：（定稿时回填；`object 7.1.3` child_apo 字段 + `object 7.2` child.rs 方法 + **`主规范 十八`（EAPO 对齐度与差异化，v8.1——开放决策 ①②③ 收敛依据）**）
-- 依赖：P0-4、P0-5
-- DoD：☐ 规范定稿 ☐ 实现 ☐ 测试
+- 规范落点：`object 7.2`（子 APO 来源 = 接管槽位前任 + 应用层槽位失守检测 + 运行期前置委托，v8.1）、`object 7.1.3`（child_apo 字段）、`object 7.1.7/7.1.8`（格式协商委托/Initialize 创建降级）、`object 7.1.9/7.1.10`（Lock 委托/Unlock 容错）、`object 7.1.11`（APOProcess child 前置）、**`主规范 十八`（EAPO 对齐度与差异化 18.1-18.4，v8.1——开放决策 ①②③ 收敛依据）**
+- 依赖：P0-4、P0-5（均 Done/已定稿）
+- DoD：☑ 规范定稿（v8.1）☐ 实现 ☐ 测试
+
+> **定稿说明（v8.1，EAPO 源码精读闭环 + 用户决策）**：
+> - **子 APO 来源** = 安装时被 VxAPO 接管槽位的**前任 APO**（`PreMixChild/PostMixChild` 存 `childApoPath\{deviceGuid}` 安装信息区，对齐 EAPO DeviceAPOInfo；备份全部槽位供回退、子 APO 仅对应实际装入槽位）。
+> - **槽位失守检测 = 应用层**（CLI/GUI 启动/切换设备时检测槽位非 VxAPO CLSID → 提示重装 → 重装前把**当前**槽位备份为新 childapo「最新前任」）；**watcher 不负责**（对齐 EAPO Configurator 检测安装态）。
+> - **无需注册表监视**：VxAPO config 纯文件（无 readReg 命令），EAPO watchRegistry 是 readRegString/readRegDWORD 副作用（RegistryFunctions.cpp 52/92）。
+> - **运行期委托**：childRT->APOProcess 前置每帧一次（双链共享其输出）；child 不在 current/outgoing 任一链内；child 输出通道语义对齐父 outFormat（主规范 18.2 D2/D3 等价立场）。
+> - **Unlock 容错 + 重置防御**：child 解锁失败 → 父继续解锁（void+HRESULT 无重试语义已核证）+ child 标记需重置 → 下次 Lock 前 child.reset()/重建。
 
 > **说明（v8.0 重编号 P1-5 → P0-6 + EAPO 源码对齐 2026-08-03）**：子 APO 委托属**驱动层基础能力**——
 > `object 7.1.8` Initialize 步骤 4 本就要「创建 ChildApo」（失败降级为无子 APO），`object 7.1.3` child_apo 字段、

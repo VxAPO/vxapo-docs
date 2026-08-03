@@ -758,10 +758,19 @@ fn APOProcess(&self, input_props, output_props, params: &ProcessParams) {
     // 2. 提取输入切片（系统级 APO 硬性要求单输入）
     let input_slice = BufferInfo::from_prop(&input_props[0], params.input_channels).as_slice();
 
-    // 3. 获取锁
+    // 3. 子 APO 前置委托（v8.1，P0-6 定稿——EAPO childRT->APOProcess 先跑对齐）：
+    //    每帧一次作用于输入缓冲（就地或写 temp_buffer_child）；其输出即 VxAPO 链输入。
+    //    child 不在 current/outgoing 任一链内（独立持有），双链共享同一份 child 输出。
+    //    无 child（降级模式）→ 跳过此步，纯 VxAPO 处理。
+    if let Some(ref child) = self.child_apo {
+        child.calc_input_frames(params.valid_frame_count);  // 委托帧数计算（RT 无锁）
+        child_rt_process(child, input_slice, params);       // childRT->APOProcess（实现端具体化）
+    }
+
+    // 4. 获取锁
     let mut inner = self.mutex.lock().unwrap();
 
-    // 4. 过渡模式检查
+    // 5. 过渡模式检查
     if let Some(outgoing) = &mut inner.outgoing_chain {
         let channels = params.input_channels as usize;
         let frames = params.valid_frame_count;
@@ -1119,6 +1128,21 @@ const _: () = {
 ### 7.2 `object/child.rs` — 子 APO COM 生命周期管理
 
 **职责**：管理子 APO 的 COM 接口持有和方法委托。
+
+**子 APO 来源（v8.1 定稿，P0-6 EAPO 对齐）**：
+- 子 APO = **安装时被 VxAPO 接管槽位的前任 APO**（`PreMixChild`/`PostMixChild` 值，存
+  `childApoPath\{deviceGuid}` 安装信息区——EAPO `DeviceAPOInfo` 对齐，备份全部槽位供回退、
+  但子 APO 仅对应 EAPO 实际装入的槽位）。
+- 运行期 `Initialize`（7.1.8）：读该备份值，非空且非特殊 GUID（APOGUID_NULL/NOKEY/NOVALUE）
+  → `ChildApo::create`；否则 `child_apo = None`（无子 APO，降级直出，Note 57）。
+- **槽位失守检测（v8.1，用户决策——应用层，非 watcher）**：CLI/GUI 在 **启动 / 切换设备**
+  时检测当前设备所需槽位是否仍为 VxAPO CLSID；非 VxAPO CLSID → 提示「需重新安装」；
+  **重装前**把**当前**槽位 GUID 备份为新的 `PreMixChild/PostMixChild`（**最新前任**，
+  覆盖被其他软件改写后的情形），再覆盖槽位为 VxAPO CLSID（`install_endpoint`）。
+  对齐 EAPO：Configurator 切换设备时检测安装态（`DeviceAPOInfo`），`watchRegistry` 仅用于
+  readReg 引用键（VxAPO config 纯文件，无 readReg 命令 → **VxAPO 不需要注册表监视**）。
+- **运行期委托**：childRT->APOProcess **前置每帧一次**（作用于输入缓冲）→ VxAPO 双链处理其输出；
+  child 不在 current/outgoing 任一链内（独立持有），过渡只切父内链。
 
 **引用来源**：
 - `crate::sys::com::prelude::*`
