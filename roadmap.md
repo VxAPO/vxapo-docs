@@ -158,11 +158,40 @@
 - 依赖：P0-4、P0-5
 - DoD：☐ 规范定稿 ☐ 实现 ☐ 测试
 
-> **说明（v8.0 重编号 P1-5 → P0-6）**：子 APO 委托属**驱动层基础能力**——`object 7.1.8`
-> Initialize 步骤 4 本就要「创建 ChildApo」（失败降级为无子 APO），`object 7.1.3` child_apo 字段、
+> **说明（v8.0 重编号 P1-5 → P0-6 + EAPO 源码对齐 2026-08-03）**：子 APO 委托属**驱动层基础能力**——
+> `object 7.1.8` Initialize 步骤 4 本就要「创建 ChildApo」（失败降级为无子 APO），`object 7.1.3` child_apo 字段、
 > `object 7.2` 委托方法均已规范——补实现是 P0 链路的完整性收尾，非 P1 核心功能扩展。
-> EAPO 在 Initialize 中 `CoCreateInstance(子 APO GUID)` → QI 三接口 → 委托全部方法
-> （v7.8 EAPO 源码二次检查确认）；VxAPO 规范 object 7.2 已有定义，实现尚缺。
+>
+> **EAPO 实现对齐（实读 EqualizerAPO.cpp，v8.0）**：
+> - **创建/QI/Initialize（180-215）**：`CoCreateInstance(子 GUID, CLSCTX_INPROC_SERVER, IID_IAudioProcessingObject)`
+>   → QI `IAudioProcessingObjectRT` → QI `IAudioProcessingObjectConfiguration` → **`childAPO->Initialize(cbDataSize, pbyData)`**
+>   **同传父 APOInit 数据**；任一步失败 → `resetChild()`（三接口 Release）+ **返回 S_OK 降级为无子 APO**（不阻塞父 Initialize）——
+>   与 VxAPO 7.1.8「失败降级不阻塞」一致 ✅。
+> - **GetLatency（91-92）**：有 child → 委托 `childAPO->GetLatency(pTime)`；无 child 走自身。
+> - **IsInputFormatSupported（258-272）**：有 child → 委托 child；child 失败 / 无 child → 自身格式检查（当前实现需核对是否按此委托）。
+> - **LockForProcess（341-347）**：有 childCfg → `childCfg->LockForProcess`（**结果仅 Trace 不 return**，child 锁定失败不阻塞父）；随后父自身锁定。
+>   **realChannelCount 分支（365-369）**：有 child 时 `realChannelCount = outFormat 通道数`（子 APO 可能改变输出通道语义）——
+>   VxAPO 引擎初始化需对齐（当前硬性要求 input==output 通道数，有 child 时需放宽/按 child 输出语义）。
+> - **APOProcess（472-478）**：**childRT->APOProcess 先跑**（作用于输入缓冲区）→ VxAPO `engine.process` 再处理其输出
+>   （child 输出即 VxAPO 输入）；无 child → 纯 VxAPO 处理。**需确认与 VxAPO 双链过渡的协作时序**
+>   （过渡期 outgoing/current 双链时 child 委托应挂在哪条链——EAPO 无 VxAPO 式过渡，此为 VxAPO 特有需设计）。
+> - **UnlockForProcess（393-401）**：childCfg->UnlockForProcess；**FAILED → return hr**（父解锁失败）——
+>   **与 VxAPO 7.1.10「子解锁失败不阻塞父解锁」冲突**，需 P0-6 定稿决策（EAPO 严格 / VxAPO 容错）。
+> - **resetChild（406-424）**：三接口 Release + 置 NULL（Drop 语义等价）。
+>
+> **VxAPO 特有设计差异（EAPO 未直接覆盖）**：
+> ① 双链过渡下 childRT 委托时序（过渡期两链各委托一次？child 状态在过渡窗口怎么保持？）；
+> ② IR 卷积等 VxAPO 自有 DSP 与 child 的输出级联顺序（child 输出 → VxAPO Filter 链）；
+> ③ child 存在时 realChannelCount 语义（允许 input≠output 通道数？——P0 现状强制相等需修订或注明边界）。
+>
+> **实现范围**：`object/child.rs`（create/三接口持有/委托方法）+ `object/apo.rs`（child_apo 字段接线 +
+> Initialize 创建 + GetLatency/IsInOutFormatSupported/LockForProcess/UnlockForProcess/APOProcess 委托 +
+> 降级 resetChild 语义）；`install/device/slots.rs` 子 APO GUID 读取、FxProperties 槽位解析。
+> **DoD 测试要点**：create 失败降级（无 child 正常）、child 委托链完整（单 child）、
+> child 存在 + 过渡期 APOProcess 时序、Unlock 失败语义（按 P0-6 定稿决策）。
+>
+> **开放决策（待定稿）**：① Unlock 失败语义（EAPO 严格 / VxAPO 容错）；② 双链过渡下 child 委托时序；
+> ③ 有 child 时 realChannelCount/通道数约束是否放宽。此三点需 P0-6 Spec-Drafting 阶段与用户确认后定稿。
 
 ### P0-7  CLI 端到端验证（install/uninstall/config set/show/list/status + 回滚）
 - 状态：Backlog
