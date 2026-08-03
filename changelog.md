@@ -10,7 +10,7 @@
   差异化 D1-D5（父内双链 vs EAPO 单链配置级过渡 / realChannelCount 维度切换 vs VxAPO 显式约束 / child 输出通道数不可知的约定显式化 /
   Unlock 失败语义差异 / IsInputFormatSupported 委托失败回落）+ 差异化带来的设计影响（RT 成本叠加 3 次 DSP / 维度稳定前提 / 校验前置）——**对应章节**：`主规范 十八`
 
-> 对应 commit：`（待提交）`
+> 对应 commit：`8e5c54f`
 
 ## v8.0 — 2026-08-03
 
