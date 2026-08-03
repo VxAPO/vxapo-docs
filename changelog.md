@@ -1,5 +1,14 @@
 # Changelog
 
+## v8.6 — 2026-08-04
+
+变更类型：`实现对齐`（child.rs 格式协商委托参数签名采纳执行端建议）
+
+- **object 7.2 `is_input/output_format_supported` 输入参数 `*mut IAudioMediaType` → `Option<&IAudioMediaType>`**（执行端建议采纳）：
+  p_opposite 可 null（无对端）/ p_requested 由父转发非空——可空借用语义用安全引用表达，与 windows-rs
+  `#[interface]` 对可空接口参数的 `Option<&>` 风格一致；输出 `pp_supported: *mut *mut` 为 COM 输出必须保留
+  裸指针（方法仍 unsafe）；7.1.16 父接口为 COM vtable 约束不改——**对应章节**：`object 7.2`、`feedback.md #P0-6-4`
+
 ## v8.5 — 2026-08-03
 
 变更类型：`实现对齐`（槽位失守检测产品化 + 全量/非全量备份判定定稿 + driver 同步）
@@ -9,6 +18,8 @@
 - **install 5.3 slots.rs v8.5**：补 `CHILD_APO_PATH_ROOT` + `child_apo_key_exists`（全量判定依据检测 API）——**对应章节**：`install 5.3`
 - **install 5.5.2 v8.5**：安装流程补「0. 全量判定」+ Step 4 覆盖语义（失守时 childapo 覆盖为被夺占槽位值）；卸载流程补「删整个键」——**对应章节**：`install 5.5.2`
 - **object 7.2 v8.5**：槽位失守检测精确定性（安装模式槽位 + 覆盖备份 + 全量/非全量判定 + 卸载删键）——**对应章节**：`object 7.2`
+
+> 对应 commit：`b743bb1`
 
 ## v8.4 — 2026-08-03
 

@@ -6,6 +6,27 @@
 
 ---
 
+### [P0-6-4] child.rs `is_input_format_supported` 参数签名 `*mut` → `Option<&>`（v8.6 + 执行端建议）
+
+**影响版本**：规范 v8.1 起（object 7.2）
+
+**问题**：
+- 分类：执行端建议（更优方案）
+- `child.rs::is_input_format_supported/is_output_format_supported` 输入参数为 `*mut IAudioMediaType` + `unsafe`——
+  `p_opposite` 在 COM 语义可 null（无对端）、`p_requested` 由父转发非空；用裸指针表达可空借用不准确
+- 执行端方案：输入改 `Option<&IAudioMediaType>`（安全借用），父 apo.rs 把 `*mut IAudioMediaType` 转 `Option<&>`；输出 `pp_supported: *mut *mut IAudioMediaType` 是 COM 输出必须保留裸指针
+
+**规范侧判定**：
+- **采纳**——driver 内部委托方法（非 COM vtable 入口），签名可自由选择；`Option<&>` 与 windows-rs
+  `#[interface]` 对可空接口参数的风格一致（7.1.16 父接口是 COM vtable 约束，**不改**）
+
+**修订记录**：
+- v8.6：object 7.2 is_input/output_format_supported 输入参数 `*mut IAudioMediaType` → `Option<&IAudioMediaType>`（v8.6 注释说明）；输出仍 `*mut *mut`、方法仍 unsafe——**对应章节**：`object 7.2`
+
+**状态**：已修订（v8.6）
+
+---
+
 ### [P0-6-3] 槽位失守检测 + 全量/非全量备份判定（v8.5 + 用户指示补充产品语义）
 
 **影响版本**：规范 v8.1 起（object 7.2 + install 5.3/5.5.2 + intent.md 七节涉及）

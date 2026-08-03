@@ -1272,8 +1272,13 @@ impl ChildApo {
     pub fn reset(&self) -> HRESULT;
     pub unsafe fn get_registration_properties(&self, pp_props: *mut *mut APO_REG_PROPERTIES) -> HRESULT;
     pub unsafe fn initialize(&self, cb_data_size: u32, pby_data: *mut u8) -> HRESULT;
-    pub unsafe fn is_input_format_supported(&self, p_opposite: *mut IAudioMediaType, p_requested: *mut IAudioMediaType, pp_supported: *mut *mut IAudioMediaType) -> HRESULT;
-    pub unsafe fn is_output_format_supported(&self, p_opposite: *mut IAudioMediaType, p_requested: *mut IAudioMediaType, pp_supported: *mut *mut IAudioMediaType) -> HRESULT;
+    // v8.6（执行端建议采纳）：输入参数由 `*mut IAudioMediaType` 改为 `Option<&IAudioMediaType>`
+    // ——可空借用语义用安全的引用表达（p_opposite 可为 None=无对端；p_requested 由父转发非空），
+    // 与 windows-rs #[interface] 对可空接口参数的 Option<&> 风格一致；
+    // 输出参数 `pp_supported: *mut *mut IAudioMediaType` 是 COM 输出（调用方分配、子 APO 写入）
+    // ——必须保留裸指针，本方法因此仍标 unsafe。
+    pub unsafe fn is_input_format_supported(&self, p_opposite: Option<&IAudioMediaType>, p_requested: Option<&IAudioMediaType>, pp_supported: *mut *mut IAudioMediaType) -> HRESULT;
+    pub unsafe fn is_output_format_supported(&self, p_opposite: Option<&IAudioMediaType>, p_requested: Option<&IAudioMediaType>, pp_supported: *mut *mut IAudioMediaType) -> HRESULT;
     pub fn get_input_channel_count(&self, p_count: *mut u32) -> HRESULT;
 
     // ── IAudioProcessingObjectRT 委托 ────────────────────────────────
