@@ -1,5 +1,17 @@
 # Changelog
 
+## v8.1 — 2026-08-03
+
+变更类型：`结构重构`（P0-6 子 APO 实现对齐——EAPO 源码精读 + 主规范新增「EAPO 对齐度与差异化」章节）
+
+- **P0-6 开放决策收敛（EAPO 源码对齐）**：实读 EAPO `EqualizerAPO.cpp`/`FilterEngine`/`FilterConfiguration`——
+  ① Unlock 失败语义（默认 VxAPO 容错）；② 双链过渡下 childRT 委托**前置每帧一次**（双链共享同一份 child 输出；child 不在任一链内）；③ 通道约束**方案 A**（child 输出==父链输入==最终输出；Lock 校验三方一致）——**对应章节**：`roadmap P0-6`
+- **主规范新增「十八、EAPO 对齐度与差异化」**：对齐度 A1-A5（创建/QI/Initialize/降级/APOProcess 时序/GetLatency/就地缓冲）；
+  差异化 D1-D5（父内双链 vs EAPO 单链配置级过渡 / realChannelCount 维度切换 vs VxAPO 显式约束 / child 输出通道数不可知的约定显式化 /
+  Unlock 失败语义差异 / IsInputFormatSupported 委托失败回落）+ 差异化带来的设计影响（RT 成本叠加 3 次 DSP / 维度稳定前提 / 校验前置）——**对应章节**：`主规范 十八`
+
+> 对应 commit：`（待提交）`
+
 ## v8.0 — 2026-08-03
 
 变更类型：`结构重构`（治理机制 major 升级——反馈外置 feedback.md + feedback-rule）

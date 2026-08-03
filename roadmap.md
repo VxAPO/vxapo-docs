@@ -154,7 +154,7 @@
 - 优先级：P0 ｜ 关联 Phase：Phase 10T
 - 目标：`object/child.rs` 规范已完备（三接口类型化持有 + 委托），实现缺——补 `ApoObject.child_apo` 字段 + CoCreateInstance + Initialize/LockForProcess/UnlockForProcess/APOProcess 完整委托（对齐 EAPO childAPO/childRT/childCfg）
 - 影响模块：`object/child.rs`、`object/apo.rs`、`install/device/slots.rs`（子 APO GUID 读取）
-- 规范落点：（定稿时回填；`object 7.1.3` child_apo 字段 + `object 7.2` child.rs 方法）
+- 规范落点：（定稿时回填；`object 7.1.3` child_apo 字段 + `object 7.2` child.rs 方法 + **`主规范 十八`（EAPO 对齐度与差异化，v8.1——开放决策 ①②③ 收敛依据）**）
 - 依赖：P0-4、P0-5
 - DoD：☐ 规范定稿 ☐ 实现 ☐ 测试
 
@@ -190,8 +190,21 @@
 > **DoD 测试要点**：create 失败降级（无 child 正常）、child 委托链完整（单 child）、
 > child 存在 + 过渡期 APOProcess 时序、Unlock 失败语义（按 P0-6 定稿决策）。
 >
-> **开放决策（待定稿）**：① Unlock 失败语义（EAPO 严格 / VxAPO 容错）；② 双链过渡下 child 委托时序；
-> ③ 有 child 时 realChannelCount/通道数约束是否放宽。此三点需 P0-6 Spec-Drafting 阶段与用户确认后定稿。
+> **开放决策（待定稿，v8.1 更新）**：
+> - ① **Unlock 失败语义**（EAPO 严格 return hr / VxAPO 容错不阻塞父）——P0-6 定稿时决策（默认 VxAPO 容错，7.1.10 一致）。
+> - ② **双链过渡下 child 委托时序**——**v8.1 收敛**：childRT->APOProcess **前置每帧一次**（双链共享同一份 child 输出作输入），
+>   child 不在 current/outgoing 任一链内（child 独立持有，过渡只切父内两链）；不需要"过渡期 child 双实例"设计。
+> - ③ **有 child 时 realChannelCount/通道数约束**——**v8.1 收敛为方案 A**（EAPO realChannelCount 语义澄清）：
+>   - **无 child**：EAPO `realChannelCount = inFormat 通道`，输入→输出维度一致（VxAPO P0 现状强制 input==output 对齐）。
+>   - **有 child**：EAPO `realChannelCount = outFormat 通道`（**信任 APO 链格式传递约定**——child 无报告通道数接口，
+>     父只能按自身输出格式假设 child 已就位为输出布局）；「不支持下混」（IsInputFormatSupported S_FALSE 硬拒）为兜底。
+>   - **VxAPO 显式约束**（child 无法报告通道数，无法"显式约束 child"——只能**声明 VxAPO 自身边界**）：
+>     - LockForProcess 时校验三方一致：**child 输出（按父 outFormat 读）== 父链输入 == 最终输出通道数**——
+>       不满足即拒绝/降级（无 child 直出）；P0 不引入 realChannelCount 多维机制。
+>     - child 仅做**纯效果不改通道**；如未来 FxSound 效果需改通道，走 EAPO 方案 B（realChannelCount 维度切换 +
+>       仅 mono→stereo 上混特例 + Copy: 显式通道映射），留 P1 后按需（参考主规范新增「EAPO 对齐度」章节）。
+>
+> ①②③ 收敛结论与 EAPO 通道机制详析见**主规范新增「EAPO 对齐度与差异化」章节（v8.1）**；此三点在 P0-6 Spec-Drafting 定稿时仅需**确认**（对照该章节）不再重开设计。
 
 ### P0-7  CLI 端到端验证（install/uninstall/config set/show/list/status + 回滚）
 - 状态：Backlog
