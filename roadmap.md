@@ -123,6 +123,34 @@
 > EAPO 在 Initialize 中 `CoCreateInstance(子 APO GUID)` → QI 三接口 → 委托全部方法
 > （v7.8 EAPO 源码二次检查确认）；VxAPO 规范 object 7.2 已有定义，实现尚缺。
 
+### P0-7  CLI 端到端验证（install/uninstall/config set/show/list/status + 回滚）
+- 状态：Backlog
+- 优先级：P0 ｜ 关联 Phase：Phase 10（P0 收尾）
+- 目标：CLI 依赖 vxapo-driver（as library），提供 **P0 达标口径的端到端验证**——设备 install/uninstall、config set/show、list/status、回滚 snapshot；验证驱动可安装、可加载、可按设备读 config（P0 链路收尾）
+- 影响模块：`vxapo-cli`（crate，规范外）、`vxapo-driver` 的 `install/selector/operation.rs`（install_endpoint/uninstall_endpoint 复用 + CLI 层 API）、`install/device/info.rs`（enumerate_devices 复用）
+- 规范落点：（定稿时回填；需声明 CLI 依赖 driver as library 边界 + install 层操作 API 集合）
+- 依赖：P0-4、P0-5
+- DoD：☐ 规范定稿 ☐ 实现 ☐ 测试（端到端：install → config set → driver 读回 → watcher 热重载生效 + 回滚验证）
+
+> **范围与优先级说明（v8.0 用户决策）**：
+> - **本条目执行了 P1-2（CLI per-device 配置管理）的部分核心能力**——install/uninstall/config set/show；
+>   **P1-2 条目本身不动**（保持 Backlog），其剩余能力（preset 管理 / inherit / 完整 CLI 边界声明）留待 P1-2 正式推进。
+> - **FxSound（P1-1）后做**：CLI 端到端验证优先（P0 收尾），P1-1 保持原位，P0 链路完成后再填效果。
+>
+> **架构（用户确认）**：CLI 依赖 vxapo-driver crate（作为库）——经 install 层 API 操作
+> （install_endpoint / uninstall_endpoint / enumerate_devices），不触碰 pipeline/RT；
+> 符合 intent.md 三层分离（CLI 是开发者工具，经 driver 的 install 层操作）。
+>
+> **能力集**：
+> - ① install `-d <device>`（调 `install_endpoint`，写 FxProperties 绑定）
+> - ② uninstall（调 `uninstall_endpoint` + driver selector 层事务回滚卸载）
+> - ③ config set（写 `Documents\VxAPO\{GUID}\config.txt`）
+> - ④ config show（读回一致性验证——「写后读回」）
+> - ⑤ list / status（保留现有诊断：枚举设备、查询注册表、友好名称、**查看设备哪些槽位被接管**）
+> - ⑥ **回滚 snapshot**：对 driver 改动前先 snapshot（注册表/配置状态），失败可恢复
+>
+> **验证边界**：config show 验证「文件已写入且可读回」；真正 DSP 热重载生效由 P0-4 的手动听感验证（无爆音）覆盖——CLI 无音频监听，不做效果断言。
+
 ---
 
 ## P1 — 核心功能（CLI 可操控 + 效果扩展）
