@@ -138,27 +138,40 @@
 - 状态：仍 Spec-Finalized（DoD 实现/测试 ☑；真实听感验证 ④ 未勾——由规范侧核对后决定）
 
 ### P0-5  RT 入口 panic 防护（catch_unwind）
-- 状态：Spec-Finalized（v8.2）
+- 状态：Spec-Finalized（v8.3）
 - 优先级：P0 ｜ 关联 Phase：Phase 1-9
-- 目标：`APOProcess` / `CalcInputFrames` / `CalcOutputFrames` RT 入口 `catch_unwind` 包裹——捕获 → 输出清零 + BUFFER_SILENT + stats.error_count++，杜绝 panic 跨 FFI unwind 到 audiodg 崩溃
+- 目标：RT 三入口（`APOProcess` / `CalcInputFrames` / `CalcOutputFrames`）panic 防护——**杜绝 panic 跨 FFI unwind 的 UB 传播**；三层防护各司其职（编译期约束为源头 → debug 测试态 catch_unwind 验证防御路径 → release abort 确定性兜底）
 - 影响模块：`object/apo.rs`（RT 三入口）
-- 规范落点：`object 7.1.11`（APOProcess catch_unwind 包裹 + 捕获行为）、`object 7.1.12`（CalcInput/OutputFrames catch_unwind 保守返回值）、`主规范 十五`（O3 panic=abort + telemetry/panic.rs panic hook）、`telemetry 9.2`（panic hook）
+- 规范落点：`object 7.1.11`（APOProcess 三层防护 + debug 态捕获行为）、`object 7.1.12`（CalcInput/OutputFrames 三层防护 + debug 态保守返回值）、`主规范 十五`（O1 RT 不 panic + O3 panic=abort）、`telemetry 9.2`（panic hook）
 - 依赖：无
-- DoD：☑ 规范定稿（v8.2）☐ 实现 ☐ 测试（debug panic=unwind 下模拟 panic 验证不崩溃）
+- DoD：☑ 规范定稿（v8.2，v8.3 语义澄清）☐ 实现 ☐ 测试（debug panic=unwind 下模拟 panic 验证不跨 FFI 传播）
+> 反馈记录：feedback.md #P0-5-1（v8.3 定稿说明语义失准——「杜绝崩溃」→「杜绝 UB 传播」）
 
-> **定稿说明（v8.2，P0-5）**：
-> - **catch_unwind 语义**：**debug profile（`panic="unwind"`）**下，跨 `extern "system"` FFI 边界 unwind 是 UB——RT 三入口 `catch_unwind` 包裹为**第一道防御**（捕获 → 安全降级输出，不向 audiodg 传播）；
->   **release profile（`panic="abort"`，O3 主规范十五）**下 `catch_unwind` 为空操作（panic 即 abort），真防线是 **telemetry/panic.rs panic hook**（abort 前记录栈）。
-> - **捕获行为**：
+> **定稿说明（v8.2 初稿；v8.3 策略重评——语义澄清）**：
+>
+> **P0-5 策略合理性（v8.3 重评）**：P0-5 的根本价值**不在 catch_unwind 本身**，而在三层防护组合——
+> 1. **编译期约束（第一道，源头，O1）**：RT 路径**无分配/无锁/无 IO**，正常路径**不 panic**——这是「避免崩溃」的真正源头；
+> 2. **debug 测试态 catch_unwind（第二道，`panic="unwind"`）**：捕获 → 安全降级输出，**验证「即便 panic 也不跨 FFI 传播」的防御路径**（DoD 测试即此态）；
+> 3. **release 兜底（第三道，`panic="abort"`，O3）**：任何漏网 panic → **确定性进程终止**——将「跨 FFI unwind = UB（静默内存损坏）」变为「可恢复的进程重启」，**绝无 UB 传播**；`telemetry/panic.rs` panic hook 在 abort 前记录栈——**它是诊断工具，不是防线**。
+>
+> **对「杜绝 audiodg 崩溃」的澄清（v8.3）**：原目标表述「杜绝 panic 跨 FFI unwind 到 audiodg 崩溃」**失准**——
+> - release（`panic="abort"`）下，panic 即**进程终止**（audiodg 由 Windows 音频服务重启恢复），**不是「崩溃」而是「确定性终止 + 无 UB」**；真正的危害是 **unwind 跨 FFI = UB（内存损坏/静默错乱）**，故目标应为**「杜绝 UB 传播」**；
+> - 「abort 终止进程」是**兜底语义**，不是防线缺陷：与其让 UB 静默传播，不如确定性终止可恢复；
+> - panic hook 的价值是**事后诊断**（abort 前记录现场），不改变 abort 本身的兜底角色。
+>
+> **catch_unwind 语义（v8.3 澄清）**：
+> - **debug profile（`panic="unwind"`）**：跨 `extern "system"` FFI 边界 unwind 是 UB——RT 三入口 `catch_unwind` 包裹为**测试态防御路径**（捕获 → 安全降级输出，验证不向 audiodg 传播）；
+> - **release profile（`panic="abort"`，O3 主规范十五）**：`catch_unwind` 为空操作（编译移除零开销），panic 即 abort 兜底。
+>
+> - **捕获行为（仅 debug 态生效）**：
 >   - `APOProcess`：panic → 输出缓冲清零 + `buffer_flags = BUFFER_SILENT` + `stats.error_count++` + 日志（RT 零分配：`log::error!` 走 telemetry 定长环形缓冲）；
 >   - `CalcInputFrames`：panic → 返回 `output_frames + last_known_latency`（保守多请求输入帧，不 panic）；
 >   - `CalcOutputFrames`：panic → 返回 `0`（保守，可丢帧不可越界）。
 > - **cost**：仅 debug/测试态有实际路径；release 零开销（`catch_unwind` 编译移除，O3）。
 > - **实现要点**：三入口均为 `extern "system"`（`#[implement]` 生成）——`catch_unwind` 包裹在实现体内、**不跨函数边界**；panic 载荷 `Box<dyn Any>` 经 `downcast_ref::<&str>` 提取消息写日志。
-> - **测试**：debug 下用 `std::thread::spawn` 模拟 panic（或 `#[cfg(test)]` 注入 panic 滤波）验证捕获不崩溃、输出被置 Silent。
+> - **测试**：debug 下用 `std::thread::spawn` 模拟 panic（或 `#[cfg(test)]` 注入 panic 滤波）验证捕获不跨 FFI 传播、输出被置 Silent。
 >
-> **说明（登记时）**：release（`panic="abort"`，O3）时 catch_unwind 为空操作——真防线是 panic hook + abort；
-> debug/unwind 测试态才有防御意义（旧框架 Note 60/68 已澄清）。属 P0 尾巴（威胁 audiodg 稳定性）。
+> **说明（v8.3 重评结论）**：旧说明「release 真防线是 panic hook + abort」**表述失准已修正**——release 防线是 **abort 兜底**（确定进程终止、无 UB），panic hook 仅为诊断工具非防线；catch_unwind 是 debug/测试态验证路径。策略本身合理：三层防护组合达成「**源头不 panic → 测试态验证防御 → release 确定性兜底**」。属 P0 尾巴（威胁 audiodg 稳定性）。
 
 ### P0-6  子 APO 委托实现（object/child.rs 落地）
 - 状态：Spec-Finalized（v8.1）
@@ -168,6 +181,7 @@
 - 规范落点：`object 7.2`（子 APO 来源 = 接管槽位前任 + 应用层槽位失守检测 + 运行期前置委托，v8.1）、`object 7.1.3`（child_apo 字段）、`object 7.1.7/7.1.8`（格式协商委托/Initialize 创建降级）、`object 7.1.9/7.1.10`（Lock 委托/Unlock 容错）、`object 7.1.11`（APOProcess child 前置）、**`主规范 十八`（EAPO 对齐度与差异化 18.1-18.4，v8.1——开放决策 ①②③ 收敛依据）**
 - 依赖：P0-4、P0-5（均 Done/已定稿）
 - DoD：☑ 规范定稿（v8.1）☐ 实现 ☐ 测试
+> 反馈记录：feedback.md #P0-6-1（v8.3 EAPO 源码逐行查验揭示 5 处规范偏差 S1-S5——主规范 18.1/18.2、install 5.5.2、object 7.1.14/7.2 已同步修订）
 
 > **定稿说明（v8.1，EAPO 源码精读闭环 + 用户决策）**：
 > - **子 APO 来源** = 安装时被 VxAPO 接管槽位的**前任 APO**（`PreMixChild/PostMixChild` 存 `childApoPath\{deviceGuid}` 安装信息区，对齐 EAPO DeviceAPOInfo；备份全部槽位供回退、子 APO 仅对应实际装入槽位）。
@@ -185,7 +199,7 @@
 >   → QI `IAudioProcessingObjectRT` → QI `IAudioProcessingObjectConfiguration` → **`childAPO->Initialize(cbDataSize, pbyData)`**
 >   **同传父 APOInit 数据**；任一步失败 → `resetChild()`（三接口 Release）+ **返回 S_OK 降级为无子 APO**（不阻塞父 Initialize）——
 >   与 VxAPO 7.1.8「失败降级不阻塞」一致 ✅。
-> - **GetLatency（91-92）**：有 child → 委托 `childAPO->GetLatency(pTime)`；无 child 走自身。
+> - **GetLatency（91-94，v8.3 修正）**：有 child → 委托 `childAPO->GetLatency(pTime)`；**无 child 返回 0**（EAPO `*pTime=0` 后仅 child 委托改写——v8.3 修正原「走自身」误读，见 feedback.md #P0-6-1 S4）。
 > - **IsInputFormatSupported（258-272）**：有 child → 委托 child；child 失败 / 无 child → 自身格式检查（当前实现需核对是否按此委托）。
 > - **LockForProcess（341-347）**：有 childCfg → `childCfg->LockForProcess`（**结果仅 Trace 不 return**，child 锁定失败不阻塞父）；随后父自身锁定。
 >   **realChannelCount 分支（365-369）**：有 child 时 `realChannelCount = outFormat 通道数`（子 APO 可能改变输出通道语义）——

@@ -747,10 +747,12 @@ fn UnlockForProcess(&self) -> HRESULT {
 
 #### 7.1.11 `APOProcess`
 
-> **catch_unwind 入口保护（v8.2，P0-5）**：APOProcess 是 `extern "system"` RT 入口（`#[implement]` 生成），
-> 跨 FFI 边界 unwind = UB。**debug profile（`panic="unwind"`）**下以 `catch_unwind` 包裹方法体为第一道防御；
-> **release profile（`panic="abort"`，主规范十五 O3）**下 `catch_unwind` 为空操作（panic 即 abort），
-> 真防线是 `telemetry/panic.rs` panic hook（abort 前记录栈）。捕获行为：输出缓冲清零 +
+> **catch_unwind 入口保护（v8.2，P0-5；v8.3 语义澄清）**：APOProcess 是 `extern "system"` RT 入口（`#[implement]` 生成），
+> 跨 FFI 边界 unwind = UB。**防护分三层，职责各不相同**：
+> 1. **编译期约束（第一道，O1）**：RT 路径无分配/无锁/无 IO（主规范十五 O1），正常路径**不 panic**——这是避免崩溃的源头；
+> 2. **debug 测试态 `catch_unwind`（第二道，`panic="unwind"`）**：捕获 → 安全降级输出，验证「即便 panic 也不跨 FFI 传播」的防御路径（DoD 测试即此态）；
+> 3. **release 兜底（第三道，`panic="abort"`，主规范十五 O3）**：任何漏网 panic → **确定性进程终止**——将「跨 FFI unwind = UB（静默内存损坏）」变为「可恢复的进程重启」，绝无 UB 传播；`telemetry/panic.rs` panic hook 在 abort 前记录栈——**它是诊断工具，不是防线**。
+> 捕获行为（仅 debug 态生效，release 空操作）：输出缓冲清零 +
 > `output_props[0].buffer_flags = BUFFER_SILENT` + `stats.error_count++` + 日志（RT 零分配：
 > telemetry 定长环形缓冲，不可用 `format!`/`Box`）。
 
@@ -893,11 +895,13 @@ fn apply_error_policy(
 
 #### 7.1.12 `CalcInputFrames` / `CalcOutputFrames`（无锁设计）
 
-> **catch_unwind 保守返回值（v8.2，P0-5）**：两入口同为 `extern "system"` RT 调用（引擎每帧请求帧数），
+> **catch_unwind 保守返回值（v8.2，P0-5；v8.3 语义澄清）**：两入口同为 `extern "system"` RT 调用（引擎每帧请求帧数），
 > debug（`panic="unwind"`）下 catch_unwind 包裹，panic 时返回**保守值**（宁可多算不 panic、可丢帧不可越界）：
 > - `CalcInputFrames` panic → 返回 `output_frames + last_known_latency`（多请求输入帧，安全）；
 > - `CalcOutputFrames` panic → 返回 `0`（不越界写输出缓冲区）。
-> release（`panic="abort"`）`catch_unwind` 空操作（主规范十五 O3），真防线为 panic hook。
+> release（`panic="abort"`）`catch_unwind` 空操作（主规范十五 O3）——任何漏网 panic 直接 abort 终止进程
+> （确定性进程重启，非 UB 传播）；panic hook 仅负责 abort 前记录现场（诊断工具，非防线）。
+> 与 7.1.11 同样适用三层防护语义：编译期 RT 不 panic（O1）→ debug catch_unwind → release abort 兜底。
 
 ```rust
 fn CalcInputFrames(&self, output_frames: u32) -> u32 {
@@ -956,13 +960,23 @@ fn Reset(&self) -> HRESULT {
 
 #### 7.1.14 `GetLatency`
 
+> **v8.3 修正（EAPO 源码对齐，EqualizerAPO.cpp 82-95）**：EAPO 语义为 `*pTime=0` 后
+> **有 child 才委托** `childAPO->GetLatency`；**无 child 返回 0**（EAPO 不维护自身延迟值）。
+> VxAPO 对齐：有 child → 委托 child，输出即 child 延迟；无 child → 返回 0。
+
 ```rust
 fn GetLatency(&self, p_latency: *mut REFERENCE_TIME) -> HRESULT {
     if p_latency.is_null() { return E_POINTER; }
-    let inner = self.mutex.lock().unwrap();
-    let latency_hns = self.latency_samples.load(Ordering::Acquire) as i64 * 10_000_000
-        / inner.pipeline_context.sample_rate as i64;
-    unsafe { *p_latency = latency_hns };
+
+    unsafe { *p_latency = 0 };  // v8.3：初始化为 0（对齐 EAPO EqualizerAPO.cpp 90）
+
+    // 有 child → 委托 childAPO->GetLatency（v8.3，EAPO 91-92 对齐）
+    if let Some(ref child) = self.child_apo {
+        let latency = child.get_latency();
+        unsafe { *p_latency = latency };
+    }
+    // 无 child → 返回 0（v8.3：不再读自身 latency_samples——对齐 EAPO 不维护自身延迟值）
+
     S_OK
 }
 ```
@@ -1187,6 +1201,8 @@ const _: () = {
   readReg 引用键（VxAPO config 纯文件，无 readReg 命令 → **VxAPO 不需要注册表监视**）。
 - **运行期委托**：childRT->APOProcess **前置每帧一次**（作用于输入缓冲）→ VxAPO 双链处理其输出；
   child 不在 current/outgoing 任一链内（独立持有），过渡只切父内链。
+- **GetLatency 委托语义（v8.3 修正，EAPO 源码 82-95）**：`*pTime=0` 后**有 child 才委托** `childAPO->GetLatency(pTime)`；
+  **无 child 时返回 0**（EAPO 不维护自身延迟值——VxAPO 对齐）。
 
 **引用来源**：
 - `crate::sys::com::prelude::*`

@@ -1,5 +1,18 @@
 # Changelog
 
+## v8.3 — 2026-08-03
+
+变更类型：`实现对齐`（P0-5 panic 语义重评 + EAPO 源码逐行查验 + 治理流程废止 hash 回填循环）
+
+- **P0-5 策略重评（三层防护语义澄清）**：原「杜绝 panic 跨 FFI unwind 到 audiodg 崩溃」表述失准——修正为「**杜绝 UB 传播**」；三层防护各司其职（编译期 O1 不 panic 为源头 → debug catch_unwind 验证防御路径 → release abort 确定性兜底，panic hook 为诊断工具非防线）——**对应章节**：`roadmap P0-5`、`object 7.1.11/7.1.12`、`主规范 十五`
+- **EAPO 源码逐行查验（`D:\Source_Code\equalizerapo-code`）→ 新建《Equalizer 行为文档.md》**：EqualizerAPO.cpp / DeviceAPOInfo.cpp / FilterEngine.cpp/.h / FilterConfiguration.cpp / RegistryFunctions.cpp / IFilter.h 全量逐行核对——**发现 5 处规范偏差（S1-S5）** 并同步修订
+- **S1：主规范 18.2 D2「协商期锁死 in==out」表述失准**——EAPO 实际是**拒绝下混**（in>out → S_FALSE + outFormat）+ **仅 mono→stereo 上混补做**（126-128）；VxAPO「等价立场」同步修正为「拒绝下混 + 仅 mono→stereo 上混」——**对应章节**：`主规范 18.2 D2`、`roadmap P0-6 ③`
+- **S2：E3.4 testAPOInstallation 描述与源码不符**——实际激活 `IAudioClient`（GetDevice → Activate → GetMixFormat → Initialize 共享模式 100ms）做**音频管线自检**，非「CoCreateInstance 验证 DLL」；失败抛 DeviceException——**对应章节**：`install 5.5.2`（E3.4）
+- **S3：child 委托失败销毁语义未覆盖**——EAPO `IsInputFormatSupported` 委托失败会 `resetChild()` 销毁 child 降级（258-283）；主规范 18.2 D5 修订注明——**对应章节**：`主规范 18.2 D5`
+- **S4：GetLatency 无 child 返回 0**——EAPO `*pTime=0` 后仅 child 委托（82-95），VxAPO 误读「无 child 走自身」；object 7.1.14 伪代码对齐为「无 child 返回 0」——**对应章节**：`object 7.1.14`、`object 7.2`
+- **S5：无冒号行语义澄清**——EAPO 静默跳过（FilterEngine.cpp 329-330）vs VxAPO 拒绝报错 = **有意差异**（VxAPO 更严格，intent「语法严格性」）——**对应章节**：`config 6.1`、`intent.md`
+- **治理流程废止 hash 回填循环（v8.3）**：changelog 每版本 `对应 commit` 改为**一次性回填**（版本提交完成时填写；此后禁止回填/追加提交；已发布记录冻结）——**对应章节**：`.clinerules/changelog-rule.md`
+
 ## v8.2 — 2026-08-03
 
 变更类型：`实现对齐`（P0-5 RT 入口 panic 防护定稿 + 治理流程补强）

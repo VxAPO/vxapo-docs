@@ -181,6 +181,9 @@ fn produce_spec(cmd: &str, value: &str) -> String {
 
 **裸命令可达性修正反转（v7.11，执行端潜在问题② → 用户产品决策）**：
 > **无冒号行不应被解析**（intent.md「语法严格性」：冒号前字符串决定解析目标，必须是严格关键字）。
+> **EAPO 行为事实（v8.3 补注，S5）**：EAPO 对无冒号行是**静默跳过**（FilterEngine.cpp 329-330：
+> `pos = line.find(':')`，`pos==-1` 时整行不解析、无错误）——**VxAPO「拒绝报错」比 EAPO 更严格**，
+> 属**有意差异**（intent「输入严格保证解析宽容」：写错必有反馈），非对齐。详见 `Equalizer 行为文档.md` C23。
 > 因此 **v7.9 的裸命令可达性修正删除**：
 > - `split_command_value` 零冒号 → `SyntaxError「缺少冒号」`（整体失败），不落 registry、不产出 spec；
 > - 效果：`BogusCommand`（无冒号）→ 明确「缺少冒号」错误，而非被 Convolution 宽容语义
@@ -308,7 +311,8 @@ pub fn parse_content(
 ///
 /// - 恰好一个冒号：正常返回 `(命令关键字, 参数体)`
 /// - 零个冒号 → `Err(SyntaxError「缺少冒号：命令必须为 关键字: 参数 格式」)`
-///   （无冒号行拒绝解析——对齐 EAPO 严格关键字语法，intent.md「语法严格性」；
+///   （无冒号行拒绝解析——**有意差异**：EAPO 静默跳过（FilterEngine.cpp 329-330），
+///     VxAPO 拒绝报错更严格，intent.md「语法严格性」；v8.3 S5 修正「对齐」表述；
 ///     v7.9 裸命令可达性修正废弃，v7.11 反转）
 /// - 多于一个冒号 → `Err(SyntaxError「多余冒号：一行仅允许一个冒号」)`
 ///   （参数内再含冒号拒绝，确保 value 恒非空、单语义）
