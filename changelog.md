@@ -20,7 +20,7 @@
 > - **Unlock 容错 + 重置防御**：child 解锁失败 → 父继续解锁（`UnlockForProcess(void)` 无重试语义已核证）+ child 标记需重置 → 下次 Lock 前 reset/重建——**对应章节**：`object 7.1.10`、`roadmap P0-6 开放决策①`
 > - **P0-6 状态 → Spec-Finalized**（roadmap），DoD 规范定稿 ☑——**对应章节**：`roadmap P0-6`
 >
-> 对应 commit：`8e5c54f`
+> 对应 commit：`8e5c54f`（v8.1 主体）+ `b4763fb`（补正）+ `3d501c1`（P0-6 定稿补记）
 
 ## v8.0 — 2026-08-03
 
