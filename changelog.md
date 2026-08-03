@@ -1,5 +1,24 @@
 # Changelog
 
+## v7.11 — 2026-08-03
+
+变更类型：`结构重构`（P0-4 潜在问题反馈② → config 语法严格化 + 错误报告方案定稿）
+
+- **config 语法严格化（用户产品决策）**：每行必须 `命令关键字: 参数`——无冒号行拒绝（SyntaxError「缺少冒号」）、
+  一行仅一个冒号（SyntaxError「多余冒号」）；**v7.9 裸命令可达性修正反转**（无冒号不再 `try_create(cmd)`）——
+  `BogusCommand` 不再被 Convolution 宽容语义误接——**对应章节**：`config 6.1`、`intent.md「config.txt 语法严格性」`
+- **Unmatched → SyntaxError**：`registry.try_create` 返回 Unmatched（未知命令）→ 不再 `log::warn` 跳过，
+  改为 `SyntaxError「未知命令」`整体失败（保留旧链）；「配置写错必有反馈」——**对应章节**：`config 6.1`
+- **Convolution 参数严格化**：`parse_convolution_params` 从 `Option` → `Result`——≥3 tokens / 第 2 个非数值
+  → `ParseError`（`ir.wav -6 abc` 不再静默忽略 `abc`）——**对应章节**：`pipeline 4.19`
+- **VST 静默 NoMatch 对齐**：`VSTPlugin:` v7.11 起与未知命令同样落 SyntaxError（诚实反馈，不再静默跳过）——
+  **对应章节**：`pipeline 4.20`
+- **诊断日志归属（intent 固化）**：config 解析错误摘要写入**软件安装根目录 `log/`**（非 Documents\VxAPO 设备目录），
+  由应用层读取呈现；DLL 只写日志（纯落盘，非状态回传通道），watcher 天然不监控 log/——**对应章节**：
+  `intent.md「诊断日志归属」`
+
+> 对应 commit：`（待提交）`
+
 ## v7.10 — 2026-08-03
 
 变更类型：`实现对齐`（P0-4 实现完成报告反馈①——watcher 线程模型澄清 + 对象层接线缺口确认）

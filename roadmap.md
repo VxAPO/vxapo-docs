@@ -258,9 +258,9 @@
 - 优先级：P0 ｜ 关联 Phase：Phase 10
 - 目标：监控线程检测 config.txt 变更 → swap 串联 → 升余弦过渡；修改文件实时生效且无爆音（对齐 v6.9 R1-R4）
 - 影响模块：`config/watcher.rs`、`config/parser.rs`（filter_spec 产出，v7.9）、`object/apo.rs`（hot_reload/APOProcess）
-- 规范落点：`config 6.1`（filter_spec 契约 + parse_file_with_spec + 128KB 逐文件闸门，v7.9）、`config 6.2`（目录级事件驱动 + DirectoryChanged + 外部驱动模型，v7.8/v7.9/v7.10）、`object 7.1.8`（watcher 生命周期随锁定周期，v7.9）、`object 7.1.9`（末尾启动 watcher + active_spec 基线 + start_watcher 定义，v7.9/v7.10）、`object 7.1.10`（stop_watcher 定义，v7.10）、`object 7.1.18`（spec 短路 + 保留旧链，v7.9）、`intent.md`（产品意图）
+- 规范落点：`config 6.1`（filter_spec 契约 + parse_file_with_spec + 128KB 逐文件闸门 + 单冒号校验 + Unmatched→SyntaxError，v7.9/v7.11）、`config 6.2`（目录级事件驱动 + DirectoryChanged + 外部驱动模型，v7.8/v7.9/v7.10）、`object 7.1.8`（watcher 生命周期随锁定周期，v7.9）、`object 7.1.9`（末尾启动 watcher + active_spec 基线 + start_watcher 定义，v7.9/v7.10）、`object 7.1.10`（stop_watcher 定义，v7.10）、`object 7.1.18`（spec 短路 + 保留旧链，v7.9）、`pipeline 4.19/4.20`（Convolution strict + VST NoMatch 对齐，v7.11）、`intent.md`（产品意图 + 语法严格性 + 诊断日志归属）
 - 依赖：P0-3（已 Done ✅）
-- DoD：☑ 规范定稿（v7.3/v7.8/v7.9/v7.10）☐ 实现（部分：config/parser/watcher 已实装；对象层接线待补）☐ 测试（含手动听感验证）
+- DoD：☑ 规范定稿（v7.3/v7.8/v7.9/v7.10/v7.11）☐ 实现（部分：config/parser/watcher 已实装；对象层接线 + v7.11 严格化待补）☐ 测试（含手动听感验证）
 
 > **定稿说明（v7.3，v7.8/v7.9 修订）**：watcher 能力由**轮询（2000ms + 500ms 去重）**升级为
 > **Win32 事件驱动**（`FindFirstChangeNotificationW` + `WaitForMultipleObjects` + 10ms 去重 +
@@ -349,6 +349,31 @@
     ③ `UnlockForProcess` 调 `stop_watcher()`（SetEvent + join + close）；④ 回归测试。
   - 遗留 2（真实音频引擎验证）保持，属手动验收项。
 - 状态保持：Spec-Finalized（P0-4 未进入 Implementing——执行端未改状态；规范侧补全后仍须执行端接线才能 DoD 全勾）
+
+### 执行端潜在问题（v7.11，P0-4 实现报告随附 → 用户产品决策处理）
+- **问题①「错误只进 log，不进 config 错误流」**：`Convolution: ir.wav -6 abc`（第 3 token 非数字）被 `parse_convolution_params`
+  前 2 token 宽容解析静默忽略 `abc`——「配置写错」无反馈。
+- **问题②「裸命令兜底误伤」**：v7.9 裸命令可达性（无冒号 → `try_create(cmd)`）让 `BogusCommand`（无冒号整行）被 Convolution
+  宽容语义接住 → 变「路径加载失败」而非「未知命令」。
+- **用户产品决策**：**无冒号行不应被解析**——冒号前字符串决定解析目标，必须是严格关键字（对齐 EAPO 严格语法）；
+  「输入严格保证解析宽容」——写错必有反馈。
+- **规范修订（v7.11）**：
+  - `config 6.1`：`split_command_value` 单冒号校验（0 冒号 → SyntaxError「缺少冒号」；≥2 冒号 → SyntaxError「多余冒号」）；
+    **v7.9 裸命令可达性反转**（无冒号不再 try_create）；Unmatched → `SyntaxError「未知命令」`（原 log::warn 跳过废弃）；
+    filter_spec 产出表删「无冒号裸命令」行。
+  - `pipeline 4.19`：`parse_convolution_params` `Option` → `Result`（≥3 tokens / 第 2 个非数值 → `ParseError`，不再静默忽略）。
+  - `pipeline 4.20`：`VSTPlugin:` NoMatch v7.11 起同样落 SyntaxError（诚实反馈，不再静默跳过）。
+  - `intent.md`：新增「config.txt 语法严格性」+「诊断日志归属」（错误摘要写**软件安装根目录 `log/`**，
+    应用层读取呈现；DLL 只写日志非状态回传通道；watcher 天然不监控 log/）。
+  - **对应章节**：`config 6.1`、`pipeline 4.19/4.20`、`intent.md`
+- **执行端待办（v7.11 追加）**：
+  - ① `split_command_value` 按单冒号校验实现（0/≥2 冒号 → SyntaxError）；
+  - ② `_` 分支 Unmatched → SyntaxError（弃 `log::warn` 跳过）；删除裸命令 `try_create(cmd)` 兜底；
+  - ③ `parse_convolution_params` 改 `Result`（≥3 tokens 报错）；
+  - ④ 更新测试断言：`spec_with_unknown_command_warns_and_continues`（原断言 warn 跳过 specs.len()==2）→
+    改为断言无冒号行/未知命令 → SyntaxError 整体失败；补 `ir.wav -6 abc` → 报错测试；
+  - ⑤ 错误日志写入 `log/`（DLL 解析失败时 append 文件+行号+消息摘要）。
+- 状态保持：Spec-Finalized（P0-4 仍须执行端接线 + 上述待办才能 DoD 全勾）
 
 ### P0-5  RT 入口 panic 防护（catch_unwind）
 - 状态：Backlog

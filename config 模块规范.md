@@ -164,14 +164,31 @@ impl ConfigParser {
 fn produce_spec(cmd: &str, value: &str) -> String {
     let sep = '\x1F';
     if value.is_empty() {
-        // 无冒号行（IIR, PK, Fc 1000 Hz, ...）：整行小写 + token 规范化
+        // v7.11：无冒号行已提前 Err（split_command_value 单冒号校验），
+        // 此分支保留为防御（正常不会再走到）。
         normalize_tokens(cmd, sep)
     } else {
         // 有冒号行（Preamp: -6.0 dB）：命令名小写 + 分隔符 + 参数体 token 规范化
         format!("{}{}{}", cmd.to_ascii_lowercase(), sep, normalize_tokens(value, sep))
     }
 }
+```
 
+> **单位 token 边界**：token 规范化只对可 parse 为 f64 的 token 做 `normalize_number`，
+> **不剥离单位**（`-6.0 dB` → `-6\x1FdB` ≠ `-6`）。单位 token 属 DSP 知识，
+> 剥离会违背「spec 由 parser 产出、零 DSP 知识」原则。单位差异（`-6.0 dB` vs `-6.0`）
+> 触发一次过渡——手动改文件本就是边缘场景，过渡有升余弦无听感爆音，可接受（intent.md）。
+
+**裸命令可达性修正反转（v7.11，执行端潜在问题② → 用户产品决策）**：
+> **无冒号行不应被解析**（intent.md「语法严格性」：冒号前字符串决定解析目标，必须是严格关键字）。
+> 因此 **v7.9 的裸命令可达性修正删除**：
+> - `split_command_value` 零冒号 → `SyntaxError「缺少冒号」`（整体失败），不落 registry、不产出 spec；
+> - 效果：`BogusCommand`（无冒号）→ 明确「缺少冒号」错误，而非被 Convolution 宽容语义
+>   误接为「路径加载失败」；`Convolution: ir.wav -6` 只能通过显式冒号触发。
+> - `produce_spec(cmd, "")` 分支保留为防御（正常不会再走到——零冒号已提前 Err）。
+> - 旧 v7.9 文本「值空且非条件/配置关键字时 try_create(cmd)（整行作参数）」**废弃**。
+
+```rust
 /// token 级规范化：按逗号/空格拆 token；可 parse 为 f64 的经 normalize_number，
 /// 其余原样（'dB'、路径 'impulse.wav' 等不变）；用 sep 重新连接。
 fn normalize_tokens(s: &str, sep: char) -> String { ... }
@@ -186,7 +203,6 @@ fn normalize_number(f: f64) -> String { ... }
 | 行格式 | 例子 | 产出 |
 |--------|------|------|
 | 冒号分隔 | `Preamp: -6.0 dB` | `preamp\x1F-6\x1FdB` |
-| 无冒号（裸命令） | `IIR, PK, Fc 1000 Hz, Gain +3.2 dB, Q 1.4` | `iir\x1Fpk\x1F1000\x1F3.2\x1F1.4`（整行 token 规范化） |
 | 注释/空行 | `# 注释` | 不产出 |
 | 纯配置命令（Device/If/Eval/Stage/Channel） | `Device: AbortFile` | 不产出自身；仅间接影响后续命令 |
 | Include | `Include: "sub.txt"` | 不产出自身；递归展开子文件，子文件命令各自产出并内联 |
@@ -197,12 +213,9 @@ fn normalize_number(f: f64) -> String { ... }
 > 剥离会违背「spec 由 parser 产出、零 DSP 知识」原则。单位差异（`-6.0 dB` vs `-6.0`）
 > 触发一次过渡——手动改文件本就是边缘场景，过渡有升余弦无听感爆音，可接受（intent.md）。
 
-**裸命令可达性修正（v7.9，P0-2 遗留补齐）**：`parse_lines_impl` 对裸无冒号命令
-（如 `PK Fc 1000`）当前 `split_command_value` 把整行放 cmd、value="" → try_create 收空串
-→ Unmatched，**实际到达不了工厂**。v7.9 在分发层补一条：值空且非条件/配置关键字时，
-`try_create(cmd)`（整行作参数）。由此裸命令经 `FilterAdded` 分支产出
-`produce_spec(cmd, "")` = 整行小写 + token 规范化；`MatchedNoFilter`/`Aborted`/`Unmatched`
-**不产出**（与「未创建滤波器则无指纹」一致）。
+> **无冒号行在产出表中不再出现**（v7.11）：无冒号行已被 `split_command_value` 单冒号
+> 校验拒绝（SyntaxError 整体失败），不产出 spec、不落 registry。旧 v7.9「裸命令可达性
+> 修正」段落已废弃删除（见「裸命令可达性修正反转」注）。
 
 ---
 
@@ -291,8 +304,15 @@ pub fn parse_content(
     depth: usize,
 ) -> Result<(), ConfigError>;
 
-/// 分割 `Command: value` 格式。
-fn split_command_value(line: &str) -> (&str, &str);
+/// 分割 `Command: value` 格式（v7.11 严格化——单冒号校验）。
+///
+/// - 恰好一个冒号：正常返回 `(命令关键字, 参数体)`
+/// - 零个冒号 → `Err(SyntaxError「缺少冒号：命令必须为 关键字: 参数 格式」)`
+///   （无冒号行拒绝解析——对齐 EAPO 严格关键字语法，intent.md「语法严格性」；
+///     v7.9 裸命令可达性修正废弃，v7.11 反转）
+/// - 多于一个冒号 → `Err(SyntaxError「多余冒号：一行仅允许一个冒号」)`
+///   （参数内再含冒号拒绝，确保 value 恒非空、单语义）
+fn split_command_value(line: &str) -> Result<(&str, &str), ConfigError>;
 ```
 
 **逐行分发逻辑**：
@@ -329,7 +349,7 @@ for (i, line) in content.lines().enumerate() {
         _ if command.to_ascii_lowercase().starts_with("filter ") => {
             rew::handle(value, &mut ctx)?
         }
-        // DSP 命令通过 FilterRegistry 匹配
+        // DSP 命令通过 FilterRegistry 匹配（value 恒非空——v7.11 单冒号校验保证）
         _ => {
             let outcome = ctx.registry.try_create(value, ctx.dsp_ctx, ...);
             match outcome.result {
@@ -337,7 +357,13 @@ for (i, line) in content.lines().enumerate() {
                 OutcomeKind::MatchedNoFilter => {},
                 OutcomeKind::Aborted => { ctx.abort_file = true; }
                 OutcomeKind::Unmatched => {
-                    log::warn!("unknown command '{}'", command);
+                    // v7.11：Unmatched（关键字严格匹配但工厂不认）→ 语法错误，
+                    // 不再 log::warn 跳过——「配置写错必有反馈」（intent.md 语法严格性）。
+                    return Err(ConfigError::SyntaxError {
+                        file: ctx.current_file.clone(),
+                        line: ctx.line_number,
+                        message: format!("未知命令 '{}'", command),
+                    });
                 }
             }
         }

@@ -1319,14 +1319,28 @@ impl ConvolutionFilter {
 }
 impl Filter for ConvolutionFilter { ... }
 
-pub fn parse_convolution_params(spec: &str) -> Option<(String, f32)>;
+/// 解析 `Convolution:` 参数（v7.11 严格化——执行端潜在问题① → 用户决策）。
+///
+/// 语法：`<路径> [增益dB]`，路径可为含空格引号路径。
+/// - 1 token（裸路径）→ `Ok((path, 0.0))`（gain 默认 0）
+/// - 2 tokens（路径 + 数值）→ `Ok((path, gain))`（第 2 个必须 parse 为 f64）
+/// - **≥3 tokens / 第 2 个非数值 → `Err(ParseError)`**——不再静默忽略多余 token
+///   （`ir.wav -6 abc` 现在报错而非忽略 `abc`；「配置写错必有反馈」，intent.md 语法严格性）
+pub fn parse_convolution_params(spec: &str) -> Result<(String, f32), ParseError>;
 ```
+
+> **宽语法回收（v7.11）**：v1 中 `Convolution:` 的宽容解析（前 2 token，多余忽略）
+> 曾导致无冒号行被误接——现由 `config 6.1` 单冒号校验（无冒号 → SyntaxError）彻底
+> 封堵入口；本函数自身仍保持「路径可含空格」的宽语法（引号路径），但参数**严格计数**。
+> `ParseError` 由 config 层包装为 `ConfigError::SyntaxError`（文件 + 行号），最终
+> 写入 `log/` 诊断日志（intent.md「诊断日志归属」）。
 
 ---
 
 ### 4.20 `pipeline/dsp/vst.rs`（实现已移除，保留注册入口）
 
-**现状（v6.5 决策）**：VST 功能**回退为静默 `NoMatch` 模式**——配置中出现 `VSTPlugin:` 时，`VstFactory` 恒定返回 `FilterCreateResult::NoMatch`，解析器按未知命令静默跳过（不报错、不产生 Filter）。
+**现状（v6.5 决策 + v7.11 严格化对齐）**：VST 功能**回退为 `NoMatch` 模式**——配置中出现 `VSTPlugin:` 时，`VstFactory` 恒定返回 `FilterCreateResult::NoMatch`。v7.11 起（config 6.1 Unmatched → SyntaxError），解析器**不再静默跳过**：`VSTPlugin:` → `SyntaxError「未知命令 'VSTPlugin'」`，整体解析失败（保留旧链）。
+> 语义说明：`VSTPlugin` 仍是**合法命令关键字**（工厂已注册），返回 NoMatch 表示"功能未启用"。v7.11 严格化后与未知关键字同样落 SyntaxError——对用户是**诚实反馈**（此命令当前无效），符合 intent.md「配置写错必有反馈」。
 
 **文件内容**：仅保留模块注释（说明当前行为与未来路径，供开发者查看），**无任何实现/测试**。
 
