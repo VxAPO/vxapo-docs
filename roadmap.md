@@ -108,17 +108,20 @@
 > **说明**：release（`panic="abort"`，O3）时 catch_unwind 为空操作——真防线是 panic hook + abort；
 > debug/unwind 测试态才有防御意义（旧框架 Note 60/68 已澄清）。属 P0 尾巴（威胁 audiodg 稳定性）。
 
-### P1-5  子 APO 委托实现（object/child.rs 落地）
+### P0-6  子 APO 委托实现（object/child.rs 落地）
 - 状态：Backlog
-- 优先级：P1 ｜ 关联 Phase：Phase 10T
+- 优先级：P0 ｜ 关联 Phase：Phase 10T
 - 目标：`object/child.rs` 规范已完备（三接口类型化持有 + 委托），实现缺——补 `ApoObject.child_apo` 字段 + CoCreateInstance + Initialize/LockForProcess/UnlockForProcess/APOProcess 完整委托（对齐 EAPO childAPO/childRT/childCfg）
 - 影响模块：`object/child.rs`、`object/apo.rs`、`install/device/slots.rs`（子 APO GUID 读取）
 - 规范落点：（定稿时回填；`object 7.1.3` child_apo 字段 + `object 7.2` child.rs 方法）
 - 依赖：P0-4、P0-5
 - DoD：☐ 规范定稿 ☐ 实现 ☐ 测试
 
-> **说明**：EAPO 在 Initialize 中 `CoCreateInstance(子 APO GUID)` → QI 三接口 → 委托全部方法
-> （v7.8 EAPO 源码二次检查确认）；VxAPO 规范 object 7.2 已有定义，实现尚缺——P0 链路之后补。
+> **说明（v8.0 重编号 P1-5 → P0-6）**：子 APO 委托属**驱动层基础能力**——`object 7.1.8`
+> Initialize 步骤 4 本就要「创建 ChildApo」（失败降级为无子 APO），`object 7.1.3` child_apo 字段、
+> `object 7.2` 委托方法均已规范——补实现是 P0 链路的完整性收尾，非 P1 核心功能扩展。
+> EAPO 在 Initialize 中 `CoCreateInstance(子 APO GUID)` → QI 三接口 → 委托全部方法
+> （v7.8 EAPO 源码二次检查确认）；VxAPO 规范 object 7.2 已有定义，实现尚缺。
 
 ---
 
