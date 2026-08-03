@@ -34,6 +34,11 @@ Backlog（待办）→ Spec-Drafting（规范起草）→ Spec-Finalized（规�
 2. **禁止"绕过规范先实现"**：实现中发现规范不足 → 任务状态回退 `Spec-Drafting`，修订规范后再继续。
 3. **Backlog 不写 changelog**：登记仅更新 roadmap.md；当条目促成规范变更、版本递增时，才由 `spec-finalize` 按 changelog-rule 记录。
 
+## 反馈外置（v8.0）
+
+**执行端实现中发现的规范问题反馈，统一记录于根目录 `feedback.md`，禁止写入 `roadmap.md`**（维护规则见 `.clinerules/feedback-rule.md`）。
+roadmap 条目命中的反馈**只留引用**：`> 反馈记录：feedback.md #PX-X`；状态机/DoD 不受反馈外置影响。
+
 ## 三文件联动
 
 一次版本变更必须同时满足：

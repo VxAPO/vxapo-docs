@@ -5,6 +5,8 @@
 >
 > 状态机：`Backlog → Spec-Drafting → Spec-Finalized → Implementing → Done`
 > 硬门禁：仅 **Spec-Finalized** 可进入 Implementing（见 `.clinerules/roadmap-rule.md`）
+> **反馈外置（v8.0）**：执行端反馈统一记录于 `feedback.md`（维护规则 `.clinerules/feedback-rule.md`）；
+> 本文件条目只保留状态、DoD、规范落点与反馈引用（`> 反馈记录：feedback.md #PX-X`）——保持清单精简。
 
 ---
 
@@ -16,7 +18,7 @@
 | `Spec-Drafting` | 规范起草中：核对/补写该功能涉及的规范章节 | 规范草稿（主规范或子规范） |
 | `Spec-Finalized` | 规范定稿：落点已回填，门禁放行 | 版本递增（如有变更）+ changelog + 落点回填 |
 | `Implementing` | 执行端 agent 按规范落地 | 实现 + 测试 |
-| `Done` | 实现完成并通过合规核对 | 合规核对记录 |
+| `Done` | 实现完成并通过合规核对 | 合规核对记录（反馈/报告外置 feedback.md） |
 
 ---
 
@@ -34,33 +36,7 @@
 - DoD：☑ 规范定稿（v7.1）☑ 实现 ☑ 测试
 
 > **分工澄清（v7.1 定稿）**：`regsvr32` 无设备参数，只做全局 COM 类注册（DLL 可加载）；
-> "挂载到端点 + FxProperties 设备绑定"由 `install_endpoint`（`install 5.5.2`）承担，经 `vxapo-cli install -d <device>` 触发。两者分层，regsvr32 不绑定设备。
->
-> **合规性**：引用约束总表已更新（dll_exports 增 `sys/registry`）；不触碰 RT；不触碰 MMDevices/FxProperties（边界清晰）。
-> **实现验收**：`regsvr32 vxapo.dll` → `CoCreateInstance` 两个 CLSID 均可实例化；`regsvr32 /u` 后键清理、重复注册/注销幂等。
-
-### 实现完成报告
-- DoD：☑ 实现 ☑ 测试
-- 自查结果：
-  - RT 无违规：`DllRegisterServer`/`DllUnregisterServer` 由 regsvr32 宿主进程（控制路径）调用，非 RT 路径；
-    全部注册表操作经 `sys/registry`（`RegKey::create`/`delete_tree`），无分配热点、无锁间接。
-  - 引用约束无打破：dll_exports 依赖 `sys/registry`（v7.1 主规范十一已声明）；
-    不触碰 MMDevices / FxProperties（v7.1 职责边界）；`object/vx_reg_props.rs` 的
-    `ClsidEntry`/`registration_order`/`unregistration_order` 此前已存在且经 `guid_to_string` 格式化（无 GUID Display 冲突）。
-  - 未引入未声明依赖：仅使用 windows-rs 0.62.2 既有 feature（Win32_System_Registry/Com/LibraryLoader）。
-- 新增/修改文件：
-  - `src/object/dll_exports.rs`（修改，⊆ 影响模块声明）：
-    - `DllRegisterServer`：DLL 路径获取失败 → `SELFREG_E_CLASS`；注册失败按逆序回滚已注册条目 → `SELFREG_E_CLASS`（Note 29）
-    - `DllUnregisterServer`：先删 `InprocServer32` 子键再删 `CLSID\{GUID}` 父键，键不存在视为成功（幂等，Note 30）
-    - `register_com_class`/`unregister_com_class`：改用 `sys/registry`（`RegKey::create` + `write_sz` / `delete_tree`），失败透出具体 HRESULT
-    - 本地常量 `SELFREG_E_CLASS = 0x80040201`（windows crate 未导出）
-- 遗留问题：无。手动验收（`regsvr32 vxapo.dll` → CoCreateInstance / `regsvr32 /u` 清理）需真实 Windows 注册表环境，
-  留待规范侧/用户核验（建议：单元测试层面已覆盖幂等语义——`RegKey::create` 覆盖写入、`delete_tree` 键不存在视为成功）。
-
-### 合规核对记录（v7.4）
-- 核对结果：**通过**——实现报告自查（RT 无违规/引用约束无打破/无未声明依赖）与规范落点一致；
-  触碰文件 ⊆ 影响模块；`SELFREG_E_CLASS` 本地常量合理（windows crate 未导出）。
-- 已归档至本文件「已完成」区（保留章节号便于追溯）。
+> "挂载到端点 + FxProperties 设备绑定"由 `install_endpoint`（`install 5.5.2`）承担，经 `vxapo-cli install -d <device>` 触发。两者分层。
 
 ### P0-2  config.txt 解析链路补齐（命令工厂替换 NoMatch）
 - 状态：Done（v7.4 合规核对通过）
@@ -71,83 +47,8 @@
 - 依赖：无
 - DoD：☑ 规范定稿（核对确认型，无版本变更）☑ 实现 ☑ 测试
 
-> **定稿说明（v7.1 确认型）**：规范侧**已完整覆盖** P0-2 全部需求（ConfigParser 解析三入口、
-> UTF-8/ANSI 降级、命令分发、全命令工厂注册）。本条目为**纯实现缺口**——规范无需新增/修改，
-> 无版本递增、无 changelog 记录。
->
-> **合规性**：config 不依赖 `pipeline/chain`/具体 Filter 实现（引用约束总表已满足）；
-> DSP 命令经 `registry.try_create` 动态创建。
 > **实现验收**：`cargo test` 通过 + 解析 config.txt 样例无 `NoMatch` 警告；`cargo check` 无未使用警告。
-
-### 实现完成报告
-- DoD：☑ 实现 ☑ 测试
-- 自查结果：
-  - RT 无违规：config/parser.rs + commands/* 全部为控制路径（文件 I/O、解析构造 Filter 链），
-    无 RT 分配/锁/I/O；`log::warn!` 仅在 Unmatched 时调用（非 RT）。
-  - 引用约束无打破：config/parser.rs 仅依赖 `config/error`、`config/commands/*`、
-    `pipeline/dsp/filter`、`pipeline/dsp/factory`（均 ⊆ config 规范 6.1 允许依赖）；
-    未直接依赖任何 `pipeline/dsp/*.rs` 具体实现，未触碰 `install/`、`object/`、
-    `pipeline/chain`、`pipeline/process`、`pipeline/context`。
-  - 未引入未声明依赖：仅新增使用既有 `std`（fs/PathBuf）与 `log`（Cargo.toml 已有）。
-- 新增/修改文件（⊆ 影响模块 `config/parser.rs`、`config/commands/*.rs`、`pipeline/dsp/factory.rs`）：
-  - `src/config/parser.rs`（重写）：ConfigParser 三入口走 `parse_content`/`parse_lines_impl`
-    逐行分发（规范 6.1）——条件分支（If/ElseIf/Else/EndIf）始终处理 + false 分支跳过 +
-    纯配置命令（Device/Stage/Channel/Eval/Include/Filter/GraphicEQ/Preamp/Copy/Delay）
-    分发到各 handle + REW `Filter N:` 动态命令名分发 rew::handle + 其余经
-    `registry.try_create`（裸 IIR/Biquad/Convolution/LoudnessCorrection）+
-    Unmatched `log::warn` + 条件栈平衡检查（unterminated If → SyntaxError）。
-    `read_config_file` UTF-8 优先 + BOM 跳过 + 非 UTF-8 lossy 降级（6.1 ANSI 降级意图）。
-    `ParseContext.current_file` 由 `&'a Path` 改为所有权 `PathBuf`（见反馈②）。
-  - `src/config/commands/include.rs`（修复）：去 `Box::leak` 路径泄漏，
-    `current_file` 所有权传递，递归深度限制保留；Include 子文件滤波器并入主列表（测试验证）。
-  - `src/config/commands/filter.rs` / `rew.rs`（修复）：`OFF` 创建 `PassthroughFilter`
-    （规范 6.14 语义），保留链序号位置；REW 逗号小数规范化已接线。
-  - `src/config/commands/{cond,expr,channel,device}.rs`（仅测试构造点 `PathBuf` 适配）。
-- 测试：436 passed / 0 failed（原 417 + 新增 19：parser 逐行分发/集成样例/Include 递归/
-  AbortFile/条件分支/Eval/Stage/REW/Filter OFF→Passthrough/ANSI lossy/BOM 等）。
-  解析 config.txt 样例（纯配置 + Preamp/Filter/GraphicEQ/Copy/Delay/Channel）无 NoMatch。
-- 遗留问题：无。`pipeline/dsp/factory.rs` 未改动（9 个 DSP 工厂已全接线）；
-  6.3 `register_all_commands` 是否需把 config 命令工厂注册进 FilterRegistry 留待规范侧澄清（见反馈①）。
-
-### 反馈
-- 状态建议：Spec-Finalized → Spec-Finalized（无需状态回退；以下为规范文本澄清建议）
-- 问题：
-  1. **规范 6.3 vs 6.1 矛盾**：6.3 `register_all_commands` 列出了
-     `DeviceFactory/IfFactory/EvalFactory/IncludeFactory/StageFactory/ChannelFactory/RewFactory`
-     7 个 config 命令工厂注册进 FilterRegistry；但 6.1 逐行分发逻辑（221-269 行）明确
-     Device/Stage/Channel/Eval/Include 走 `handle_*` 静态分发、未知命令走 registry。
-     由于 `FilterFactory::create_filter` 只接收**冒号后的 value**（不含命令关键字，
-     dsp/factory.rs 4.10），config 命令工厂无法从 value 反推命令名（`Filter:` 的
-     value 是 `ON PK...`，`Device:` 的 value 是设备路径）——注册进 registry 的
-     config 工厂永远无法命中。实现以 6.1（分发权威）为准：静态分发 + registry 兜底，
-     `register_all_commands` 仅注册 9 个 DSP 工厂。需规范侧澄清 6.3 的注册意图
-     （或将 6.3 改为"config 命令由 parser 静态分发，仅注册 DSP 工厂"）。
-  2. **规范 6.1 `ParseContext.current_file: &'a Path` 与 Include 递归冲突**：
-     Include 子解析需独立持有子文件路径（错误报告 + 相对路径），借用 `&'a Path`
-     无法跨递归层安全表达（会与 `filters: &'a mut` 的 `'a` 冲突），旧实现用
-     `Box::leak` 绕过后泄漏。已用所有权 `PathBuf` 替代（消除泄漏）。建议规范侧
-     将 6.1 原型更新为 `current_file: PathBuf`。
-  3. **规范 6.15 REW `Filter N:` 命令名未在 6.1 分发逻辑描述**：命令关键字是动态
-     `Filter N`（`Filter 1:`/`Filter 12:`），6.1 静态 match 无法命中。已加
-     `cmd_lower.starts_with("filter ")` 分支分发 `rew::handle`。建议规范侧在 6.1
-     补充此动态命令名分发路径。
-- 建议：由规范侧核对以上 3 点后决定修订或维持现状；执行端已按当前定稿实现全部
-  DoD（`cargo test` 通过 + 样例无 NoMatch + 无未使用警告）。
-
-### 反馈修订记录（v7.4，规范侧处理）
-- 反馈①（6.3 注册意图）：**已修订** —— 6.3 `register_all_commands` 改为只注册 DSP 工厂；
-  纯配置命令由 6.1 静态分发（`FilterFactory::create_filter` 只收 value 不含命令关键字，
-  config 命令工厂注册后无法命中）——**对应章节**：`config 6.3`
-- 反馈②（current_file 借用冲突）：**已修订** —— `ParseContext.current_file: &'a Path` →
-  `PathBuf`（所有权，消除 `Box::leak` 泄漏）——**对应章节**：`config 6.1`
-- 反馈③（REW 动态命令名）：**已修订** —— 6.1 分发逻辑补充 `starts_with("filter ")`
-  前缀分支 → `rew::handle`——**对应章节**：`config 6.1`
-- 同时新增「主规范 十七、实现反馈闭环」机制（执行端不改状态 + 零容忍绕过 + 规范侧修订闭环）。
-
-### 合规核对记录（v7.4）
-- 核对结果：**通过**——实现报告自查（RT 无违规/引用约束无打破/无未声明依赖）与规范落点一致；
-  触碰文件 ⊆ 影响模块；3 点反馈已全部纳入 v7.4 修订；测试 436 passed。
-- 已归档至本文件「已完成」区（保留章节号便于追溯）。
+> 反馈记录：`feedback.md #P0-2-1`（6.3 注册意图）、`#P0-2-2`（current_file 借用）、`#P0-2-3`（REW Filter N:）——均已修订（v7.4）。
 
 ### P0-3  per-device 配置路径
 - 状态：Done（v7.6 合规核对通过）
@@ -158,100 +59,10 @@
 - 依赖：P0-1、P0-2（已 Done ✅）
 - DoD：☑ 规范定稿（v7.2/v7.6）☑ 实现 ☑ 测试
 
-> **定稿说明（v7.2）**：新增 `sys/known_folder.rs`（SHGetKnownFolderPath FFI 收窄）、
-> re-export `APOInitSystemEffects`（端点 GUID 提取）、`object 7.1.8` 定义
-> `Documents\VxAPO\{GUID}\config.txt` 规则（目录自动创建 / 默认 passthrough / `_default` 兜底）。
->
-> **合规性**：known_folder 只做 FFI 收窄（不拼接路径）；对象层负责业务拼接；
-> Initialize 为控制线程（I/O 允许）；不触碰 RT / install / config 边界。
 > **实现验收**：Initialize 后 `config_path` == `Documents\VxAPO\{GUID}\config.txt`；
 > 目录不存在自动创建；config 缺失写默认 passthrough；无 GUID 时回退 `_default`。
-
-### 实现完成报告
-- DoD：☑ 实现 ☑ 测试
-- 自查结果：
-  - RT 无违规：per-device 路径解析全部在 Initialize（控制线程，I/O 允许）；
-    APOProcess 过渡修正（transition=None 写 bypass / advance None→factor=1.0）为纯
-    栈上计算，无分配/锁/I/O 新增。
-  - 引用约束无打破：`sys/known_folder.rs` 仅依赖 windows crate（`Win32_UI_Shell` +
-    `Win32_System_Com`，v7.2 主规范十一已声明）；`object/apo.rs` 增 `sys/known_folder`/
-    `sys/com/apo_types`（APOInitSystemEffects）依赖（v7.2 已声明）。
-  - 未引入未声明依赖：windows features 增加 `Win32_UI_Shell`、
-    `Win32_UI_Shell_PropertiesSystem`、`Win32_System_Variant`、
-    `Win32_System_Com_StructuredStorage`（均为 sys 3.6 / 3.3.1b 实现必需，规范已声明）。
-- 新增/修改文件（⊆ 影响模块 `object/apo.rs`、`config/watcher.rs`、`install/device`；sys 侧为 v7.2 新增模块）：
-  - `src/sys/known_folder.rs`（新建，v7.2 规范 3.6）：`documents_folder()` 封装
-    `SHGetKnownFolderPath(FOLDERID_Documents)`（实测返回 `Result<PWSTR>`），
-    `CoTaskMemGuard` RAII 释放（所有路径含错误均释放），`PWSTR::to_string` 转 String。
-  - `src/sys/com/apo_types.rs`：re-export `APOInitSystemEffects` / `APOInitBaseStruct` /
-    `PKEY_AudioEndpoint_GUID` / `IPropertyStore` / `PROPVARIANT` / `VT_CLSID` 等。
-  - `src/object/apo.rs`：
-    - `ApoObject.config_path: Mutex<String>`（Initialize 确定，LockForProcess/hot_reload 复用）
-    - `extract_endpoint_guid`：`APOInitSystemEffects.pAPOSystemEffectsProperties`
-      ->`IPropertyStore::GetValue(PKEY_AudioEndpoint_GUID)` -> PROPVARIANT `puuid`（VT_CLSID）
-    - `resolve_config_path`：`{Documents}\VxAPO\{GUID}\config.txt`，目录自动创建、config 缺失
-      写默认 passthrough、无 GUID/Documents 失败回退 `_default` / 默认路径
-    - `Initialize` 重写：参数校验（pby_data 非空 + cbSize 足够）+ 状态机 + per-device 路径
-  - `src/sys.rs`：`pub mod known_folder`。
-- 测试：437 → 441 passed（新增 sys/known_folder::documents_folder + object/apo
-  config_path 3 测试：`_default` 兜底/目录创建/文件写入/幂等/init=None）。
-- 遗留问题：
-  1. **APOProcess 过渡缺陷修复（独立发现 + 用户确认）**：① `finished` 分支先置
-     `reloading=true` 再调 `hot_reload()` → 短锁检查 `reloading==true` 直接 return，
-     延迟重载被自己拦截——已修正为**不置位直接调用**（hot_reload 自己管理 reloading）；
-     ② `transition=None` 但 `pending` 残留（无混合器）→ 本帧不写输出，违反 APO 契约——
-     已加防御分支：直接复制输入到输出（bypass）+ 旧链退役 + 触发补重载；
-     ③ 混合 `advance()` 返回 None（过渡已达上限）→ 本帧不写输出——已修正为按 factor=1.0
-     （纯新链）输出。
-  2. 真实端点 GUID 提取需 Windows 音频引擎真实 APOInitSystemEffects 环境验证
-     （单测以 `_default` 兜底覆盖 None 分支；VT_CLSID/puuid 分支留手动验收）。
-
-### 反馈
-- 状态建议：Spec-Finalized → Spec-Finalized（无需状态回退；规范文本澄清 2 点）
-- 问题：
-  1. **object 7.1.8 原型 `pSystemEffectsProperties->pEndpointGuid` 与 windows-rs 0.62.2
-     实测不符**：`APOInitSystemEffects` 无 `pSystemEffectsProperties` 字段，而是
-     `pAPOSystemEffectsProperties: ManuallyDrop<Option<IPropertyStore>>`；端点 GUID 经
-     `IPropertyStore::GetValue(&PKEY_AudioEndpoint_GUID)` 返回 PROPVARIANT（VT_CLSID）
-     的 `puuid` 提取。已按实测实现。建议规范侧在 7.1.8 更新提取路径描述。
-  2. **7.1.8 步骤 6「启动 watcher」为 P0-4 依赖**：Initialize 中 watcher 启动时机/生命周期
-     已在 v7.3 定义（`object 7.1.8`），但 P0-3 实现未接线 watcher（`config/watcher.rs` 未
-     创建实例）——P0-4 实现时补（config_path 字段已就位，watch_dir = config_path 父目录）。
-- 建议：规范侧核对以上 2 点；执行端 DoD 已全通过（cargo test 441 + 验收 4 项：路径/目录/文件/兜底）。
-
-### 反馈修订记录（v7.6，规范侧处理）
-- 反馈①（APOInitSystemEffects 实测结构）：**已修订** —— `object 7.1.8` + `sys 3.3.1b` +
-  `sys 3.3` 引用来源更新为 `pAPOSystemEffectsProperties`（IPropertyStore）→
-  `PKEY_AudioEndpoint_GUID`（PROPVARIANT VT_CLSID `puuid`）——**对应章节**：`object 7.1.8`、`sys 3.3.1b`
-- 反馈②（watcher 接线）：**确认为 P0-4 职责**（config_path 已就位；watch_dir = 父目录，
-  v7.3 已定义启动约定，P0-4 实现时补 ConfigWatcher 实例）——**对应章节**：`object 7.1.8`（watcher 约定）
-- **二次检查（规范侧实读 apo.rs 881 行后补充 3 项对齐）**：
-  - 对齐①（7.1.11 过渡完成 reloading 拦截）：规范伪代码原写"先 `reloading=true` 再调
-    hot_reload"→ 与实装矛盾（`reloading` 表示"正在解析中"，hot_reload 自己会置位；
-    先置 true 会短锁直接 return → 延迟重载被拦截）。修订为**不置位直接调用** + 补
-    pending 残留防御（transition=None → bypass 输出 + 旧链退役）+ advance None →
-    factor=1.0——**对应章节**：`object 7.1.11`
-  - 对齐②（7.1.8 Initialize 非法数据）：规范原写"非法 → E_INVALIDARG"；实装为
-    **降级默认配置（log::warn + resolve_config_path(None)）仍返回 Ok**（SDK 容错：
-    Initialize 失败 APO 无法加载/音频停摆，降级 passthrough 更稳健）——**对应章节**：`object 7.1.8`
-  - 对齐③（7.1.8 Documents 二级兜底）：规范只写"无 GUID → `_default`"；实装另有
-    `documents_folder()` 失败 → **固定 `C:\ProgramData\VxAPO\config.txt`**（DEFAULT_CONFIG_PATH）
-    ——**对应章节**：`object 7.1.8`
-
-### 合规核对记录（v7.6）
-- 核对结果：**通过**——实现报告自查（RT 无违规/引用约束无打破/触碰文件 ⊆ 影响模块）
-  与规范落点一致；441 passed；v7.4/v7.6 反馈均已纳入修订（config 3 点 + APOInit 结构 + 过渡修正 3 点）。
-- 已归档至本文件「已完成」区（保留章节号便于追溯）。
-
-### 实现缺陷反馈（v7.7，用户反馈 → 规范补齐）
-- **问题**：`IsInputFormatSupported` 在 `LockForProcess` **之前**被引擎调用，此时 `pipeline_context`
-  为 `PipelineContext::new()`（全零）——实装的等值比较（`fmt.channels == ctx.input_channels`
-  `&& fmt.sample_rate == ctx.sample_rate`）**永远不成立** → 拒绝所有格式、APO 无法协商。
-- **规范修订**：object 7.1.16 补**关键时序约束**——协商阶段禁止依赖 pipeline_context；
-  正确做法为对请求格式做**独立属性检查**（浮点格式 + 44.1k~192k + 1~8 通道）——
-  **对应章节**：`object 7.1.16`（主规范 v7.7）
-- **实现端待办**：`IsInputFormatSupported`/`IsOutputFormatSupported` 需按 7.1.16 独立属性检查实现
-  （去掉 pipeline_context 等值比较），并补范围检查（实现端接单）。
+> 反馈记录：`feedback.md #P0-3-1`（APOProcess 过渡缺陷）、`#P0-3-2`（APOInit 实测结构）——均已修订（v7.6）。
+> 观察（v8.0 移出）：v7.6 二次检查 3 项对齐（reloading 拦截 / Initialize 降级 / Documents 兜底）——详见主规范对应章节，不再重复登记。
 
 ### P0-4  配置热重载全链路（watcher + swap + 过渡）
 - 状态：Spec-Finalized
@@ -265,155 +76,25 @@
 > **定稿说明（v7.3，v7.8/v7.9 修订）**：watcher 能力由**轮询（2000ms + 500ms 去重）**升级为
 > **Win32 事件驱动**（`FindFirstChangeNotificationW` + `WaitForMultipleObjects` + 10ms 去重 +
 > shutdown_event 退出）——对齐 EAPO `notificationThread`。
-> v7.9（执行端反馈 → 方案定型）：
-> - 目录级语义：`FindFirstChangeNotificationW` 不提供文件名，旧「校验 config.txt」无法实现
->   → 统一 `DirectoryChanged`，hot_reload 内 spec 指纹比对决定是否切换。
-> - 配置指纹：parser 产出 `FilterSpec`（命令名 + `\x1F` + token 规范化），
->   `parse_file_with_spec` 双返回；Include 失败 = 整体失败。
-> - 行为链：目录变更 → 128KB 闸门 → 重新解析 + spec 比对 → 相同幂等跳过 / 不同建新链过渡。
-> - watcher 生命周期随锁定周期：Lock 末尾启动、Unlock 停止。
-> - 同时：热重载解析失败**保留旧链**、过渡缓冲 LockForProcess **预分配充足容量**（v7.8）。
+> 行为链：目录变更 → 128KB 闸门 → 重新解析 + spec 比对（与 active_spec）→ 相同幂等跳过 / 不同建新链过渡；
+> watcher 生命周期随锁定周期（Lock 末尾启动、Unlock 停止）；解析失败保留旧链；过渡缓冲预分配。
 >
-> **合规性**：watcher 为后台线程（控制路径，I/O 允许）；事件仅在非过渡期触发 hot_reload；
-> 不触碰 RT 分配/锁。**实现验收**：修改 `Documents\VxAPO\{GUID}\config.txt` → 音频变化无爆音；
-> 10ms 内生效；解析出错时旧 EQ 保持；无关文件变更/内容未变不触发过渡（spec 短路）。
+> **实现验收**：修改 `Documents\VxAPO\{GUID}\config.txt` → 音频变化无爆音；10ms 内生效；
+> 解析出错时旧 EQ 保持；无关文件变更/内容未变不触发过渡（spec 短路）。
 >
-> ### 执行端反馈（v7.9，P0-4 目录级语义矛盾）
-> - **问题**：config 6.2 事件驱动流程「校验文件名 == config.txt」与
->   `FindFirstChangeNotificationW` 语义矛盾——目录级通知**不提供具体文件名**，
->   无法逐文件过滤（文件名信息只有 `ReadDirectoryChangesW` 扩展才有）。
-> - **方案定型（用户）**：不做文件名校验；目录任何变更 → hot_reload → 128KB 闸门 →
->   重新解析 + `parse_file_with_spec` 产出 spec chain → 与 active_spec 比较 →
->   相同幂等跳过 / 不同建新链过渡。**根因**：不比较文件内容（哈希/String），
->   而比较**解析后的配置指纹**（含 Include 递归展开）——"配置实质变了"的真实语义。
-> - **规范修订（v7.9）**：config 6.1（FilterSpec 契约 + parse_file_with_spec + 裸命令可达性）、
->   config 6.2（DirectoryChanged 目录级）、object 7.1.8/7.1.9/7.1.10（watcher 生命周期）、
->   object 7.1.18（spec 短路 + 128KB 闸门）、object 7.1.3（active_spec 字段）——
->   **对应章节**：`config 6.1/6.2`、`object 7.1.3/7.1.8/7.1.9/7.1.10/7.1.18`、`intent.md`
-
-### 实现完成报告（commit ad6f203）
-- DoD：☑ 实现 ☑ 测试
-- 自查结果：
-  - RT 无违规：spec 产出/128KB 闸门/解析全部在控制线程（watcher 线程 + hot_reload）；
-    过渡缓冲预分配（max_frame_count × max_ch）杜绝 RT 过渡首次 resize。
-  - 引用约束无打破：config/parser.rs 增 `produce_spec`/`parse_file_with_spec`（config 6.1 允许）；
-    watcher.rs 增 `Win32_Storage_FileSystem`（config 6.2 目录级事件驱动必需）；
-    object/apo.rs 增 `config/watcher::ConfigWatcher` + `MAX_CONFIG_FILE_SIZE`（object 7.1.8/7.1.18）。
-  - 未引入未声明依赖：windows features 已含 Win32_Storage_FileSystem（v7.9 已声明）。
-- 新增/修改文件（⊆ 影响模块 `config/watcher.rs`、`config/parser.rs`、`object/apo.rs`）：
-  - `src/config/parser.rs`：`FilterSpec=String` / `SpecChain=Vec<FilterSpec>` / `MAX_CONFIG_FILE_SIZE`；
-    `produce_spec(cmd,value)`（命令名小写 + `\x1F` + token 级规范化；无冒号裸命令整行小写）；
-    `parse_file_with_spec`/`parse_content_with_spec` 双返回；裸命令可达性（value 空 → try_create(cmd)）。
-  - `src/config/watcher.rs`（重写）：`WatchEvent::DirectoryChanged(PathBuf)`；
-    `ConfigWatcher::new(watch_dir, shutdown_event)` + `wait_and_handle`（WaitForMultipleObjects
-    shutdown|notify + 10ms 去重 + FindNextChangeNotification）+ `shutdown` + `poll_registry` + Drop 兜底。
-  - `src/object/apo.rs`：`ApoObjectInner.active_spec`（Lock 基线/hot_reload 更新/Unlock·Reset 清空）；
-    `hot_reload` v7.9 六步（R2 阻塞 → 128KB 闸门 → 锁外 parse_file_with_spec → spec 短路 →
-    锁内交换 + active_spec 更新）；`LockForProcess` 预分配 temp_buffer_old/new。
-- 测试：428 → 434 passed（parser 新增 6：produce_spec 格式/复杂 config 混合 Include/spec 注释不变/
-  数值变化/未知命令+AbortFile/乱码 lossy + watcher 3：registry 哈希/不存在目录/空 shutdown）。
-  三类 config 复杂度（用户反馈）：正常复杂（条件+裸命令+Include+顺序）/携带错误（未闭合 If/
-  未知命令/AbortFile）/乱码（非 UTF-8 lossy 不 panic）/超限 Inclusion 整体拒绝。
-- 遗留问题：
-  1. **watcher 线程接线未落地**：ConfigWatcher 不自启线程（wait_and_handle 外部驱动，v7.9 API），
-     但 apo.rs 尚未创建 watcher 线程（LockForProcess 末尾 start_watcher + ApoObject 持有
-     shutdown_event + 循环 wait_and_handle → hot_reload）——因 ApoObject 生命周期/COM 边界
-     留待后续集成（P0-4 剩余项）。
-  2. 真实 Windows 音频引擎验证（目录变更 → 热重载无爆音）需真实 audiodg 环境。
-
-### 反馈（v7.9，执行端）
-- 状态建议：Spec-Finalized → Spec-Finalized（无需状态回退；规范文本澄清 1 点）
-- 问题：
-  1. **config 6.2 `new` 注释「启动 watcher 线程」与 `wait_and_handle` 外部驱动矛盾**：
-     6.2 `new` 注释写「启动 watcher 线程」，但 `wait_and_handle`（"等待并处理一个事件……
-     线程应退出"）暗示外部线程循环驱动；v7.9 生命周期声明「ConfigWatcher 由 ApoObject 持有、
-     UnlockForProcess SetEvent+join」——若 ConfigWatcher 自启线程则 wait_and_handle 无调用者、
-     shutdown 应 join 内部线程。当前实现按 2 参 API + 外部驱动。建议统一描述
-     （外部驱动或自启线程二选一，并明确 shutdown 是否 join）。
-- 建议：规范侧核对后决定；执行端 DoD 已全通过（cargo test 434 + check 0 warning）。
-
-### 反馈（v7.11 二次反馈，执行端——v7.11「未知命令」判定失效）
-- 状态建议：Spec-Finalized → Spec-Finalized（无需状态回退；规范文本补充 1 点）
-- 问题：
-  1. **v7.11 `Unmatched → SyntaxError「未知命令」` 与 Convolution 宽容语义冲突**：
-     parser `_` 分支现为「先 `try_create(value)` 再判 Unmatched」——但 Convolution 的
-     `parse_convolution_params` 对**任意非空字符串**都返回 Ok（路径即合法），
-     `BogusCommand: x` 被 Convolution 接管为「IR 路径 x」→ 创建成功 → **永远到不了
-     Unmatched → 「未知命令」永不触发**。根因：**parser 缺少「命令关键字白名单」校验**。
-  2. **用户定性（做法问题）**：任意 DSP 有效命令关键字 **parser 都应知晓**——正确流程为
-     `split_command_value`（冒号数量严格化）→ **命令名匹配白名单**（Device/If/Eval/Include/
-     Stage/Channel/Filter/GraphicEQ/Preamp/Copy/Delay 静态 + IIR/Biquad/Convolution/
-     VSTPlugin/LoudnessCorrection registry 命令名 + REW `Filter N:` 动态前缀）→ 才进
-     `try_create`（参数无效才由 Factory `NoMatch` → Unmatched 兜底）。命令名不在白名单 →
-     直接 `SyntaxError「未知命令」`，**不落 registry**。
-     `registry.try_create` 的 Unmatched 语义应收窄为「已知命令的参数无效」而非「未知命令」判定。
-- 建议：config 6.1 补充「命令关键字白名单校验」三段式（冒号数量 → 白名单 → try_create）；
-  测试 `spec_with_unknown_command_reports_error` 已立此预期（当前失败，因实现缺白名单）——
-  保持失败待修，规范侧定稿后执行端补齐实现回归。
-- 影响范围（待规范侧定稿后执行端补）：`config/parser.rs` 新增白名单校验分支；registry 命令名
-  集合来源（factory_names）与 REW 动态前缀；VSTPlugin 恒 NoMatch 的行为（白名单命中后落
-  Unmatched → SyntaxError「未知命令 'VSTPlugin'」——v7.11 已声明为合法命令关键字但功能未启用，
-  是否与未知命令同错误需规范侧确认消息文案）。
-
-### 反馈修订记录（v7.12，规范侧处理）
-- 反馈①（「未知命令」判定失效）：**已修订** —— 命令关键字白名单三段式：
-  - `config 6.1`：分发 `_` 分支补**白名单校验**——命令名必须 ∈ `registry.factory_names()`
-    （IIR/Biquad/Convolution/VSTPlugin/LoudnessCorrection），否则 `SyntaxError「未知命令」`**不落 registry**
-    （修复 `BogusCommand: x` 被 Convolution 宽容解析接管 → Unmatched 永不触发的缺陷）。
-  - **Unmatched 语义收窄**：「已知命令的参数无效」——文案 `命令无效 'X'：参数无法解析`。
-  - **VSTPlugin 特判**：白名单命中但功能未启用 → 不过 try_create，直接
-    `SyntaxError「命令无效 'VSTPlugin'：该命令当前未启用（预留）」`。
-  - 白名单三来源：静态命令（Device/Stage/.../Delay）+ REW `Filter N:` 前缀 + registry 命令名。
-  - **对应章节**：`config 6.1`（白名单小节）、`pipeline 4.20`（VST 特判语义）
-- **执行端待办（v7.12 追加）**：
-  - ① `_` 分支补白名单校验分支（`is_known_dsp_command` + VSTPlugin 特判 + Unmatched 文案收窄）；
-  - ② 测试：`spec_with_unknown_command_reports_error`（BogusCommand 无冒号/未知命令 → SyntaxError
-    不落 registry；`BogusCommand: x` → 未知命令；`Convolution: ir.wav -6 abc` → 参数无效；
-    `VSTPlugin: x` → 未启用文案）。
-- 状态保持：Spec-Finalized（P0-4 仍须执行端接线 + v7.11/v7.12 严格化待办才能 DoD 全勾）
-
-### 反馈修订记录（v7.10，规范侧处理）
-- 反馈①（watcher 线程模型）：**已修订** —— 确立**外部驱动模型**：
-  - `config 6.2`：`ConfigWatcher` **不自启线程**（new 只建句柄）；`wait_and_handle` 由调用方线程循环驱动；
-    `shutdown` **不 join**（仅释放句柄）——原「启动 watcher 线程」注释删除，统一为「创建监控器（不启动线程）」。
-  - `object 7.1.9`：补 `start_watcher` 定义（CreateEventW → ConfigWatcher::new → spawn 线程循环
-    `wait_and_handle → hot_reload`）；失败降级（watcher=None，仅日志）不阻塞锁定。
-  - `object 7.1.10`：补 `stop_watcher` 定义（SetEvent → join → shutdown → 清空字段；幂等）。
-  - `object 7.1.3`：ApoObject 字段补 `watcher_thread: Option<JoinHandle>` + `watcher_shutdown_event: Option<HANDLE>`。
-  - **对应章节**：`config 6.2`、`object 7.1.3/7.1.9/7.1.10`
-- **执行端遗留 1（对象层接线）确认为 P0-4 剩余项**：`apo.rs` 尚未接线 `start_watcher`/`stop_watcher`
-  （未创建 watcher 线程）——热重载链路未实际接通。**P0-4 不标记 Done**，
-  规范侧已完备（v7.10 修订后），执行端补做后回归复核。
-  - **执行端待办**：① ApoObject 加 `watcher_thread`/`watcher_shutdown_event` 字段；
-    ② `LockForProcess` 末尾调 `start_watcher()`（spawn 线程 + 循环 wait_and_handle → hot_reload）；
-    ③ `UnlockForProcess` 调 `stop_watcher()`（SetEvent + join + close）；④ 回归测试。
-  - 遗留 2（真实音频引擎验证）保持，属手动验收项。
-- 状态保持：Spec-Finalized（P0-4 未进入 Implementing——执行端未改状态；规范侧补全后仍须执行端接线才能 DoD 全勾）
-
-### 执行端潜在问题（v7.11，P0-4 实现报告随附 → 用户产品决策处理）
-- **问题①「错误只进 log，不进 config 错误流」**：`Convolution: ir.wav -6 abc`（第 3 token 非数字）被 `parse_convolution_params`
-  前 2 token 宽容解析静默忽略 `abc`——「配置写错」无反馈。
-- **问题②「裸命令兜底误伤」**：v7.9 裸命令可达性（无冒号 → `try_create(cmd)`）让 `BogusCommand`（无冒号整行）被 Convolution
-  宽容语义接住 → 变「路径加载失败」而非「未知命令」。
-- **用户产品决策**：**无冒号行不应被解析**——冒号前字符串决定解析目标，必须是严格关键字（对齐 EAPO 严格语法）；
-  「输入严格保证解析宽容」——写错必有反馈。
-- **规范修订（v7.11）**：
-  - `config 6.1`：`split_command_value` 单冒号校验（0 冒号 → SyntaxError「缺少冒号」；≥2 冒号 → SyntaxError「多余冒号」）；
-    **v7.9 裸命令可达性反转**（无冒号不再 try_create）；Unmatched → `SyntaxError「未知命令」`（原 log::warn 跳过废弃）；
-    filter_spec 产出表删「无冒号裸命令」行。
-  - `pipeline 4.19`：`parse_convolution_params` `Option` → `Result`（≥3 tokens / 第 2 个非数值 → `ParseError`，不再静默忽略）。
-  - `pipeline 4.20`：`VSTPlugin:` NoMatch v7.11 起同样落 SyntaxError（诚实反馈，不再静默跳过）。
-  - `intent.md`：新增「config.txt 语法严格性」+「诊断日志归属」（错误摘要写**软件安装根目录 `log/`**，
-    应用层读取呈现；DLL 只写日志非状态回传通道；watcher 天然不监控 log/）。
-  - **对应章节**：`config 6.1`、`pipeline 4.19/4.20`、`intent.md`
-- **执行端待办（v7.11 追加）**：
-  - ① `split_command_value` 按单冒号校验实现（0/≥2 冒号 → SyntaxError）；
-  - ② `_` 分支 Unmatched → SyntaxError（弃 `log::warn` 跳过）；删除裸命令 `try_create(cmd)` 兜底；
-  - ③ `parse_convolution_params` 改 `Result`（≥3 tokens 报错）；
-  - ④ 更新测试断言：`spec_with_unknown_command_warns_and_continues`（原断言 warn 跳过 specs.len()==2）→
-    改为断言无冒号行/未知命令 → SyntaxError 整体失败；补 `ir.wav -6 abc` → 报错测试；
-  - ⑤ 错误日志写入 `log/`（DLL 解析失败时 append 文件+行号+消息摘要）。
-- 状态保持：Spec-Finalized（P0-4 仍须执行端接线 + 上述待办才能 DoD 全勾）
+> **反馈记录**（全部已修订）：
+> - `feedback.md #P0-4-1`（v7.9 目录级语义矛盾）、`#P0-4-2`（v7.10 watcher 线程模型）、
+>   `#P0-4-3`（v7.11 语法严格化）、`#P0-4-4`（v7.12 白名单三段式）
+>
+> **执行端待办**（补做后回归，DoD 方全勾）：
+> - ① **对象层接线**（v7.10 确认）：ApoObject 加 `watcher_thread`/`watcher_shutdown_event` 字段；
+>   `LockForProcess` 末尾调 `start_watcher()`（spawn 循环 wait_and_handle → hot_reload）；
+>   `UnlockForProcess` 调 `stop_watcher()`（SetEvent + join + close）；回归测试。
+> - ② **v7.11 严格化**：`split_command_value` 单冒号校验；`_` 分支 Unmatched → SyntaxError（删裸命令兜底）；
+>   `parse_convolution_params` 改 `Result`；测试断言更新；错误日志写入 `log/`。
+> - ③ **v7.12 白名单**：`_` 分支补白名单校验（is_known_dsp_command + VSTPlugin 特判 + Unmatched 文案收窄）；
+>   测试 `spec_with_unknown_command_reports_error`。
+> - ④ 真实音频引擎验证（无爆音）留手动验收。
 
 ### P0-5  RT 入口 panic 防护（catch_unwind）
 - 状态：Backlog
@@ -511,7 +192,7 @@
 - 规范落点：`config 6.0/6.1/6.3/6.4-6.15`（v7.4 修订 current_file/REW 分发/注册意图）、`pipeline 4.x factory`
 - 实现：`src/config/parser.rs`（重写逐行分发）、`src/config/commands/{include,filter,rew,cond,expr,channel,device}.rs`（修复）
 - 验收：436 passed（原 417 + 新增 19）；样例无 NoMatch；无未使用警告
-- 反馈闭环：3 点实现反馈 → v7.4 规范修订（见「主规范 十七」）
+- 反馈闭环：3 点实现反馈 → v7.4 规范修订（见 `feedback.md #P0-2-1/2/3`）
 
 ### P0-3  per-device 配置路径 — Done @ v7.6
 - 规范落点：`sys 3.6`（known_folder）、`sys 3.3.1b`（APOInitSystemEffects，v7.6 实测路径）、`object 7.1.8`（per-device 路径 + 二级兜底）、`object 7.1.11`（过渡完成 reloading 修正）

@@ -1,5 +1,19 @@
 # Changelog
 
+## v8.0 — 2026-08-03
+
+变更类型：`结构重构`（治理机制 major 升级——反馈外置 feedback.md + feedback-rule）
+
+- **反馈外置（roadmap 精简）**：执行端反馈统一记录于根目录 `feedback.md`（11 条迁移：P0-2-1/2/3、P0-3-1/2、P0-4-0/1/2/3/4）；
+  `roadmap.md` 删除全部反馈/修订记录正文，条目只留状态/DoD/规范落点 + 引用（`> 反馈记录：feedback.md #PX-X`）——
+  **对应章节**：`roadmap.md`、`feedback.md`（新建）
+- **feedback-rule（新建规则）**：`.clinerules/feedback-rule.md`——反馈触发条件 / 记录格式（PX-X + 影响版本 + 问题 + 规范侧判定 + 修订记录 + 状态）/ 生命周期 / 与 roadmap-rule、主规范十七、changelog-rule 衔接——**对应章节**：`.clinerules/feedback-rule.md`
+- **roadmap-rule 同步**：补「反馈外置（v8.0）」节——反馈只留引用，状态机/DoD 不受影响——**对应章节**：`.clinerules/roadmap-rule.md`
+- **主规范十七更新**：反馈闭环语义不变（执行端不改状态 + 零容忍绕过 + 规范侧修订），反馈落点由 roadmap → feedback.md——**对应章节**：`主规范 十七`
+- **P0-4 执行端待办汇总保留**：对象层接线 + v7.11/v7.12 严格化（roadmap P0-4 条目）——DoD 未全勾，状态保持 Spec-Finalized
+
+> 对应 commit：`（待提交）`
+
 ## v7.12 — 2026-08-03
 
 变更类型：`缺陷修复`（P0-4 二次反馈——「未知命令」判定失效 → 命令关键字白名单三段式）
