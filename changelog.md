@@ -10,7 +10,7 @@
 - **Unmatched 语义收窄**：`try_create` Unmatched 仅表示「已知命令的参数无效」（命令已过白名单）——文案 `命令无效 'X'：参数无法解析`（原「未知命令」由白名单分支判定）——**对应章节**：`config 6.1`
 - **VSTPlugin 特判**：白名单命中但功能未启用 → 不过 try_create，直接 `SyntaxError「命令无效 'VSTPlugin'：该命令当前未启用（预留）」`（诚实且准确定位）——**对应章节**：`config 6.1`、`pipeline 4.20`
 
-> 对应 commit：`（待提交）`
+> 对应 commit：`b26a324`
 
 ## v7.11 — 2026-08-03
 
