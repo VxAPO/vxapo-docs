@@ -41,7 +41,7 @@ object/
 
 | 模块 | 可依赖 | 不可依赖 |
 |------|--------|----------|
-| `object/apo.rs` | `sys/com/`（全部）、`sys/registry`、`sys/known_folder`、`object/child.rs`、`object/vx_reg_props.rs`、`object/ref_count.rs`、`object/factory.rs`、`pipeline/`、`config/`、`install/audiodg`、`telemetry/logger`、`utils/` | — |
+| `object/apo.rs` | `sys/com/`（全部）、`sys/registry`、`sys/known_folder`、`object/child.rs`、`object/vx_reg_props.rs`、`object/ref_count.rs`、`object/factory.rs`、`pipeline/`、`config/`、`install/audiodg`、`install/device/slots`（v8.4 新增——子 APO GUID 读取：`childApoPath\{deviceGuid}`）、`telemetry/logger`、`utils/` | — |
 | `object/child.rs` | `sys/com/prelude`、`sys/com/apo_interfaces`、`sys/com/apo_types` | `object/apo.rs`（禁止循环） |
 | `object/factory.rs` | `sys/com/prelude`、`sys/com/apo_interfaces`、`object/apo.rs`、`object/vx_reg_props.rs`、`object/ref_count.rs` | — |
 | `object/ref_count.rs` | `core` | 所有其他 |
@@ -137,7 +137,8 @@ pub struct ApoObjectState {
     /// 此实例的 CLSID（PreMix 或 PostMix）。
     pub clsid: GUID,
 
-    /// 子 APO 的 CLSID（Initialize 时从 APOInitSystemEffects 解析）。
+    /// 子 APO 的 CLSID（Initialize 时从 `childApoPath\{deviceGuid}\{PreMixChild|PostMixChild}`
+    /// 安装信息区读取，v8.4——APOInitSystemEffects **无子 APO 字段**，仅含端点 GUID）。
     /// Some(guid) 表示需要创建子 APO；None 表示无子 APO（降级模式，Note 57）。
     pub child_apo_clsid: Option<GUID>,
 
@@ -482,8 +483,17 @@ fn Initialize(&self, cb_data_size: u32, pby_data: *mut u8) -> HRESULT {
     // 3. 解析 APOInitSystemEffects（强制类型转换 pby_data）：
     //    - pAPOSystemEffectsProperties（IPropertyStore）→ GetValue(PKEY_AudioEndpoint_GUID)
     //      → PROPVARIANT（VT_CLSID）→ puuid → 设备 endpoint GUID（v7.6 修订，P0-3 现实反馈①）
-    //    - 提取子 APO CLSID（无子 APO → None，降级模式 Note 57）
-    // 4. 如有子 APO CLSID，创建 ChildApo（失败降级为无子 APO，不阻塞初始化）
+    //    - **子 APO GUID 不在 APOInitSystemEffects 内**（v8.4 修正，P0-6 三处矛盾消解）：
+    //      APOInitSystemEffects 仅含 APOInit/pAPOEndpointProperties/pAPOSystemEffectsProperties/
+    //      pReserved/pDeviceCollection——**无任何子 APO 字段**（对齐 EAPO：EqualizerAPO.cpp
+    //      同样只从 APOInitSystemEffects 取端点 GUID，再查 childApoPath 安装信息区）。
+    //      正确路径：用步骤 3 取得的**端点 GUID** → 读注册表
+    //      `HKLM\SOFTWARE\VxAPO\Child APOs\{deviceGuid}\{PreMixChild|PostMixChild}`
+    //      （v8.4 路径隔离修正：对齐 EAPO DeviceAPOInfo.cpp 332-337 的**机制**，但用 VxAPO
+    //      独立路径 **HKLM\SOFTWARE\VxAPO**（≠ EAPO 的 HKLM\SOFTWARE\EqualizerAPO，RegistryHelper.h 33）
+    //      ——禁止读写 EAPO 安装信息区；依赖声明见下方「引用来源（v8.4）」）。
+    //    - 子 APO GUID 为空/特殊值（APOGUID_NULL/NOKEY/NOVALUE）→ None（降级模式 Note 57）
+    // 4. 如有子 APO GUID，创建 ChildApo（失败降级为无子 APO，不阻塞初始化）
     // 5. 确定 per-device 配置路径（load_device_config）：
     //    a. sys::known_folder::documents_folder() → Documents 路径
     //       （SHGetKnownFolderPath(FOLDERID_Documents) 安全收窄）
@@ -534,6 +544,11 @@ Documents\VxAPO\{GUID}\config.txt
 - `crate::sys::known_folder::documents_folder`
 - `crate::sys::com::apo_types::APOInitSystemEffects`
 - `crate::sys::com::prelude::guid_to_string`
+- `crate::install::device::slots`（v8.4 新增，P0-6 三处矛盾消解——子 APO GUID 读取路径）：
+  **运行期子 APO GUID 读取** = 端点 GUID → `HKLM\SOFTWARE\VxAPO\Child APOs\{deviceGuid}\{PreMixChild|PostMixChild}`
+  （v8.4 路径隔离：对齐 EAPO `childApoPath` 机制（DeviceAPOInfo.cpp 43/332-337），但用 **VxAPO 独立路径**
+  `HKLM\SOFTWARE\VxAPO\Child APOs`（≠ EAPO `HKLM\SOFTWARE\EqualizerAPO\Child APOs`）——禁止读写 EAPO
+  安装信息区；非 FxProperties 下 childGuid 值）
 - `std::fs`（create_dir_all / 默认 config 写入）
 
 ---
@@ -1187,11 +1202,14 @@ const _: () = {
 
 **职责**：管理子 APO 的 COM 接口持有和方法委托。
 
-**子 APO 来源（v8.1 定稿，P0-6 EAPO 对齐）**：
+**子 APO 来源（v8.1 定稿 + v8.4 路径隔离修正，P0-6 EAPO 对齐）**：
 - 子 APO = **安装时被 VxAPO 接管槽位的前任 APO**（`PreMixChild`/`PostMixChild` 值，存
-  `childApoPath\{deviceGuid}` 安装信息区——EAPO `DeviceAPOInfo` 对齐，备份全部槽位供回退、
-  但子 APO 仅对应 EAPO 实际装入的槽位）。
-- 运行期 `Initialize`（7.1.8）：读该备份值，非空且非特殊 GUID（APOGUID_NULL/NOKEY/NOVALUE）
+  **VxAPO 独立安装信息区** `HKLM\SOFTWARE\VxAPO\Child APOs\{deviceGuid}`——对齐 EAPO `DeviceAPOInfo`
+  childApoPath 的**机制**，但**路径隔离**：**禁止写入 EAPO 的 `HKLM\SOFTWARE\EqualizerAPO\Child APOs`
+  （RegistryHelper.h 33）**——写 EAPO 路径会污染其安装信息区（EAPO 读到 VxAPO 写的 PreMixChild/PostMixChild，
+  重装/卸载 EAPO 时被覆盖或语义混淆）。备份全部槽位供回退、但子 APO 仅对应实际装入槽位）。
+- 运行期 `Initialize`（7.1.8）：读该备份值（v8.4 明确：**VxAPO 路径** `HKLM\SOFTWARE\VxAPO\Child APOs\{deviceGuid}`，
+  非 EAPO 路径），非空且非特殊 GUID（APOGUID_NULL/NOKEY/NOVALUE）
   → `ChildApo::create`；否则 `child_apo = None`（无子 APO，降级直出，Note 57）。
 - **槽位失守检测（v8.1，用户决策——应用层，非 watcher）**：CLI/GUI 在 **启动 / 切换设备**
   时检测当前设备所需槽位是否仍为 VxAPO CLSID；非 VxAPO CLSID → 提示「需重新安装」；

@@ -1,5 +1,24 @@
 # Changelog
 
+## v8.4 — 2026-08-03
+
+变更类型：`实现对齐`（P0-6 子 APO GUID 来源三处矛盾消解 + 路径隔离修正）
+
+- **P0-6 三处规范内部冲突消解（用户指示确认实现方向）**：
+  ① object 7.1.8「从 APOInitSystemEffects 提取子 APO CLSID」不可行（该结构无子 APO 字段）；
+  ② object 7.2「childApoPath」vs install 5.5.2「FxProperties childGuid」位置矛盾；
+  ③ **路径隔离**（用户补充指示）：EAPO `APP_REGPATH = HKLM\SOFTWARE\EqualizerAPO`（RegistryHelper.h 33）——
+  **VxAPO 不得复用该路径**（污染 EAPO 安装信息区）、改用独立 `HKLM\SOFTWARE\VxAPO\Child APOs\{deviceGuid}`
+  ——**对应章节**：`feedback.md #P0-6-2`
+- **object 7.1.8 修正**：子 APO GUID 来源 = 端点 GUID → `HKLM\SOFTWARE\VxAPO\Child APOs\{deviceGuid}\{PreMixChild|PostMixChild}`
+  （APOInitSystemEffects 仅取端点 GUID）；引用来源新增 `install/device/slots` 依赖 + 引用约束总表同步——
+  **对应章节**：`object 7.1.8`、`object 引用约束总表`
+- **object 7.1.2/7.2 修正**：`child_apo_clsid` 注释 + 子 APO 来源（VxAPO 独立路径 + 禁止读写 EAPO 路径）——
+  **对应章节**：`object 7.1.2/7.2`
+- **install 5.3/5.5.2 修正**：slots.rs 补子 APO 安装信息区读取职责 + 路径隔离注；
+  安装流程 Step 1/4 + 卸载流程 Step 3 更新（`PreMixChild`/`PostMixChild` 值名，EAPO DeviceAPOInfo.cpp 558-563 对齐；
+  废弃含糊「childGuid」表述）——**对应章节**：`install 5.3/5.5.2`
+
 ## v8.3 — 2026-08-03
 
 变更类型：`实现对齐`（P0-5 panic 语义重评 + EAPO 源码逐行查验 + 治理流程废止 hash 回填循环）
@@ -12,6 +31,8 @@
 - **S4：GetLatency 无 child 返回 0**——EAPO `*pTime=0` 后仅 child 委托（82-95），VxAPO 误读「无 child 走自身」；object 7.1.14 伪代码对齐为「无 child 返回 0」——**对应章节**：`object 7.1.14`、`object 7.2`
 - **S5：无冒号行语义澄清**——EAPO 静默跳过（FilterEngine.cpp 329-330）vs VxAPO 拒绝报错 = **有意差异**（VxAPO 更严格，intent「语法严格性」）——**对应章节**：`config 6.1`、`intent.md`
 - **治理流程废止 hash 回填循环（v8.3）**：changelog 每版本 `对应 commit` 改为**一次性回填**（版本提交完成时填写；此后禁止回填/追加提交；已发布记录冻结）——**对应章节**：`.clinerules/changelog-rule.md`
+
+> 对应 commit：`854cdc4`
 
 ## v8.2 — 2026-08-03
 

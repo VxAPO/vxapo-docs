@@ -6,6 +6,26 @@
 
 ---
 
+### [P0-6-2] 子 APO GUID 来源三处规范内部冲突（v8.4 + 用户指示确认实现方向）
+
+**影响版本**：规范 v8.1 起（object 7.1.8/7.2 + install 5.5.2 涉及）
+
+**问题**：
+- 分类：用户决策/规范侧（执行端实现前置——子 APO GUID 来源存在规范内部冲突，需先消解再实现）
+- ① **object 7.1.8 步骤 3「从 APOInitSystemEffects 提取子 APO CLSID」不可行**——`APOInitSystemEffects` **无任何子 APO 字段**（仅 APOInit/pAPOEndpointProperties/pAPOSystemEffectsProperties/pReserved/pDeviceCollection；EAPO 也从 APOInitSystemEffects 只取端点 GUID，再查注册表）
+- ② **object 7.2「读 childApoPath{deviceGuid}」vs install 5.5.2「FxProperties 下 childGuid」**——两处存储位置矛盾，且 EAPO 实际用**独立** `childApoPath` 路径（DeviceAPOInfo.cpp 43/332-337），非 FxProperties
+- ③ **路径冲突（用户补充指示）**：EAPO `APP_REGPATH = HKLM\SOFTWARE\EqualizerAPO`，`childApoPath = ...\Child APOs`（RegistryHelper.h 33）——**VxAPO 不能复用该路径**（污染 EAPO 安装信息区，EAPO 读到 VxAPO 写的值会混乱）
+
+**规范侧判定**：
+- 已确认缺陷（对应章节）——采取**方案 B**：规范侧修订 7.1.8/7.2 明确运行期读取路径，且**路径隔离**（VxAPO 用独立 `HKLM\SOFTWARE\VxAPO\Child APOs`，对齐 EAPO 机制、不共用其路径）
+
+**修订记录**：
+- v8.4：object 7.1.8 步骤 3 修正（APOInit 无子 APO 字段 → 端点 GUID → `HKLM\SOFTWARE\VxAPO\Child APOs\{deviceGuid}\{PreMixChild|PostMixChild}`）+ 引用来源新增 `install/device/slots` 依赖声明 + 引用约束总表同步；object 7.1.2 child_apo_clsid 注释修正；object 7.2 子 APO 来源更新（**VxAPO 独立路径** + 禁止读写 EAPO `HKLM\SOFTWARE\EqualizerAPO`）；install 5.3 slots.rs 补子 APO 安装信息区读取职责 + 路径隔离注；install 5.5.2 安装流程 Step 1/4 + 卸载流程 Step 3 更新（VxAPO 独立路径值名 PreMixChild/PostMixChild，废弃含糊「childGuid」）——**对应章节**：`object 7.1.2/7.1.8/7.2`、`install 5.3/5.5.2`
+
+**状态**：已修订（v8.4）
+
+---
+
 ### [P0-6-1] EAPO 源码逐行查验揭示 5 处规范偏差（v8.3 + 用户要求查验 `D:\Source_Code\equalizerapo-code`）
 
 **影响版本**：规范 v8.1 起（主规范 18 / install 5.5.2 / object 7.x 涉及）
