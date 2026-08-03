@@ -1,5 +1,17 @@
 # Changelog
 
+## v7.12 — 2026-08-03
+
+变更类型：`缺陷修复`（P0-4 二次反馈——「未知命令」判定失效 → 命令关键字白名单三段式）
+
+- **命令关键字白名单（三段式）**：`split_command_value`（冒号数量）→ **命令名 ∈ 白名单**（静态命令 / REW `Filter N:` 前缀 / `registry.factory_names()`）→ `try_create`——
+  修复 v7.11「Unmatched → SyntaxError」失效：`BogusCommand: x` 有冒号被 Convolution 宽容解析（任意非空=IR 路径）接管 → 永远到不了 Unmatched → 「未知命令」永不触发——
+  **对应章节**：`config 6.1`（白名单小节）
+- **Unmatched 语义收窄**：`try_create` Unmatched 仅表示「已知命令的参数无效」（命令已过白名单）——文案 `命令无效 'X'：参数无法解析`（原「未知命令」由白名单分支判定）——**对应章节**：`config 6.1`
+- **VSTPlugin 特判**：白名单命中但功能未启用 → 不过 try_create，直接 `SyntaxError「命令无效 'VSTPlugin'：该命令当前未启用（预留）」`（诚实且准确定位）——**对应章节**：`config 6.1`、`pipeline 4.20`
+
+> 对应 commit：`（待提交）`
+
 ## v7.11 — 2026-08-03
 
 变更类型：`结构重构`（P0-4 潜在问题反馈② → config 语法严格化 + 错误报告方案定稿）

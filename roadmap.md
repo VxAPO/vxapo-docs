@@ -258,9 +258,9 @@
 - 优先级：P0 ｜ 关联 Phase：Phase 10
 - 目标：监控线程检测 config.txt 变更 → swap 串联 → 升余弦过渡；修改文件实时生效且无爆音（对齐 v6.9 R1-R4）
 - 影响模块：`config/watcher.rs`、`config/parser.rs`（filter_spec 产出，v7.9）、`object/apo.rs`（hot_reload/APOProcess）
-- 规范落点：`config 6.1`（filter_spec 契约 + parse_file_with_spec + 128KB 逐文件闸门 + 单冒号校验 + Unmatched→SyntaxError，v7.9/v7.11）、`config 6.2`（目录级事件驱动 + DirectoryChanged + 外部驱动模型，v7.8/v7.9/v7.10）、`object 7.1.8`（watcher 生命周期随锁定周期，v7.9）、`object 7.1.9`（末尾启动 watcher + active_spec 基线 + start_watcher 定义，v7.9/v7.10）、`object 7.1.10`（stop_watcher 定义，v7.10）、`object 7.1.18`（spec 短路 + 保留旧链，v7.9）、`pipeline 4.19/4.20`（Convolution strict + VST NoMatch 对齐，v7.11）、`intent.md`（产品意图 + 语法严格性 + 诊断日志归属）
+- 规范落点：`config 6.1`（filter_spec 契约 + parse_file_with_spec + 128KB 逐文件闸门 + 单冒号校验 + 白名单三段式，v7.9/v7.11/v7.12）、`config 6.2`（目录级事件驱动 + DirectoryChanged + 外部驱动模型，v7.8/v7.9/v7.10）、`object 7.1.8`（watcher 生命周期随锁定周期，v7.9）、`object 7.1.9`（末尾启动 watcher + active_spec 基线 + start_watcher 定义，v7.9/v7.10）、`object 7.1.10`（stop_watcher 定义，v7.10）、`object 7.1.18`（spec 短路 + 保留旧链，v7.9）、`pipeline 4.19/4.20`（Convolution strict + VST 特判，v7.11/v7.12）、`intent.md`（产品意图 + 语法严格性 + 诊断日志归属）
 - 依赖：P0-3（已 Done ✅）
-- DoD：☑ 规范定稿（v7.3/v7.8/v7.9/v7.10/v7.11）☐ 实现（部分：config/parser/watcher 已实装；对象层接线 + v7.11 严格化待补）☐ 测试（含手动听感验证）
+- DoD：☑ 规范定稿（v7.3/v7.8/v7.9/v7.10/v7.11/v7.12）☐ 实现（部分：config/parser/watcher 已实装；对象层接线 + v7.11/v7.12 严格化待补）☐ 测试（含手动听感验证）
 
 > **定稿说明（v7.3，v7.8/v7.9 修订）**：watcher 能力由**轮询（2000ms + 500ms 去重）**升级为
 > **Win32 事件驱动**（`FindFirstChangeNotificationW` + `WaitForMultipleObjects` + 10ms 去重 +
@@ -331,6 +331,46 @@
      shutdown 应 join 内部线程。当前实现按 2 参 API + 外部驱动。建议统一描述
      （外部驱动或自启线程二选一，并明确 shutdown 是否 join）。
 - 建议：规范侧核对后决定；执行端 DoD 已全通过（cargo test 434 + check 0 warning）。
+
+### 反馈（v7.11 二次反馈，执行端——v7.11「未知命令」判定失效）
+- 状态建议：Spec-Finalized → Spec-Finalized（无需状态回退；规范文本补充 1 点）
+- 问题：
+  1. **v7.11 `Unmatched → SyntaxError「未知命令」` 与 Convolution 宽容语义冲突**：
+     parser `_` 分支现为「先 `try_create(value)` 再判 Unmatched」——但 Convolution 的
+     `parse_convolution_params` 对**任意非空字符串**都返回 Ok（路径即合法），
+     `BogusCommand: x` 被 Convolution 接管为「IR 路径 x」→ 创建成功 → **永远到不了
+     Unmatched → 「未知命令」永不触发**。根因：**parser 缺少「命令关键字白名单」校验**。
+  2. **用户定性（做法问题）**：任意 DSP 有效命令关键字 **parser 都应知晓**——正确流程为
+     `split_command_value`（冒号数量严格化）→ **命令名匹配白名单**（Device/If/Eval/Include/
+     Stage/Channel/Filter/GraphicEQ/Preamp/Copy/Delay 静态 + IIR/Biquad/Convolution/
+     VSTPlugin/LoudnessCorrection registry 命令名 + REW `Filter N:` 动态前缀）→ 才进
+     `try_create`（参数无效才由 Factory `NoMatch` → Unmatched 兜底）。命令名不在白名单 →
+     直接 `SyntaxError「未知命令」`，**不落 registry**。
+     `registry.try_create` 的 Unmatched 语义应收窄为「已知命令的参数无效」而非「未知命令」判定。
+- 建议：config 6.1 补充「命令关键字白名单校验」三段式（冒号数量 → 白名单 → try_create）；
+  测试 `spec_with_unknown_command_reports_error` 已立此预期（当前失败，因实现缺白名单）——
+  保持失败待修，规范侧定稿后执行端补齐实现回归。
+- 影响范围（待规范侧定稿后执行端补）：`config/parser.rs` 新增白名单校验分支；registry 命令名
+  集合来源（factory_names）与 REW 动态前缀；VSTPlugin 恒 NoMatch 的行为（白名单命中后落
+  Unmatched → SyntaxError「未知命令 'VSTPlugin'」——v7.11 已声明为合法命令关键字但功能未启用，
+  是否与未知命令同错误需规范侧确认消息文案）。
+
+### 反馈修订记录（v7.12，规范侧处理）
+- 反馈①（「未知命令」判定失效）：**已修订** —— 命令关键字白名单三段式：
+  - `config 6.1`：分发 `_` 分支补**白名单校验**——命令名必须 ∈ `registry.factory_names()`
+    （IIR/Biquad/Convolution/VSTPlugin/LoudnessCorrection），否则 `SyntaxError「未知命令」`**不落 registry**
+    （修复 `BogusCommand: x` 被 Convolution 宽容解析接管 → Unmatched 永不触发的缺陷）。
+  - **Unmatched 语义收窄**：「已知命令的参数无效」——文案 `命令无效 'X'：参数无法解析`。
+  - **VSTPlugin 特判**：白名单命中但功能未启用 → 不过 try_create，直接
+    `SyntaxError「命令无效 'VSTPlugin'：该命令当前未启用（预留）」`。
+  - 白名单三来源：静态命令（Device/Stage/.../Delay）+ REW `Filter N:` 前缀 + registry 命令名。
+  - **对应章节**：`config 6.1`（白名单小节）、`pipeline 4.20`（VST 特判语义）
+- **执行端待办（v7.12 追加）**：
+  - ① `_` 分支补白名单校验分支（`is_known_dsp_command` + VSTPlugin 特判 + Unmatched 文案收窄）；
+  - ② 测试：`spec_with_unknown_command_reports_error`（BogusCommand 无冒号/未知命令 → SyntaxError
+    不落 registry；`BogusCommand: x` → 未知命令；`Convolution: ir.wav -6 abc` → 参数无效；
+    `VSTPlugin: x` → 未启用文案）。
+- 状态保持：Spec-Finalized（P0-4 仍须执行端接线 + v7.11/v7.12 严格化待办才能 DoD 全勾）
 
 ### 反馈修订记录（v7.10，规范侧处理）
 - 反馈①（watcher 线程模型）：**已修订** —— 确立**外部驱动模型**：
