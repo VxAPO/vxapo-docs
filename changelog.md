@@ -1,5 +1,20 @@
 # Changelog
 
+## v8.2 — 2026-08-03
+
+变更类型：`实现对齐`（P0-5 RT 入口 panic 防护定稿 + 治理流程补强）
+
+- **P0-5 RT 入口 panic 防护定稿**：`APOProcess` / `CalcInputFrames` / `CalcOutputFrames` RT 三入口 `catch_unwind` 包裹——
+  debug（`panic="unwind"`）跨 FFI unwind 防御第一道（捕获 → 安全降级输出不向 audiodg 传播）；
+  release（`panic="abort"` O3）空操作、真防线 telemetry/panic.rs hook；捕获行为（输出清零 + BUFFER_SILENT +
+  stats.error_count++ / 保守帧数返回值）+ 测试要点——**对应章节**：`object 7.1.11/7.1.12`、`主规范 十五`、`telemetry 9.2`
+- **治理流程补强（P0-5 教训）**：spec-finalize skill 定稿流程强制「**先落地规范正文（含子规范对应条目）→ 再递增版本号 → 写 changelog → 最后改 roadmap 状态**」——
+  Step 4「先落地规范正文」强制步骤 + Step 9 子规范交叉核对自检；roadmap-rule 补「执行顺序（v8.2 补强）」节——
+  子规范条目缺失 = 定稿不完整 = 执行端无法落地——**对应章节**：`.clinerules/skills/spec-finalize/SKILL.md`、`.clinerules/roadmap-rule.md`
+- **roadmap：P0-5 → Spec-Finalized**（落点回填 + DoD 规范定稿 ☑）——**对应章节**：`roadmap P0-5`
+
+> 对应 commit：`（待提交）`
+
 ## v8.1 — 2026-08-03
 
 变更类型：`结构重构`（P0-6 子 APO 实现对齐——EAPO 源码精读 + 主规范新增「EAPO 对齐度与差异化」章节）

@@ -46,16 +46,29 @@ description: Finalize a spec draft into a released version. Use when a spec sect
 - 公开接口是否最小化
 - 涉及规范仓库之外的 crate（如 vxapo-cli / vxapo-app）时，是否在条目中声明了其边界
 
-### Step 4：递增版本号
+### Step 4：先落地规范正文（含子规范对应条目）【强制，v8.2 补强】
+
+> **执行顺序硬性要求（roadmap-rule v8.2）**：**定稿必须先改规范正文，再改 roadmap 状态**。
+> 本次 P0-5 教训：仅改主规范版本号 + changelog + roadmap 状态，却遗漏 object 7.1.11/7.1.12 的
+> catch_unwind 语义落地——被用户指正后补。**子规范条目缺失 = 定稿不完整 = 执行端无法按规范落地。**
+
+1. **确认条目「规范落点」（roadmap）引用的每个子规范章节**：如 `object 7.1.11/7.1.12`（APOProcess / CalcInputFrames）
+2. **在对应子规范文件中落地正文**——在 Step 1-3 审查出的「草稿/新增语义」补进**实际章节**：
+   - 补充方法体伪代码 / 边界约束 / 捕获行为 / 常量定义
+   - 章节号与 roadmap 落点逐字一致（不可只写主规范而漏子规范）
+3. 若该条目涉及主规范本身的章节（如「十五、生产构建约束」），同步在主规范落地
+4. **核对**：roadmap 落点列出的每个章节号，在对应文件里确实能找到该内容
+
+### Step 5：递增版本号
 
 按**次版本**递增（本项目惯例）：
 
 - 主规范版本号递增（如 v6.9 → v6.10），首行 `# 模块引用规范文档 vX.Y`
-- 如涉及子规范，同步更新对应子规范相关内容
+- 子规范不单独编号（版本随主规范）；步 Step 4 已完成子规范落地
 
 > 仅当出现**破坏性 / 结构重构级变更**时，才考虑 major 递增（如 v6.x → v7.0），并需先在 roadmap 中说明理由。
 
-### Step 5：写 changelog
+### Step 6：写 changelog
 
 **严格按 `.clinerules/changelog-rule.md` 的「记录格式」区块**写入，不得自创格式：
 
@@ -67,20 +80,21 @@ description: Finalize a spec draft into a released version. Use when a spec sect
 - **条目**：一句话描述——**对应章节**：`模块 节号`
 ```
 
-- 每条变更必须标注关键章节号（精确到 `文件名 + 节号`）
+- 每条变更必须标注精确章节号（`文件名 + 节号`**含子规范**，如 `object 7.1.11/7.1.12`）
 - 变更类型与描述必须与「关键设计决策摘要补记」表一致
 
-### Step 6：更新路线清单状态 + 一致性校验
+### Step 7：更新路线清单状态（最后一步）
 
-1. 更新 roadmap.md 对应条目：
+1. **此时才能**更新 roadmap.md 对应条目（Step 4 已确认真实落地）：
    - 状态：`Spec-Drafting` → `Spec-Finalized`
    - 规范落点：回填章节号
    - DoD：勾选"规范定稿"
 2. 执行**三文件一致性校验**（roadmap-rule 联动要求）：
    - `changelog.md` 版本号 == 主规范版本号 == roadmap 条目规范落点引用版本
    - 三者缺一不可
+3. **子规范交叉核对**：roadmap 落点引用的每个子规范章节号，在对应文件中确实存在该内容（Step 4.4 复核）
 
-### Step 7：无法合规的处理
+### Step 8：无法合规的处理
 
 若 Step 1-3 中发现规范草稿无法完全合规：
 
@@ -89,15 +103,16 @@ description: Finalize a spec draft into a released version. Use when a spec sect
   在条目中记录"已知限制"并交由 roadmap 决策（延期 / 调整范围 / 拆分子任务）
 - 已记录的已知限制须在 DoD 中显式声明，不得静默放行
 
-### Step 8：自检
+### Step 9：自检
 
 - [ ] 引用约束总表无新增违反
 - [ ] RT 路径无分配、无 I/O、无锁间接
 - [ ] 模块边界合理
+- [ ] **子规范对应条目已落地**（roadmap 落点引用的每个子规范章节号在对应文件中确实存在）
 - [ ] 版本号已递增（次版本，首行同步）
-- [ ] changelog 已按 changelog-rule 记录格式更新
+- [ ] changelog 已按 changelog-rule 记录格式更新（含子规范章节号）
 - [ ] 三文件一致性校验通过（changelog 版本 == 主规范版本 == roadmap 落点版本）
-- [ ] 路线清单状态已更新为 `Spec-Finalized`
+- [ ] 路线清单状态已更新为 `Spec-Finalized`（**在规范正文落地之后**）
 - [ ] DoD 第一项已勾选
 - [ ] 未合规项已显式记录（如有）
 

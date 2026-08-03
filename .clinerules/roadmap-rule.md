@@ -49,14 +49,27 @@ roadmap 条目命中的反馈**只留引用**：`> 反馈记录：feedback.md #P
 | 规范文档（主规范/子规范） | 对应章节落地、主规范版本号递增（如 v6.9 → v6.10） | 本规范 + changelog-rule |
 | `changelog.md` | 新增记录（**严格遵循 changelog-rule 的`记录格式`**） | changelog-rule |
 
+**执行顺序（重要，v8.2 补强）**：本次变更暴露「先改 roadmap 状态、后补子规范」的顺序错误（P0-5 教训）——
+**定稿必须先落地规范正文，再改 roadmap 状态**。正确顺序：
+
+1. **先改规范正文**（含对应子规范条目——如 object 7.1.11/7.1.12；若有子规范必须同步修订）
+2. **再递增主规范版本号**（如 v8.1 → v8.2）
+3. **写 changelog**（严格 changelog-rule 格式，标注精确章节号）
+4. **最后改 roadmap 状态**（`Spec-Finalized` + 规范落点回填）
+
+> **禁止**：仅改主规范版本号 + changelog + roadmap 状态，却**遗漏子规范对应条目**的落地
+> （如 P0-5 定稿漏改 object 7.1.11/7.1.12 的 catch_unwind 语义——被用户指正后补）。
+> 子规范条目缺失 = 定稿不完整 = 执行端无法按规范落地。
+
 **一致性校验**：changelog 版本号 == 主规范版本号 == roadmap 条目规范落点引用版本。三者缺一不可。
 
 ## 提交前自检
 
-- [ ] 若存在 `Spec-Finalized` 状态变更：规范章节已落地、主规范版本号已递增、changelog 已按 changelog-rule 记录、roadmap 规范落点已回填
+- [ ] 若存在 `Spec-Finalized` 状态变更：**先改规范正文（含对应子规范条目）**、主规范版本号已递增、changelog 已按 changelog-rule 记录、roadmap 规范落点已回填
 - [ ] 若存在 `Done` 状态变更：规范侧合规核对记录已附
 - [ ] 无 `Implementing` 条目违反"仅 Spec-Finalized 可进入"门禁
 - [ ] 无"规范外直接实现"的功能（未登记 roadmap 即实现）
+- [ ] 子规范对应条目已落地（roadmap 落点中引用的每个子规范章节号在对应子规范文件中确实存在）
 
 ## 范围约定
 

@@ -742,16 +742,39 @@ fn UnlockForProcess(&self) -> HRESULT {
 > **线程退出时序**：`SetEvent` → 线程内 `wait_and_handle` 观察到 shutdown → 返回 false →
 > 线程自行退出 → 调用方 `join` 回收。不存在 RT 竞态（watcher 线程为控制路径，
 > 与 APOProcess 无共享状态；hot_reload 自身有 R2 闸门 + mutex 保护）。
-```
 
 ---
 
 #### 7.1.11 `APOProcess`
 
+> **catch_unwind 入口保护（v8.2，P0-5）**：APOProcess 是 `extern "system"` RT 入口（`#[implement]` 生成），
+> 跨 FFI 边界 unwind = UB。**debug profile（`panic="unwind"`）**下以 `catch_unwind` 包裹方法体为第一道防御；
+> **release profile（`panic="abort"`，主规范十五 O3）**下 `catch_unwind` 为空操作（panic 即 abort），
+> 真防线是 `telemetry/panic.rs` panic hook（abort 前记录栈）。捕获行为：输出缓冲清零 +
+> `output_props[0].buffer_flags = BUFFER_SILENT` + `stats.error_count++` + 日志（RT 零分配：
+> telemetry 定长环形缓冲，不可用 `format!`/`Box`）。
+
 **完整伪代码**：
 
 ```rust
 fn APOProcess(&self, input_props, output_props, params: &ProcessParams) {
+    // 0. catch_unwind 入口包裹（v8.2，P0-5——跨 FFI unwind 防御，见上注）
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        self.apo_process_inner(input_props, output_props, params)
+    }));
+    if result.is_err() {
+        // panic 捕获：安全降级输出（RT 零分配）
+        if !output_props.is_empty() {
+            let out = &mut output_props[0];
+            out.buffer_flags = APO_BUFFER_FLAGS::Silent;
+            // 输出区清零（不分配）
+        }
+        self.process_stats.error_count.fetch_add(1, Ordering::Relaxed);
+        return;
+    }
+}
+
+fn apo_process_inner(&self, input_props, output_props, params: &ProcessParams) {
     // 1. 状态检查
     if self.state_cell.current() != ApoState::Locked { return; }
 
@@ -870,19 +893,40 @@ fn apply_error_policy(
 
 #### 7.1.12 `CalcInputFrames` / `CalcOutputFrames`（无锁设计）
 
+> **catch_unwind 保守返回值（v8.2，P0-5）**：两入口同为 `extern "system"` RT 调用（引擎每帧请求帧数），
+> debug（`panic="unwind"`）下 catch_unwind 包裹，panic 时返回**保守值**（宁可多算不 panic、可丢帧不可越界）：
+> - `CalcInputFrames` panic → 返回 `output_frames + last_known_latency`（多请求输入帧，安全）；
+> - `CalcOutputFrames` panic → 返回 `0`（不越界写输出缓冲区）。
+> release（`panic="abort"`）`catch_unwind` 空操作（主规范十五 O3），真防线为 panic hook。
+
 ```rust
 fn CalcInputFrames(&self, output_frames: u32) -> u32 {
-    let latency = self.latency_frames_atomic.load(Ordering::Acquire);
-    output_frames + latency
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let latency = self.latency_frames_atomic.load(Ordering::Acquire);
+        output_frames + latency
+    })).unwrap_or_else(|_| {
+        // panic 保守值：多请求输入帧（v8.2，P0-5）
+        let latency = self.latency_frames_atomic.load(Ordering::Acquire);
+        output_frames + latency
+    })
 }
 
 fn CalcOutputFrames(&self, input_frames: u32) -> u32 {
-    let latency = self.latency_frames_atomic.load(Ordering::Acquire);
-    if input_frames >= latency { input_frames - latency } else { 0 }
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let latency = self.latency_frames_atomic.load(Ordering::Acquire);
+        if input_frames >= latency { input_frames - latency } else { 0 }
+    })).unwrap_or_else(|_| {
+        // panic 保守值：返回 0（不越界，v8.2，P0-5）
+        0
+    })
 }
 ```
 
 > 通过 `latency_frames_atomic`（`AtomicU32`）实现免锁帧数计算，RT 路径无需获取 mutex。
+> **实现注**：panic 分支不再 load（避免死锁/二次 panic）——`CalcOutputFrames` 直接 0；
+> `CalcInputFrames` 的保守值可简化为 `output_frames`（panic 场景罕见，宁可少不少多亦可，
+> 以「不 panic + 不越界」为第一约束，具体保守策略由实现端在 DoD 测试中锁定）。
+
 
 ---
 

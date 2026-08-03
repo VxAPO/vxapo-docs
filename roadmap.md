@@ -138,15 +138,26 @@
 - 状态：仍 Spec-Finalized（DoD 实现/测试 ☑；真实听感验证 ④ 未勾——由规范侧核对后决定）
 
 ### P0-5  RT 入口 panic 防护（catch_unwind）
-- 状态：Backlog
+- 状态：Spec-Finalized（v8.2）
 - 优先级：P0 ｜ 关联 Phase：Phase 1-9
 - 目标：`APOProcess` / `CalcInputFrames` / `CalcOutputFrames` RT 入口 `catch_unwind` 包裹——捕获 → 输出清零 + BUFFER_SILENT + stats.error_count++，杜绝 panic 跨 FFI unwind 到 audiodg 崩溃
 - 影响模块：`object/apo.rs`（RT 三入口）
-- 规范落点：（定稿时回填；对象层 RT 入口）
+- 规范落点：`object 7.1.11`（APOProcess catch_unwind 包裹 + 捕获行为）、`object 7.1.12`（CalcInput/OutputFrames catch_unwind 保守返回值）、`主规范 十五`（O3 panic=abort + telemetry/panic.rs panic hook）、`telemetry 9.2`（panic hook）
 - 依赖：无
-- DoD：☐ 规范定稿 ☐ 实现 ☐ 测试（debug panic=unwind 下模拟 panic 验证不崩溃）
+- DoD：☑ 规范定稿（v8.2）☐ 实现 ☐ 测试（debug panic=unwind 下模拟 panic 验证不崩溃）
 
-> **说明**：release（`panic="abort"`，O3）时 catch_unwind 为空操作——真防线是 panic hook + abort；
+> **定稿说明（v8.2，P0-5）**：
+> - **catch_unwind 语义**：**debug profile（`panic="unwind"`）**下，跨 `extern "system"` FFI 边界 unwind 是 UB——RT 三入口 `catch_unwind` 包裹为**第一道防御**（捕获 → 安全降级输出，不向 audiodg 传播）；
+>   **release profile（`panic="abort"`，O3 主规范十五）**下 `catch_unwind` 为空操作（panic 即 abort），真防线是 **telemetry/panic.rs panic hook**（abort 前记录栈）。
+> - **捕获行为**：
+>   - `APOProcess`：panic → 输出缓冲清零 + `buffer_flags = BUFFER_SILENT` + `stats.error_count++` + 日志（RT 零分配：`log::error!` 走 telemetry 定长环形缓冲）；
+>   - `CalcInputFrames`：panic → 返回 `output_frames + last_known_latency`（保守多请求输入帧，不 panic）；
+>   - `CalcOutputFrames`：panic → 返回 `0`（保守，可丢帧不可越界）。
+> - **cost**：仅 debug/测试态有实际路径；release 零开销（`catch_unwind` 编译移除，O3）。
+> - **实现要点**：三入口均为 `extern "system"`（`#[implement]` 生成）——`catch_unwind` 包裹在实现体内、**不跨函数边界**；panic 载荷 `Box<dyn Any>` 经 `downcast_ref::<&str>` 提取消息写日志。
+> - **测试**：debug 下用 `std::thread::spawn` 模拟 panic（或 `#[cfg(test)]` 注入 panic 滤波）验证捕获不崩溃、输出被置 Silent。
+>
+> **说明（登记时）**：release（`panic="abort"`，O3）时 catch_unwind 为空操作——真防线是 panic hook + abort；
 > debug/unwind 测试态才有防御意义（旧框架 Note 60/68 已澄清）。属 P0 尾巴（威胁 audiodg 稳定性）。
 
 ### P0-6  子 APO 委托实现（object/child.rs 落地）
