@@ -19,8 +19,13 @@
 | `EqualizerAPO/EqualizerAPO.cpp` | 457-517（APOProcess） | object 7.1.11 |
 | `DeviceAPOInfo.cpp` | 82-233（枚举/默认设备） | install 5.4（E3.1） |
 | `DeviceAPOInfo.cpp` | 250-260（installPostMix=!input / useOriginal 默认） | object 7.2 |
+| `DeviceAPOInfo.cpp` | 249/396-413（安装模式探测：LfxGfx/SfxMfx/SfxEfx 三档） | install 5.1 |
+| `DeviceAPOInfo.cpp` | 498-645（install 三模式互斥写 + per-device 备份） | install 5.5.2 / object 7.2 |
 | `DeviceAPOInfo.cpp` | 500-576（槽位备份 + childApoPath） | object 7.2 |
 | `DeviceAPOInfo.cpp` | 777-815（testAPOInstallation） | install 5.5.2（E3.4） |
+| `Setup/Setup.nsi` | 35（`RequestExecutionLevel admin` 安装器提权） | CLI 引用规范 六 |
+| `DeviceSelector/DeviceSelector.vcxproj` | 169-248（6 处 `<UACExecutionLevel>RequireAdministrator</UACExecutionLevel>`） | CLI 引用规范 六 |
+| `helpers/TaskSchedulerHelper.cpp` | 34-186（登录计划任务跑 UpdateChecker，非提权） | CLI 引用规范（更新检查预留） |
 | `FilterEngine.cpp` | 79（loadSemaphore）、141-213（initialize + 通知线程创建） | object 7.1.9 / 主规范 18.2 |
 | `FilterEngine.cpp` | 215-269（loadConfig + previousConfig 析构） | object 7.1.18 |
 | `FilterEngine.cpp` | 271-373（loadConfigFile：读失败返回 + 无冒号跳过） | config 6.1 |
@@ -107,6 +112,37 @@
 | C36 | **默认设备判定边界（E3.1）**：driver 层枚举（`loadAllInfos`）仅返回安装容器；默认设备由 `GetDefaultAudioEndpoint`（**用户层/API 层**）取得后与 driver 结果对应 | DeviceAPOInfo.cpp 82-87/106-116 | **对齐**：install 5.4 E3.1 |
 | C37 | **testAPOInstallation（E3.4 修正）**：激活 `IAudioClient`（Activate + GetMixFormat + Initialize 共享模式 100ms）——**全音频管线自检**，**非**「CoCreateInstance 验证 DLL 可实例化」；失败 `fail()` 抛 `DeviceException`（异常上抛） | DeviceAPOInfo.cpp 777-815 | **VxAPO 需修订 E3.4 描述**：install 5.5.2「CoCreateInstance 验证 DLL」**与源码不符**——EAPO 实际激活 IAudioClient 做管线自检 |
 
+### 2.8 安装提权机制（EAPO 安装会话）
+
+> **结论：EAPO 全程用「编译期 manifest 声明式提权」，无任何「运行时检测→提权重启」代码。**
+
+| # | 行为（源码确认） | 源码位置 | VxAPO 借鉴 |
+|---|------------------|----------|------------|
+| C38 | **NSIS 安装器整体提权**：`RequestExecutionLevel admin`——安装器启动即触发 UAC，整流程管理员令牌（regsvr32 + DeviceSelector.exe /i 静默安装 + 写 HKLM） | Setup.nsi 35 | VxAPO CLI 安装器可对齐（installer 需管理员） |
+| C39 | **Configurator/DeviceSelector manifest `RequireAdministrator`**：**6 个构建配置全部** `<UACExecutionLevel>RequireAdministrator</UACExecutionLevel>`——**每次启动**即要求管理员，写 FxProperties 无需运行时提权 | DeviceSelector.vcxproj 169/184/200/216/233/248 | **VxAPO CLI 关键借鉴**：写 HKLM（install/uninstall）需管理员，应 manifest 声明或显式提权 |
+| C40 | **登录计划任务（非提权）**：`scheduleAtLogon` 注册「登录触发 + 网络可用」任务跑 **UpdateChecker**（`TASK_LOGON_INTERACTIVE_TOKEN`），`singleInstance` 用于更新检查——与提权无关 | TaskSchedulerHelper.cpp 34-186 | VxAPO 若做更新检查可复用计划任务模式 |
+
+**补充（C39 佐证）**：程序内无 `ShellExecuteEx(runas)` / `IsUserAnAdmin()` / `CreateProcess` 提权调用（源码搜索确认），**全部依赖 manifest**。
+程序外：安装器 `RequestExecutionLevel admin`（Setup.nsi 35）+ Configurator `RequireAdministrator`（DeviceSelector.vcxproj 6 处）。
+
+### 2.9 安装槽位机制（模式探测 + 互斥写）
+
+> **行为流**：`load()` 探测安装模式（Win8.1+ 三档）→ `install()` 按选定模式互斥写目标槽位 + 删本模式外槽位 + per-device 备份。
+> **会话边界**：DeviceSelector.exe 启动时 UAC → 载入 `loadAllInfos` → 用户对每台设备 `install()`（管理员令牌，无运行时提权）。
+
+| # | 行为（源码确认） | 源码位置 | VxAPO 对齐 |
+|---|------------------|----------|------------|
+| C41 | **LfxGfx 模式判定**：Win8.1+ 且 FxProperties **只有 LFX/GFX 值、无 SFX/MFX/EFX 值** → 驱动仅支持 Legacy | DeviceAPOInfo.cpp 396-408 | **对齐**：install 5.1 模式检测（Legacy 独占） |
+| C42 | **SfxMfx 模式判定**：检测到 `combinedDeviceValueName`（**Win11 蓝牙组合设备，EFX 无效**）——值名精确为 `{b3f8fa53-0004-438e-9003-51a46e139bfc},41`（**PKEY_Device_ContainerId，设备容器 ID**，WT_DEVICE 属性集 PID 41），位于端点 `Properties` 子键（`keyPath\Properties`，非 FxProperties） | DeviceAPOInfo.cpp 51/410-411 | **对齐**：install 5.1 模式检测（蓝牙组合）——**执行端 `detect_install_mode` 输入：端点 Properties 子键下值名 `{b3f8fa53-...},41` 存在性** |
+| C43 | **SfxEfx 默认模式**：否则（现代驱动默认） | DeviceAPOInfo.cpp 412-413 | **对齐**：SfxEfx 为默认（install 5.1） |
+| C44 | **旧 Windows（<8.1）默认 LfxGfx**：`installMode` 初始即 `INSTALL_LFX_GFX`（249）；8.1+ 才探测 | DeviceAPOInfo.cpp 249/396 | **对齐**：install 5.1 模式默认 |
+| C45 | **三模式互斥写**：`install()` 按 mode 写目标槽位 + **删除本模式外槽位**（LfxGfx 删 SFX/MFX/EFX；SfxMfx 删 LFX/GFX 保留 EFX；SfxEfx 删 LFX/GFX 保留 MFX） | DeviceAPOInfo.cpp 578-640 | **对齐**：install 5.5.2 按 mode 写槽位 |
+| C46 | **处理模式值按槽位写**：新装槽位写 `{sfx/mfx/efx}ProcessingModesValueName`（已存在不覆盖），值 = `defaultProcessingModeValue` | DeviceAPOInfo.cpp 603-605/611-613/627-629 | **对齐**：install 5.5.2 Step 6（默认处理模式） |
+| C47 | **FxProperties 备份先于写入**：存在 → 逐个值（NOKEY/NOVALUE 占位或实际值）写 childApoPath + `.reg` 备份；不存在 → 创建 + 全 5 槽位 NOKEY 占位 | DeviceAPOInfo.cpp 512-554 | **对齐**：object 7.2 备份全部槽位 |
+| C48 | **采集设备只装 PreMix**：`installPostMix && !input`（PostMix 仅渲染设备） | DeviceAPOInfo.cpp 583/607/632 | **对齐**：object 7.2 installPostMix=!input |
+| C49 | **已安装设备保留模式**：`load()` 检测 `foundAt`（LFX/SFX→premix、GFX/MFX/EFX→postmix）→ 保留现有安装状态 | DeviceAPOInfo.cpp 339-352 | **对齐**：install 5.1 已装保留 |
+| C50 | **版本升级**：`canBeUpgraded()` = `installed && version != installVersion`（"2"） | DeviceAPOInfo.cpp 421-423 | **对齐**：install 5.4 can_be_upgraded |
+
 ---
 
 ## 三、VxAPO 对齐结论汇总（源码确认依据）
@@ -122,6 +158,8 @@
 | 配置解析/加载/失败语义/预分配/监控 | 对齐（无冒号行 VxAPO 更严格为有意差异） | C23-C25、C26-C32 |
 | 注册表监视 | **VxAPO 不需要**（无 readReg 命令） | C33 |
 | 安装自检 | **E3.4 描述需修订**（实际是 IAudioClient 管线自检） | C37 |
+| 安装提权（manifest 声明式） | **VxAPO CLI 借鉴**：安装器 `RequestExecutionLevel admin` + 程序 `RequireAdministrator`，无运行时提权代码 | C38-C40 |
+| 安装槽位模式探测 + 互斥写 | 对齐（LfxGfx 独占/SfxMfx 蓝牙/SfxEfx 默认三档 + 按 mode 互斥写+删槽位） | C41-C50 |
 
 ---
 

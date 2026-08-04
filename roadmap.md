@@ -298,6 +298,12 @@
 >
 > **验证边界**：config show 验证「文件已写入且可读回」；真正 DSP 热重载生效由 P0-4 的手动听感验证（无爆音）覆盖——CLI 无音频监听，不做效果断言。
 
+### 实现完成报告（2026-08-04，执行端）
+- DoD：☑ 实现 ☐ 测试（cargo check 0 error；端到端 install/uninstall/config 需真实设备 + 管理员 + audiodg，留手动）
+- 自查结果：仅改 vxapo-cli（crate 规范外，依赖 vxapo-driver as library）；不触碰 pipeline/RT；不自行写注册表（install/uninstall 经 driver Transaction）；config 写归 CLI
+- 实现文件：Cargo.toml（vxapo-driver + windows 依赖）、src/commands.rs（resolve_device/require_admin/list_devices/install/uninstall/config_set/config_show/snapshot_device/diff/restore + 槽位失守检测按 childapo 键存在判定）、src/knowledge.rs（KNOWN_APO_CLSIDS 4.5）、src/main.rs（子命令分派 + 帮助）
+- 遗留：端到端验证索引①-⑥（CLI 规范 5.5）需真实 Windows 设备 + 管理员运行，留手动验证（对应 P0-4 听感 + P0-6 child 委托链联调）
+
 ---
 
 ## P1 — 核心功能（CLI 可操控 + 效果扩展）
