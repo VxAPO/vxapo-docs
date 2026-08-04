@@ -15,6 +15,8 @@
   **对应章节**：`roadmap P0-6`、`object 7.2/7.1.8/7.1.11`、`install 5.3/5.5.2`
 - **P0-6 缺陷说明**：原 7 个 null 接口防御测试因类型化方案 Drop 对 null Release 解引用 vtable 崩溃（STATUS_STACK_BUFFER_OVERRUN）删除——**类型化安全边界**，注释已留（执行端 e2fb954）——**对应章节**：`roadmap P0-6`、`object 7.2`
 
+> 对应 commit：`9d29947`
+
 ## v8.6 — 2026-08-04
 
 变更类型：`实现对齐`（child.rs 格式协商委托参数签名采纳执行端建议）
