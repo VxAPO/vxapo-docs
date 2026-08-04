@@ -1,5 +1,17 @@
 # Changelog
 
+## v8.8 — 2026-08-04
+
+变更类型：`文档同步`（P0-7 CLI 端到端验证——《CLI 引用规范.md》定稿）
+
+- **新建《CLI 引用规范.md》（v8.8 定稿，源码实读驱动）**：CLI 现状（纯交互诊断，仅 winreg 依赖）/ driver 可复用 API（install_endpoint/uninstall_endpoint/enumerate_devices/slots 全接口源码实读确认）/ CLI 边界（三层分离，不触碰 pipeline-RT）/ 修改路线 Phase A-D（依赖接入→核心命令→快照→P1 扩展）——**对应章节**：`CLI 引用规范.md`
+- **命令参数明确**：`<device>` 接受 GUID（推荐）/ 枚举序号，统一经 `resolve_device` 映射三元组；`<file>` = 源文件绝对/相对路径，CLI 原样写入 per-device config.txt——**对应章节**：`CLI 引用规范.md 4.4.1`
+- **GUID 友好名称**：EAPO PreMix `{EACD2258-...}`/PostMix `{EC1CC9CE-...}`（源码实读）+ VxAPO PreMix/PostMix（v7.5 正式 GUID）+ premix/postmix 用法二次明确（混音前流 vs 最终混合输出）——**对应章节**：`CLI 引用规范.md 4.5`
+- **快照 = 变更对比**：`snapshot_device` 捕获**注册表**（FxProperties 5 槽位 + childApoPath + DisableEnhancements，**不含 config**——config 比对归 driver 目录监控 + filter_spec 序列对齐非哈希）；`snapshot diff` 红绿列示 + 统计行；**基线保持**（卸载用最开始的基线对比，重装才替换）；`snapshot restore` 显式恢复——**对应章节**：`CLI 引用规范.md Phase C`
+- **命令状态流**：U/B/I/L 四态（DeviceInfo + 快照存在性判定）+ 命令×状态矩阵（前置判断拒绝+可读错误）+ 状态切换逻辑 + **每步骤绝对严格错误检验**（错误码+消息+所属步骤，失败提示恢复路径）——**对应章节**：`CLI 引用规范.md 5.4`
+- **行为流 5.1-5.5**：安装/验证/卸载具体到函数（层次：CLI 命令→CLI 辅助→driver API→driver 内部）+ 端到端验证索引 ①-⑥（含 P0-6 child 委托链联调）——**对应章节**：`CLI 引用规范.md 五`
+- **roadmap：P0-7 → Spec-Finalized**（落点回填《CLI 引用规范.md》；依赖 P0-4/P0-5/P0-6 均 Done）——**对应章节**：`roadmap P0-7`
+
 ## v8.7 — 2026-08-04
 
 变更类型：`实现对齐`（P0-5/P0-6 执行端实现完成 → 规范侧合规核对通过 → Done）

@@ -271,13 +271,13 @@
 > ①②③ 收敛结论与 EAPO 通道机制详析见**主规范「十八、EAPO 对齐度与差异化」**（18.2 APO 链格式授予语义 + D2/D3 等价立场）；此三点在 P0-6 Spec-Drafting 定稿时仅需**确认**（对照该章节）不再重开设计。
 
 ### P0-7  CLI 端到端验证（install/uninstall/config set/show/list/status + 回滚）
-- 状态：Spec-Drafting（2026-08-04《CLI 引用规范.md》草稿）
+- 状态：Spec-Finalized（v8.8）
 - 优先级：P0 ｜ 关联 Phase：Phase 10（P0 收尾）
 - 目标：CLI 依赖 vxapo-driver（as library），提供 **P0 达标口径的端到端验证**——设备 install/uninstall、config set/show、list/status、回滚 snapshot；验证驱动可安装、可加载、可按设备读 config（P0 链路收尾）
 - 影响模块：`vxapo-cli`（crate，规范外）、`vxapo-driver` 的 `install/selector/operation.rs`（install_endpoint/uninstall_endpoint 复用 + CLI 层 API）、`install/device/info.rs`（enumerate_devices 复用）、`install/device/slots.rs`（槽位失守检测只读 API + child_apo_key_exists）
-- 规范落点：**《CLI 引用规范.md》**（草稿 2026-08-04——现状/可复用 API/边界/修改路线 Phase A-D/GUID 友好名称 4.5/约束；定稿时回填版本）+ `install 5.3/5.4/5.5.2`（复用 API 来源）+ `intent 五/七/十一`（CLI 边界/槽位失守检测/config 语法）
+- 规范落点：**《CLI 引用规范.md》v8.8（2026-08-04 定稿）**——现状/可复用 API（源码实读）/ 边界/ 修改路线 Phase A-D / `<device>`·`<file>` 参数 / GUID 友好名称 4.5 / 快照=变更对比 Phase C / 行为流 5.1-5.5 / 命令状态流 5.4 / 约束；+ `install 5.3/5.4/5.5.2`（复用 API 来源）+ `intent 五/七/十一`（CLI 边界/槽位失守检测/config 语法）
 - 依赖：P0-4、P0-5、P0-6（均 Done ✅）——P0-6 child 委托链端到端联调 + P0-4 听感验证均靠 CLI install/config set 覆盖
-- DoD：☐ 规范定稿（CLI 引用规范定稿）☐ 实现 ☐ 测试（端到端：install → config set → driver 读回 → watcher 热重载生效 + 回滚验证 + child 委托链联调）
+- DoD：☑ 规范定稿（v8.8《CLI 引用规范.md》）☐ 实现 ☐ 测试（端到端：install → config set → driver 读回 → watcher 热重载生效 + 回滚验证 + child 委托链联调）
 
 > **范围与优先级说明（v8.0 用户决策）**：
 > - **本条目执行了 P1-2（CLI per-device 配置管理）的部分核心能力**——install/uninstall/config set/show；
