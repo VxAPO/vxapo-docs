@@ -133,19 +133,72 @@ child 委托链完整验证需真实 audiodg + 已注册 APO（P0-6 遗留，CLI
 
 ### Phase B：核心命令（P0-7 端到端）
 
+#### 4.4.1 命令参数定义（用户补充 2026-08-04）
+
+**`<device>` 参数：接受两种形式，统一经 `resolve_device` 映射为 `(device_guid, device_name, connection_name)`**
+
+| 形式 | 写法 | 说明 | 优先级 |
+|------|------|------|--------|
+| **GUID（规范形式，推荐）** | `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}` | 稳定唯一；等于 `EndpointInfo.endpoint_guid`（注册表 `MMDevices\Audio\Render\{guid}` 键名），直接传给 `install_endpoint` 第一参数 | 优先匹配 GUID 格式（`{}` 开头） |
+| **枚举序号** | 非负整数 `0..N-1` | `list/status` 输出顺序的序号（交互便捷，但随枚举顺序不稳定）；`resolve_device` 经 `enumerate_devices()[n].endpoint.endpoint_guid` 映射 | 数字命中序号 |
+
+```
+resolve_device(device_ref) -> (device_guid, device_name, connection_name)
+  1. device_ref 以 '{' 开头 → 直接作 GUID（校验格式），name/connection 从 enumerate_devices 匹配（找不到则空串）
+  2. device_ref 可解析数字 n → enumerate_devices()[n] → endpoint_guid / friendly_name / connection_name
+  3. 均不匹配 → 报错「未知设备：<device_ref>」（附 list 提示）
+```
+
+**`<file>` 参数（仅 `config set -f`）**：**源文件**（要写入目标 config.txt 的内容来源）
+
+- 接受**绝对路径**或**相对路径**（相对当前工作目录）；含空格的路径用引号包裹（shell 层处理）
+- 文件必须存在且可读；CLI 读取内容后**原样写入** `Documents\VxAPO\{GUID}\config.txt`
+- 目标路径拼装：`documents_folder()\VxAPO\{GUID}\config.txt`——复用 driver `sys::known_folder::documents_folder`
+  （或 CLI 经 driver 暴露）获取 Documents；`{GUID}` 为设备 GUID（大写花括号格式）；目录不存在则创建
+- **CLI 不修改文件内容**（纯复制）；语法合法性由后续 `ConfigParser::parse_file` 验证（config show/写入后备选）
+
+#### 4.4.2 命令表
+
 | 命令 | 行为 | driver API |
 |------|------|-----------|
-| `install -d <device>` | 安装（默认 SfxEfx + use_original=true 保留前任为子 APO + verify=true 管线自检） | `install_endpoint` |
+| `install -d <device> [--mode LfxGfx\|SfxMfx\|SfxEfx] [--no-child]` | 安装（默认 SfxEfx + use_original=true 保留前任为子 APO + verify=true 管线自检；`--no-child` 关子 APO 保留） | `install_endpoint` |
 | `uninstall -d <device>` | 卸载（含删除 childApoPath 键，v8.5） | `uninstall_endpoint` |
 | `config set -d <device> -f <file>` | 写 `Documents\VxAPO\{GUID}\config.txt` | 文件写（driver 不提供 config 写——CLI 直接写文件） |
-| `config show -d <device>` | 读回 config.txt 验证 | `ConfigParser::parse_file` 合法性验证 |
+| `config show -d <device>` | 读回 config.txt + 语法验证 | `ConfigParser::parse_file` 合法性验证 |
 
-### Phase C：回滚 snapshot（P0-7） + 注册表转储保留
+### Phase C：快照 = 变更对比 + 基线保持（用户补充 2026-08-04）+ 注册表转储保留
 
-1. **回滚 snapshot**：`install`/`uninstall`/`config set` 前对 driver 改动快照（注册表 FxProperties +
-   childApoPath 键 + config 文件状态）→ 失败可恢复（driver Transaction 已覆盖注册表回滚；
-   CLI 补文件级 + 显式 snapshot 命令）
-2. **保留现有 `[x]` 注册表转储 + 诊断**：regdump/reg 辅助保留（调试工具价值）
+**快照的真实功能 = 列出更改项目（diff）**，非纯备份。
+
+> **范围限定（v8.8 用户指示修正）**：快照**只捕获注册表改动**——config 文件的比对**不属于 CLI 快照**，
+> 由 **driver 自身**经目录监控 + filter_spec 序列对齐检测（P0-4/v7.9：「目录变更 → 重新解析 →
+> spec 序列与 active_spec 逐项比较」config 6.1 + object 7.1.18，非哈希）。
+
+1. **快照内容（`snapshot_device(guid)`）**：捕获设备**注册表**状态
+   - FxProperties 键下 5 槽位值（LFX/GFX/SFX/MFX/EFX GUID）
+   - childApoPath 安装信息区（`HKLM\SOFTWARE\VxAPO\Child APOs\{guid}`：PreMixChild/PostMixChild/
+     AllowSilentBufferModification/DisableAutomaticAdjustment/Version）
+   - FxProperties 增强设置（DisableEnhancements）
+   - **不含 config 文件**（config 比对归 driver spec 序列对齐，见上注）
+2. **快照持久化**：存 `%ProgramData%\VxAPO\snapshots\{guid}.json`（**首个快照 = 安装前基线**）
+3. **change 列示（`snapshot diff` / `show changes` 命令）**：`diff_snapshot(baseline, current)`——
+   对比当前注册表状态与基线，**红绿底色/字体**输出（CLI 支持 ANSI 时；不支持则前缀 `+`/`-`/`~`）：
+
+   | 变更类型 | 显示 |
+   |----------|------|
+   | 新增（快照无 → 当前有） | 绿色 `+ 值名 = 值` |
+   | 删除（快照有 → 当前无） | 红色 `- 值名 = 值` |
+   | 修改（值不同） | 黄色 `~ 值名 = 旧值 → 新值` |
+   | 无变化 | 灰色 `  值名 = 值`（可折叠） |
+
+4. **基线保持语义（用户明确）**：
+   - **安装前**：`snapshot_device` 建立基线（初次快照）
+   - **安装后**：可 `snapshot diff` 列出本次安装产生的全部注册表更改（红绿对比，可读验证）
+   - **卸载时**：对比**仍用最开始的基线**（非卸载前重照）——展示「卸载是否恢复原状/清除了什么」；
+     **快照只在「下一次重新安装」时才替换**为新基线（新安装前重照）
+5. **回滚**：`snapshot restore` 恢复基线状态（**仅注册表**）；driver Transaction 已保证
+   失败自动回滚（注册表级）；CLI 快照补**显式恢复**（用户可手动还原）
+6. **保留现有 `[x]` 注册表转储 + 诊断**：regdump/reg 辅助保留（调试工具价值）
 
 ### Phase D：P1 扩展（预留，不改 P0-7 主链）
 
@@ -188,7 +241,143 @@ EAPO/VxAPO 占用的 CLSID（当前 `SYSTEM_APO_CLSIDS` 无友好名，槽位显
 
 ---
 
-## 五、修改约束（硬性）
+## 五、CLI 行为流（用户补充 2026-08-04——安装/验证/卸载，具体到函数、层次分明）
+
+> **分层**：CLI 命令（参数解析/流程）→ CLI 辅助（resolve/snapshot/io）→ driver API（install 层唯一写入口）
+> → driver 内部（Transaction/注册表）。行为流**只经 driver 公开 API**，不触碰 driver 内部实现。
+
+### 5.1 安装流（`vxapo-cli install -d <device> [--mode ...] [--no-child]`）
+
+```
+main
+ └─ cli::install(args)
+     ├─ 1. require_admin()                                 # 非管理员 → 报错退出（约束 5）
+     ├─ 2. (guid, name, conn) = resolve_device(args.device)  # 4.4.1：GUID 或枚举序号 → 三元组
+     ├─ 3. config = InstallConfig::default_config()
+     │      config.install_mode  = parse_mode(args.mode)     # --mode → InstallMode（缺省 SfxEfx）
+     │      config.use_original_apo_premix  = !args.no_child # 默认 true：保留前任 PreMix 为子 APO
+     │      config.use_original_apo_postmix = !args.no_child # 默认 true：保留前任 PostMix 为子 APO
+     ├─ 4. snapshot_device(guid, replace=true)               # Phase C：**安装前建立/替换基线（只注册表）**
+     │        #   FxProperties 5 槽位 + childApoPath 键 + DisableEnhancements
+     │        #   持久化 %ProgramData%\VxAPO\snapshots\{guid}.json
+     │        #   （config 比对不属 CLI 快照——driver 目录监控 + spec 序列对齐，见 Phase C 注）
+     ├─ 5. ensure_can_load()                                 # driver audiodg：DisableProtectedAudioDG 检查
+     ├─ 6. install_endpoint(&guid, &name, &conn, &config, true)  # driver：Note 47 七步 + v8.5 全量/非全量判定 + verify=true 管线自检
+     │     └─（driver 内部，CLI 不可见）：
+     │        internal: child_apo_key_exists(guid)           # → 全量备份 / 非全量（失守覆盖 childapo）路径
+     │        internal: Transaction 保护（失败逆序回滚）
+     │        internal: write FxProperties 槽位 + childApoPath 安装信息区 + 处理模式 GUID
+     │        internal: verify=true → 激活 IAudioClient 管线自检（E3.4 v8.3：GetMixFormat + Initialize）
+     ├─ 7. 成功 → 打印「已安装 <guid>（模式 <mode>，子 APO 保留=...）」；失败 → 打印 driver Err + 建议 snapshot 恢复
+     └─ 8. （可选）config set / config show 验证安装后配置（见 5.2 后续步骤）
+```
+
+### 5.2 验证流（`install` 后 → `config set` + `config show` + `status`）
+
+```
+vxapo-cli config set -d <device> -f <file>
+ └─ cli::config_set(args)
+     ├─ 1. (guid, ..) = resolve_device(args.device)
+     ├─ 2. path = documents_folder()\VxAPO\{guid}\config.txt    # driver sys::known_folder::documents_folder
+     ├─ 3. fs::create_dir_all(parent) + 读源文件 args.file 内容原样写 path（纯复制，不改写）
+     └─ 4. 写回后自检：ConfigParser::parse_file(&path) 合法性（失败 → 报语法错误，保留旧链——P0-4 语义）
+
+vxapo-cli config show -d <device>
+ └─ cli::config_show(args)
+     ├─ 1. resolve_device → guid
+     ├─ 2. path = documents_folder()\VxAPO\{guid}\config.txt
+     ├─ 3. fs::read_to_string(path) → 打印内容
+     └─ 4. ConfigParser::parse_file(&path) → 打印「语法有效（<N> 条滤波）」/ 语法错误明细（对应 intent 诊断呈现）
+
+vxapo-cli status / list
+ └─ cli::status() / cli::list()
+     ├─ 1. devices = enumerate_devices()                        # driver：唯一枚举入口
+     └─ 2. 逐设备打印：endpoint 名 / installed_version / install_mode / 5 槽位占用（knowledge::KNOWN_APO_CLSIDS
+            友好名「VxAPO PreMix/PostMix」「EAPO PreMix/PostMix」）/ is_disabled / is_unplugged
+     └─ 3. 槽位失守标注（v8.5）：安装模式 premix/postmix 槽位 ≠ VxAPO CLSID → 「⚠ 已被 <友好名> 接管，需重装」
+         （触发 install 重装 → install_endpoint 内建覆盖备份 childapo 最新前任）
+```
+
+### 5.3 卸载流（`vxapo-cli uninstall -d <device>`）
+
+```
+main
+ └─ cli::uninstall(args)
+     ├─ 1. require_admin()
+     ├─ 2. (guid, ..) = resolve_device(args.device)
+     ├─ 3. **不重照快照**（基线保持，用户明确）——`diff_snapshot(baseline, current)` 用**最开始的基线**
+     │        # 展示「卸载是否恢复原状/清除了什么」；基线只在下次重新安装时替换（`snapshot_device(replace=true)`）
+     ├─ 4. uninstall_endpoint(&guid)                            # driver：删除 FxProperties 槽位 VxAPO CLSID
+     │     └─（driver 内部）删除 childApoPath\{guid} 整个键（v8.5 卸载必删——再次安装回全量路径）
+     ├─ 5. 成功 → 打印「已卸载 <guid>」+ `snapshot diff`（红绿对比卸载清除项/已还原项）
+     ├─ 6. 失败 → 打印 driver Err（步骤级错误 → 5.4）+ `snapshot diff` + 建议 `snapshot restore`
+     └─ 7. 可选 config 清理：删除 Documents\VxAPO\{guid}\config.txt（用户确认）
+```
+
+### 5.4 命令状态流（用户补充 2026-08-04）
+
+> **目标**：明确每个命令执行**需要判断什么**、命令执行把**输入窗口变成哪几种状态**、
+> 每种状态**可执行的命令**、以及**状态切换逻辑**——保证每步骤**绝对严格 + 可读反馈 + 错误检验**（用户要求）。
+
+#### 5.4.1 状态定义（CLI 设备的生命周期态）
+
+| 状态 | 判定依据（`DeviceInfo` + 快照存在性） | 含义 |
+|------|--------------------------------------|------|
+| **U**nmanaged（未管理） | `!is_installed()` && 无快照 | 设备从未被 VxAPO 安装/管理 |
+| **B**aselined（已基线） | `!is_installed()` && 有快照（基线） | 曾安装已卸载/仅建基线，当前槽位非 VxAPO |
+| **I**nstalled（已安装） | `is_installed()` && 有快照（基线） | VxAPO 已接管槽位 + 安装前基线存在 |
+| **L**ost（失守） | `is_installed()`（版本非空）但**安装模式槽位 ≠ VxAPO CLSID** | 槽位被第三方顶替（v8.5 失守） |
+
+> 无快照 + `is_installed()` = 异常态（快照文件被删）——按 `L` 处理并提示「快照缺失，重装将重建基线」。
+
+#### 5.4.2 命令 × 状态 矩阵（每种状态可执行的命令）
+
+| 命令 | U | B | I | L | 前置判断（不满足 → 拒绝 + 可读错误） |
+|------|---|---|---|---|--------------------------------------|
+| `list` / `status` | ✅ | ✅ | ✅ | ✅ | 无（纯只读） |
+| `config show` | ✅ | ✅ | ✅ | ✅ | 目标 config 存在性（不存在 → 提示「未配置」） |
+| `snapshot diff` | ✅ | ✅ | ✅ | ✅ | 快照存在（无 → 「无基线，先 install」）；不存在 → 报错 |
+| `install` | ✅ | ✅ | ✅ | ✅ | ① 管理员 ② resolve_device 成功 ③ `is_installed()` 时确认「重装将替换基线」 |
+| `config set` | ✅* | ✅* | ✅ | ✅ | ① 目标目录可创建 ② 源文件存在可读 ③ **若非 I 态 → 警告「设备未安装，配置不会生效」仍执行**（*U/B 允许但告警） |
+| `uninstall` | ❌ | ✅ | ✅ | ✅ | ① 管理员 ② 快照存在（无 → 拒绝「无基线可对比」）③ `is_installed()` 或 L 态才可卸 |
+| `snapshot restore` | ❌ | ✅ | ✅ | ✅ | 快照存在（无 → 拒绝）；恢复后再 `status` 校验 |
+
+#### 5.4.3 状态切换逻辑（命令执行后的状态转移）
+
+```
+U ── install（建立基线 + 安装）──────────► I
+U ── snapshot diff（无基线）→ 拒绝（错误）→ 仍 U
+B ── install（replace 基线 + 安装）──────► I
+B ── uninstall（无槽位可卸）→ 拒绝 → 仍 B
+I ── 槽位被第三方改写 ──────────────────► L（status 检测发现：安装模式槽位 ≠ VxAPO CLSID）
+I ── uninstall（删槽位 + 删 childApoPath 键；基线保持）─► B
+L ── install（失守重装：覆盖备份 childapo 最新前任 + 重装）─► I
+L ── uninstall（清槽位；基线保持）──────► B
+任意 ── 重新 install 且已安装 → 替换基线 + 重新安装 → I
+```
+
+**每步骤绝对严格错误检验（用户要求）**：任何命令失败不得静默——
+
+1. driver 返回 `Err` ≠ 空 → 打印**错误码 + 错误消息 + 所属步骤**（如 `install_endpoint 步骤 4（写子 APO 配置）失败：...`）
+2. 每步骤操作前**断言前置**（见 5.4.2「前置判断」列），失败 → 打印「拒绝：<原因>」并**不进入下一步**
+3. 成功后**打印明确反馈**（如 `✓ 已安装 <guid>`、`✓ config 已写入（<N> 字节），语法有效`），失败打印 `✗ <错误>`
+4. `snapshot diff` 每次执行后**打印统计行**：`变更：+N 新增 / -M 删除 / ~K 修改 / 0 无变化`（可读性）
+5. 涉及写操作（install/uninstall/config set/snapshot restore）失败时**提示恢复路径**（快照 restore / 重试命令）
+
+### 5.5 端到端验证索引（P0-7 DoD 对应）
+
+```
+① install → status                    # 验证 FxProperties 槽位被 VxAPO CLSID 接管 + childApoPath 键创建
+② install → config set → config show  # 验证 config 写入 + 语法可读回
+③ install → config set → 播放音频     # P0-4 手动听感验证（热重载生效、无爆音）
+④ install（use_original=true）→ 播放  # P0-6 child 委托链端到端联调（真实 audiodg + 已注册 APO）
+⑤ uninstall → status                  # 验证槽位还原/清空 + childApoPath 键删除 + 再安装回全量路径
+⑥ 槽位失守模拟：手动改槽位为非 VxAPO → status 标注失守 → install 重装 → childapo 覆盖为最新前任（P0-6 ④）
+```
+
+---
+
+## 六、修改约束（硬性）
 
 1. **不触碰 pipeline/RT**：CLI 仅依赖 `install/` + `config/parser`（读回验证）+ `sys/`（经 driver）；
    违反 intent.md 三层分离禁止。
@@ -201,7 +390,7 @@ EAPO/VxAPO 占用的 CLSID（当前 `SYSTEM_APO_CLSIDS` 无友好名，槽位显
 
 ---
 
-## 六、关联
+## 七、关联
 
 - P0-7（roadmap）：CLI 端到端验证——本规范落地后 P0-7 可进入 Implementing
 - P0-6 遗留：child 委托链完整测试 + P0-4 听感验证——均靠 CLI（install/config set）端到端联调覆盖
