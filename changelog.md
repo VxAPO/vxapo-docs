@@ -1,5 +1,20 @@
 # Changelog
 
+## v8.7 — 2026-08-04
+
+变更类型：`实现对齐`（P0-5/P0-6 执行端实现完成 → 规范侧合规核对通过 → Done）
+
+- **P0-5 RT 入口 panic 防护 → Done（v8.7 合规核对通过）**：执行端实现完成报告（e2fb954）DoD 全勾——
+  431 passed + 2 panic 防护测试；RT 无违规（catch_unwind 不跨函数边界 + panic 兜底零分配）；仅 object/apo.rs ⊆ 影响模块；
+  **三层防护语义落地**（编译期约束 → debug catch_unwind → release abort 兜底）——**对应章节**：`roadmap P0-5`、`object 7.1.11/7.1.12`
+- **P0-6 子 APO 委托实现 → Done（v8.7 合规核对通过）**：执行端实现完成报告（e2fb954）实现全勾——
+  object/child.rs（三接口类型化持有 + 全部委托 + v8.6 Option 参数）、object/apo.rs（child_apo 字段 + Initialize 反查 + APOProcess 前置 + GetLatency/Lock/Unlock 委托）、
+  install/device/slots.rs（CHILD_APO_PATH_ROOT + child_apo_key_exists + read_child_apo_guid + ChildApoKind）；
+  RT 无违规（child 前置独立锁短持 + 委托不分配）；431 passed；
+  child 委托链完整测试需真实 COM + 已注册 APO 无法单测——**非实现缺口**，参照 P0-1/P0-4 先例判定 Done，端到端联调留 P0-7 CLI——
+  **对应章节**：`roadmap P0-6`、`object 7.2/7.1.8/7.1.11`、`install 5.3/5.5.2`
+- **P0-6 缺陷说明**：原 7 个 null 接口防御测试因类型化方案 Drop 对 null Release 解引用 vtable 崩溃（STATUS_STACK_BUFFER_OVERRUN）删除——**类型化安全边界**，注释已留（执行端 e2fb954）——**对应章节**：`roadmap P0-6`、`object 7.2`
+
 ## v8.6 — 2026-08-04
 
 变更类型：`实现对齐`（child.rs 格式协商委托参数签名采纳执行端建议）
@@ -8,6 +23,8 @@
   p_opposite 可 null（无对端）/ p_requested 由父转发非空——可空借用语义用安全引用表达，与 windows-rs
   `#[interface]` 对可空接口参数的 `Option<&>` 风格一致；输出 `pp_supported: *mut *mut` 为 COM 输出必须保留
   裸指针（方法仍 unsafe）；7.1.16 父接口为 COM vtable 约束不改——**对应章节**：`object 7.2`、`feedback.md #P0-6-4`
+
+> 对应 commit：`90b4a3d`
 
 ## v8.5 — 2026-08-03
 

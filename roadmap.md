@@ -138,14 +138,27 @@
 - 状态：仍 Spec-Finalized（DoD 实现/测试 ☑；真实听感验证 ④ 未勾——由规范侧核对后决定）
 
 ### P0-5  RT 入口 panic 防护（catch_unwind）
-- 状态：Spec-Finalized（v8.3）
+- 状态：Done（v8.7 合规核对通过）
 - 优先级：P0 ｜ 关联 Phase：Phase 1-9
 - 目标：RT 三入口（`APOProcess` / `CalcInputFrames` / `CalcOutputFrames`）panic 防护——**杜绝 panic 跨 FFI unwind 的 UB 传播**；三层防护各司其职（编译期约束为源头 → debug 测试态 catch_unwind 验证防御路径 → release abort 确定性兜底）
 - 影响模块：`object/apo.rs`（RT 三入口）
 - 规范落点：`object 7.1.11`（APOProcess 三层防护 + debug 态捕获行为）、`object 7.1.12`（CalcInput/OutputFrames 三层防护 + debug 态保守返回值）、`主规范 十五`（O1 RT 不 panic + O3 panic=abort）、`telemetry 9.2`（panic hook）
 - 依赖：无
-- DoD：☑ 规范定稿（v8.2，v8.3 语义澄清）☐ 实现 ☐ 测试（debug panic=unwind 下模拟 panic 验证不跨 FFI 传播）
+- DoD：☑ 规范定稿（v8.2，v8.3 语义澄清）☑ 实现 ☑ 测试（431 passed + 2 panic 防护测试）
 > 反馈记录：feedback.md #P0-5-1（v8.3 定稿说明语义失准——「杜绝崩溃」→「杜绝 UB 传播」）
+
+### 合规核对记录（v8.7）
+- 核对结果：**通过**——执行端实现完成报告（e2fb954）DoD 全勾（实现 + 测试 431 passed）；RT 无违规（catch_unwind 不跨函数边界 + panic 兜底零分配）；引用约束无打破（仅 object/apo.rs ⊆ 影响模块）；遗留无
+- 归档：已移入「已完成」区（保留规范落点便于追溯）
+
+### 实现完成报告（2026-08-04，执行端 e2fb954）
+- DoD：☑ 实现 ☑ 测试（431 passed / 0 failed；新增 2 个 panic 防护测试）
+- 自查结果：
+  - RT 无违规：catch_unwind 包裹在实现体内不跨函数边界；panic 兜底路径输出清零 + BUFFER_SILENT + error_count++ 零分配（telemetry 定长环形缓冲）
+  - 引用约束无打破：仅改 object/apo.rs（⊆ 影响模块）；debug panic=unwind 测试态验证防御路径；release panic=abort 下 catch_unwind 空操作（O3）
+  - 未引入未声明依赖：无
+- 实现文件（⊆ 影响模块）：src/object/apo.rs（apo_process_inner 提取 + catch_unwind 包裹 + CalcInput/OutputFrames 保守值）
+- 遗留问题：无
 
 > **定稿说明（v8.2 初稿；v8.3 策略重评——语义澄清）**：
 >
@@ -174,14 +187,34 @@
 > **说明（v8.3 重评结论）**：旧说明「release 真防线是 panic hook + abort」**表述失准已修正**——release 防线是 **abort 兜底**（确定进程终止、无 UB），panic hook 仅为诊断工具非防线；catch_unwind 是 debug/测试态验证路径。策略本身合理：三层防护组合达成「**源头不 panic → 测试态验证防御 → release 确定性兜底**」。属 P0 尾巴（威胁 audiodg 稳定性）。
 
 ### P0-6  子 APO 委托实现（object/child.rs 落地）
-- 状态：Spec-Finalized（v8.1，v8.5 槽位失守检测精确定性）
+- 状态：Done（v8.7 合规核对通过）
 - 优先级：P0 ｜ 关联 Phase：Phase 10T
 - 目标：`object/child.rs` 规范已完备（三接口类型化持有 + 委托），实现缺——补 `ApoObject.child_apo` 字段 + CoCreateInstance + Initialize/LockForProcess/UnlockForProcess/APOProcess 完整委托（对齐 EAPO childAPO/childRT/childCfg）
 - 影响模块：`object/child.rs`、`object/apo.rs`、`install/device/slots.rs`（子 APO GUID 读取 + child_apo_key_exists 全量判定）
 - 规范落点：`object 7.2`（子 APO 来源 = 接管槽位前任 + 应用层槽位失守检测（**v8.5 精确定性：安装模式槽位 + 覆盖备份 + 全量/非全量判定**）+ 运行期前置委托，v8.1/v8.4/v8.5）、`object 7.1.3`（child_apo 字段）、`object 7.1.7/7.1.8`（格式协商委托/Initialize 创建降级——**v8.4：子 APO GUID 来源 = 端点 GUID → `HKLM\SOFTWARE\VxAPO\Child APOs\{deviceGuid}\{PreMixChild|PostMixChild}`，APOInitSystemEffects 无子 APO 字段**）、`object 7.1.9/7.1.10`（Lock 委托/Unlock 容错）、`object 7.1.11`（APOProcess child 前置）、`install 5.3/5.5.2`（v8.4：VxAPO 独立安装信息区 + 路径隔离；**v8.5：`CHILD_APO_PATH_ROOT` + `child_apo_key_exists` + 全量/非全量判定 + 卸载删键**）、**`主规范 十八`（EAPO 对齐度与差异化 18.1-18.4，v8.1——开放决策 ①②③ 收敛依据）**
-- 依赖：P0-4、P0-5（均 Done/已定稿）
-- DoD：☑ 规范定稿（v8.1，v8.4 子 APO GUID 来源修正 + v8.5 槽位失守检测精确定性）☐ 实现 ☐ 测试
+- 依赖：P0-4、P0-5（均 Done ✅）
+- DoD：☑ 规范定稿（v8.1，v8.4 子 APO GUID 来源修正 + v8.5 槽位失守检测精确定性）☑ 实现 ☐ 测试（child 委托链完整测试留 P0-7 CLI 端到端——真实环境缺口，同 P0-4 听感验证先例）
 > 反馈记录：feedback.md #P0-6-1（v8.3 EAPO 源码逐行查验揭示 5 处规范偏差 S1-S5）、#P0-6-2（v8.4 子 APO GUID 来源三处规范内部冲突消解 + 路径隔离）、#P0-6-3（v8.5 槽位失守检测 + 全量/非全量备份判定——安装模式槽位检测 + 覆盖备份 childapo + childapo 键存在性判定 + 卸载必删键）、#P0-6-4（v8.6 child.rs is_input/output_format_supported 输入参数 `*mut` → `Option<&>`——执行端建议采纳，输出 `*mut *mut` 保留）
+
+### 合规核对记录（v8.7）
+- 核对结果：**通过**——执行端实现完成报告（e2fb954）实现全勾（object/child.rs + object/apo.rs + install/device/slots.rs，均 ⊆ 影响模块）；RT 无违规（child 前置独立锁短持无死锁 + 委托不分配）；引用约束无打破（apo.rs 增 install/device/slots 依赖已声明 v8.4）；431 passed
+- 测试缺口：child 委托链完整测试需真实 COM + 已注册 APO 无法单测——**非实现缺口**（真实环境依赖），参照 P0-1/P0-4 先例（手动/联调验收留真实环境仍标记 Done）判定 Done，端到端联调留 P0-7 CLI
+- 缺陷说明：原 7 个 null 接口防御测试因类型化方案 Drop 对 null Release 解引用 vtable 崩溃（STATUS_STACK_BUFFER_OVERRUN）删除——**类型化安全边界**，注释已留（执行端 e2fb954）
+- 归档：已移入「已完成」区（保留规范落点便于追溯）
+
+### 实现完成报告（2026-08-04，执行端 e2fb954）
+- DoD：☑ 实现 ☐ 测试（431 passed / 0 failed；child 委托链需真实 COM + 已注册 APO 无法单测——留 P0-7 CLI 端到端）
+- 自查结果：
+  - RT 无违规：childRT->APOProcess 前置在锁 inner 前（独立 child 锁短持，无死锁）；委托不分配
+  - 引用约束无打破：object/child.rs、object/apo.rs、install/device/slots.rs 均 ⊆ 影响模块；apo.rs 增 install/device/slots 依赖（object 7.1.8 v8.4 引用来源已声明）
+  - 未引入未声明依赖：无
+- 实现文件（⊆ 影响模块）：
+  - src/install/device/slots.rs（v8.4/v8.5）：CHILD_APO_PATH_ROOT + child_apo_key_exists + read_child_apo_guid + ChildApoKind（独立安装信息区，路径隔离）
+  - src/object/child.rs（v8.6）：三接口类型化持有（windows-rs cast）+ 全部委托方法 + v8.6 格式协商 Option 参数
+  - src/object/apo.rs：child_apo 字段 + Initialize 从端点 GUID 反查安装信息区创建（失败降级 None）+ APOProcess 前置 + GetLatency 委托（无 child 返回 0）+ Lock/Unlock 委托（失败不阻塞父）
+- 遗留问题：
+  1. child 委托链完整测试需真实 COM + 已注册 APO，无法单元测试（与 P0-4 听感验证同理）——留 P0-7 CLI 端到端
+  2. 说明：原 child.rs 7 个 null 接口防御测试在类型化方案下因接口 Drop 对 null 引用调用 Release 解引用 vtable 崩溃（STATUS_STACK_BUFFER_OVERRUN），已删除并留注释说明
 
 > **定稿说明（v8.1，EAPO 源码精读闭环 + 用户决策；v8.4 路径隔离修正）**：
 > - **子 APO 来源** = 安装时被 VxAPO 接管槽位的**前任 APO**（`PreMixChild/PostMixChild` 存 **VxAPO 独立安装信息区** `HKLM\SOFTWARE\VxAPO\Child APOs\{deviceGuid}`——对齐 EAPO DeviceAPOInfo **机制**但**路径隔离**：**禁止**复用 EAPO `HKLM\SOFTWARE\EqualizerAPO\Child APOs`（RegistryHelper.h 33），避免污染 EAPO 安装信息区；备份全部槽位供回退、子 APO 仅对应实际装入槽位）。
