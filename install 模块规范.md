@@ -208,7 +208,11 @@ pub enum ApoSlot { Lfx = 0, Gfx = 1, Sfx = 2, Mfx = 3, Efx = 4 }
 impl ApoSlot {
     pub const ALL: [ApoSlot; 5];
     pub fn index(self) -> u8;
-    /// 注册表值名称：`{d04e05a6-...},{index}`
+    /// Windows 真实注册表槽位属性 ID（PID）——**v8.9 实证（2026-08-04 reg query）**：
+    /// `{d04e05a6-...}` 各槽位 PID 为 **0/3/5/6/7**（非连续 0-4）：
+    /// LFX=0 / GFX=3 / SFX=5 / MFX=6 / EFX=7（与旧 CLI src/reg.rs 常量一致）。
+    pub fn registry_pid(self) -> u8;
+    /// 注册表值名称：`{d04e05a6-...},{registry_pid}`
     pub fn value_name(self) -> String;
     pub fn is_premix(self) -> bool;
     pub fn is_postmix(self) -> bool;
@@ -238,7 +242,12 @@ impl SlotValue {
     pub fn as_guid(&self) -> Option<windows::core::GUID>;
 }
 
-/// 从 FxProperties 读取指定槽位。
+/// 从 FxProperties 读取指定槽位（**v8.9 双格式兼容 + 全零归一**）。
+///
+/// Windows 槽位值同时存在 REG_SZ（EAPO 等第三方写 GUID 字符串，实证）与
+/// REG_BINARY（16 字节 LE，部分实现/旧 VxAPO 写）——按真实类型自动识别。
+/// **全零 GUID（`{00000000-...}`）是 Windows 的「无 APO」占位，归一为 NoValue**
+/// （否则自动探测会把全零槽位误判为已占用）。
 pub fn read_slot_value(fx_key: &RegKey, slot: ApoSlot) -> SlotValue;
 
 /// 从端点根键读取所有 5 个槽位。
@@ -258,6 +267,29 @@ pub fn get_original_pre_mix(slots: &[SlotValue; 5], mode: InstallMode) -> String
 /// - SfxMfx：MFX → EFX → GFX
 /// - LfxGfx：GFX → EFX → MFX
 pub fn get_original_post_mix(slots: &[SlotValue; 5], mode: InstallMode) -> String;
+
+/// **EAPO 三档安装模式自动探测**（v8.9，执行端落地——EAPO load() 396-413 C41-C44 移植）。
+///
+/// 纯逻辑 API——调用方（driver info 层 / APP）负责准备输入，driver 只做判定：
+///
+/// | 优先级 | 条件 | 模式 |
+/// |--------|------|------|
+/// | 0 | Win < 8.1（不探测） | LfxGfx（Legacy 初始默认） |
+/// | 1 | Win8.1+ 且 FxProperties **只有 LFX/GFX 值、SFX/MFX/EFX 全空** | LfxGfx（驱动仅支持 Legacy） |
+/// | 2 | 端点 Properties 子键存在蓝牙容器 ID（`{b3f8fa53-...},41`） | SfxMfx（Win11 蓝牙组合，EFX 无效） |
+/// | 3 | 否则（现代驱动默认） | SfxEfx |
+///
+/// # 参数
+///
+/// - `is_windows_8_1_or_newer`：OS 版本判定（`registry::is_windows_version_at_least(6,3,9600)`）。
+/// - `slots`：5 槽位值（来自端点 FxProperties，`read_all_slots`）。
+/// - `has_bluetooth_container`：端点 `Properties` 子键下
+///   `{b3f8fa53-0004-438e-9003-51a46e139bfc},41`（PKEY_Device_ContainerId，PID 41）值存在。
+pub fn detect_install_mode(
+    is_windows_8_1_or_newer: bool,
+    slots: &[SlotValue; 5],
+    has_bluetooth_container: bool,
+) -> InstallMode;
 ```
 
 **安装信息区存在性检测（v8.5，全量判定依据）**：
@@ -326,7 +358,6 @@ impl DeviceInfo {
     /// 是否有未应用的更改。
     pub fn has_changes(&self) -> bool;
 }
-```
 
 /// 查询设备综合信息（组合 endpoint + slots + format）。
 pub fn query_device_info(endpoint_key: &RegKey) -> Result<Option<DeviceInfo>, VxApoError>;
@@ -347,11 +378,30 @@ pub fn enumerate_devices() -> Result<Vec<DeviceInfo>, VxApoError>;
 > 取得的有效设备，再以 `device_id`/`endpoint_guid` 与 driver 枚举结果**对应**。
 > driver 不引入 COM 设备枚举，保持注册表单栈。
 
-**模式检测逻辑**：
-1. SFX 有 GUID + MFX 有 GUID → SfxMfx
-2. SFX 有 GUID + MFX 无 GUID → SfxEfx
-3. LFX 有 GUID + SFX 无 GUID → LfxGfx
-4. 都没有 → SfxEfx（默认）
+**模式检测逻辑（v8.9 修正——只认 VxAPO CLSID 成对，2026-08-04 实证）**：
+1. LFX=VxAPO_PRE **且** GFX=VxAPO_POST → LfxGfx（**非 VxAPO 占槽不算**——EDIFIER 实证：
+   旧实现按「任意 GUID 占槽」误判 SfxMfx，实际 SFX/EFX 被 EAPO 占、MFX 被系统占，
+   正确表示「未安装 VxAPO」）
+2. SFX=VxAPO_PRE **且** MFX=VxAPO_POST → SfxMfx
+3. SFX=VxAPO_PRE **且** EFX=VxAPO_POST → SfxEfx
+4. 都不成对 → `default_mode()`（SfxEfx，表示未安装 VxAPO）
+
+**EAPO 三档自动探测（v8.9，CLI 缺省 `--mode` / APP 调用入口）**：
+
+```rust
+/// 蓝牙组合设备容器 ID 值名（PKEY_Device_ContainerId，WT_DEVICE PID 41）。
+/// EAPO DeviceAPOInfo.cpp 51/410-411 实证——端点 `Properties` 子键下存在此值
+/// 即 Win11 蓝牙组合设备（EFX 无效），SfxMfx 模式探测判据。
+pub const BLUETOOTH_CONTAINER_VALUE: &str
+    = "{b3f8fa53-0004-438e-9003-51a46e139bfc},41";
+
+/// 组合 OS 版本 + 5 槽位 + 蓝牙容器 ID 交给 slots::detect_install_mode（自动探测）。
+pub fn detect_mode_for_device(endpoint_key: &RegKey) -> InstallMode;
+
+/// 按端点 GUID 自动探测（Render 优先 / Capture 兜底定位端点根键）。
+/// 定位失败回退 `detect_install_mode(true, 全空, false)` → SfxEfx。
+pub fn detect_mode_for_guid(device_guid: &str) -> InstallMode;
+```
 
 ---
 
@@ -460,7 +510,7 @@ pub fn uninstall_endpoint(device_guid: &str) -> Result<()>;
 > - EAPO 语义：`fail()` 抛 `DeviceException`（DeviceAPOInfo.cpp 817-822）——VxAPO 对齐为返回 `Err` 附明确错误，由 `select.rs` 提示用户
 > - 用户可选择忽略或回滚（`reinstall`/`uninstall` 显式操作）
 
-**Note 47 安装流程**（7 步，v8.5 补全量/非全量判定）：
+**Note 47 安装流程**（7 步，v8.5 补全量/非全量判定；v8.9 实现对齐——最小写权限/独立信息区/self-preserve/REG_SZ/EAPO 对齐）：
 
 **0. 全量判定（v8.5，产品意图「全量备份发生条件判定」）**：`install_endpoint` 开头检查
 `HKLM\SOFTWARE\VxAPO\Child APOs\{deviceGuid}` 键是否存在（`install/device/slots` 提供存在性检测）：
@@ -469,31 +519,64 @@ pub fn uninstall_endpoint(device_guid: &str) -> Result<()>;
 - **存在 → 非全量路径**（重装/失守重装）：失守时（应用层检测到所需安装槽位非 VxAPO CLSID）仅**覆盖**
   `PreMixChild`/`PostMixChild` 为当前被夺占槽位值（最新前任）；无失守保留旧 childapo；
   并**全量重新快照**维持回退基线最新。
+- **v8.9 补充：被覆盖槽位名/原值无条件备份**——无论全量/非全量，
+  覆盖 PreMix/PostMix 槽位前把「槽位名 + 原值」备份到信息区
+  （`PreMixSlot`/`PostMixSlot` + `PreMixSlotValue`/`PostMixSlotValue`）；
+  uninstall 按此恢复被覆盖的第三方 APO（EAPO 等），否则快照恢复后槽位变 NoValue
+  （2026-08-04 实测：VxAPO 把 EAPO 弄成子 APO 后另一软件又覆盖父槽位 → 卸载需恢复 EAPO）。
 
 1. 创建 **VxAPO 独立安装信息区** `HKLM\SOFTWARE\VxAPO\Child APOs\{deviceGuid}` 键
    （v8.4 路径隔离修正：**对齐 EAPO `HKLM\SOFTWARE\EqualizerAPO\Child APOs`（childApoPath，
    RegistryHelper.h 33 + DeviceAPOInfo.cpp 43）的机制，但用 VxAPO 自己的 SOFTWARE\VxAPO 根**；
    **禁止写入 EAPO 安装信息区**——污染 EAPO 会使其读到 VxAPO 写的 PreMixChild/PostMixChild，
    重装/卸载 EAPO 时被覆盖或语义混淆）
-2. FxProperties 不存在则创建（失败则权限提升重试，Note 31）
-3. 已存在则备份 FxProperties 至 `.reg`（通过 `sys::registry::save_to_file`）并记录槽位回滚
+2. FxProperties 打开/创建（v8.9 最小写权限）：
+   - **已存在 → `RegKey::open_for_write`（KEY_SET_VALUE|KEY_QUERY_VALUE）**——MMDevices 端点键
+     ACL 只给管理员 SetValue/ReadKey（无 CreateSubKey），请求 KEY_ALL_ACCESS 被拒（0x80070005）；
+     is_new 判定读 `version` 值存在性
+   - 不存在 → `RegKey::create`（SAM_ALL，新建键可全权限）并事务记录删除回滚
+3. 已存在则备份 FxProperties 至 `.reg`（`sys::registry::save_to_file`，best-effort）+ 事务记录槽位回滚
 4. 写入子 APO 配置到 **`HKLM\SOFTWARE\VxAPO\Child APOs\{deviceGuid}`**：
-   `PreMixChild` / `PostMixChild`（**全量路径按 useOriginalAPOPreMix/PostMix 决定是否写**，对齐 EAPO
-   DeviceAPOInfo.cpp 558-563；**非全量路径失守时覆盖为当前被夺占槽位值**）/ `AllowSilentBufferModification` /
-   `DisableAutomaticAdjustment`（autoAdjust）/ `Version`
-5. 按模式写入 APO GUID（删除非当前模式的旧槽位）
-6. 写入默认处理模式 GUID（AUDIO_SIGNALPROCESSINGMODE_DEFAULT）
+   `PreMixChild` / `PostMixChild`（**v8.9 self-preserve 过滤：槽位值 == VxAPO 自身 CLSID → 不保留
+   （否则重装把 VxAPO 自己当子 APO，快照 diff 实测 childPreMix=41C34613 自占）**；
+   其余按 useOriginalAPOPreMix/PostMix 决定是否写，对齐 EAPO DeviceAPOInfo.cpp 558-563；
+   非全量路径失守时覆盖为当前被夺占槽位值）/ `PreMixSlot`+`PreMixSlotValue` 等备份值
+   （**无条件写**——uninstall 恢复槽位必须用它把第三方 APO 写回；child GUID 只在保留时写，
+   原值备份始终写）/ `AllowSilentBufferModification` / `DisableAutomaticAdjustment`（autoAdjust）/ `Version`
+5. 按模式写入 APO GUID（v8.9 EAPO 互斥语义 + REG_SZ 强制）：
+   - **槽位写 REG_SZ（GUID 字符串）**——EAPO 生态（RegistryHelper.h）与 Windows 音频枚举器读
+     槽位期望 REG_SZ；写 REG_BINARY 报「wrong type」导致 EAPO 无法枚举设备（2026-08-04 实证）
+   - **删除非当前模式旧槽位，保留 EAPO「不动槽位」**：LfxGfx 删 SFX/MFX/EFX（Legacy 独占）；
+     SfxMfx 删 LFX/GFX **保 EFX**；SfxEfx 删 LFX/GFX **保 MFX**（旧实现一律删非当前模式槽位 →
+     SfxEfx 误删 MFX，蓝牙场景 MFX 与 EFX 冲突）
+6. 写入默认处理模式 GUID（`KSDATAFORMAT_SUBTYPE_DEFAULT_PROCESSMODE` =
+   AUDIO_SIGNALPROCESSINGMODE_DEFAULT，REG_SZ）
 7. 删除 DisableEnhancements
+   - **capture 特例（v8.9，EAPO DeviceAPOInfo.cpp 583/607/632 对齐）**：采集端点（路径含
+     Capture）只装 PreMix、不装 PostMix（VxAPO 不做采集端增强）；`PreMixChild` 备份保留、
+     PostMixChild 强制 None
 
 整个安装在 `Transaction`（Drop 时逆序回滚）保护下执行，任何步骤失败时自动回滚。
 
-**卸载流程**（v8.5 补删键）：
-1. 定位端点 FxProperties（不存在 → 视为未安装，返回成功）
-2. 读取当前槽位，删除 VxAPO 的 CLSID
-3. 删除 **`HKLM\SOFTWARE\VxAPO\Child APOs\{deviceGuid}` 整个键**（含全部备份值）——
-   **v8.5 产品意图确认：卸载一定要删除安装信息区键**（彻底解绑，九节 intent「卸载」）；
-   故再次安装回到「全量路径」判定（键不存在）
-4. 删除 DisableEnhancements
+**卸载流程**（v8.5 补删键；v8.9 实现对齐——只删 VxAPO CLSID/删空才恢复/接管者不覆盖）：
+
+**卸载语义（2026-08-04 用户明确+实测）**：只卸载「能确定属于 VxAPO 的部分」，绝不碰其他 APO：
+1. 定位端点 FxProperties（不存在 → 视为未安装，返回成功）；**用 `open_for_write` 打开**
+   （删除值需写权限；SAM_ALL 超权限在 MMDevices 端点键被拒 0x80070005）
+2. **只删 VxAPO 的 CLSID**：遍历 5 槽位，仅当槽位值 == VxAPO PRE/POST CLSID 才删除
+   （别的 APO 槽位不动——EAPO 重装占回时不受影响）；
+   **注意**：不能用 `read_all_slots`（期望端点根键、内部再 open FxProperties）；当前句柄已是
+   FxProperties 键，需用 `read_slot_value` 直接在 fx_key 上读（2026-08-04 实测：uninstall 后
+   slot 残留 VxAPO CLSID 即此因）
+3. **槽位空才写回备份（快照恢复核心）**——VxAPO 槽位被删后（NoValue/NoKey）才把信息区
+   `PreMixSlotValue` 读回写槽位（恢复 EAPO 等）；若槽位已被其他 APO 接管（Guid≠备份值）→
+   **尊重接管者，不覆盖**（用户实测：VxAPO 把 EAPO 弄成子 APO 后另一软件又覆盖父槽位，
+   卸载不覆盖接管软件所有权）
+4. **恢复完成后**再删除信息区 `HKLM\SOFTWARE\VxAPO\Child APOs\{deviceGuid}` 整个键
+   （先恢复槽位从信息区读值、再删键，避免读到一半被删；v8.5 产品意图：卸载必删键 →
+   再次安装回「全量路径」判定）
+5. 清理 FxProperties 上的旧遗留 VxAPO 配置值（childGuid/allowSilentBuffer/autoAdjust/version，
+   best-effort）+ DisableEnhancements
 
 **事务回滚**（原 rollback.rs 职责，合并至此）：
 

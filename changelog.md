@@ -1,5 +1,20 @@
 # Changelog
 
+## v8.9 — 2026-08-04
+
+变更类型：`实现对齐`（P0-7 端到端调试驱动——install/卸载/快照/EAPO 对齐 + config 路径系统级修正）
+
+- **EAPO 三档安装模式自动探测（执行端落地，先于规范）**：`slots::detect_install_mode`（纯逻辑三档：Win<8.1→LfxGfx / 仅 LFX+GFX→LfxGfx / 蓝牙容器 ID→SfxMfx / 否则 SfxEfx）+ `info::detect_mode_for_device/guid`（CLI 缺省 --mode 入口、APP 调用）——**对应章节**：`install 5.3/5.4`、`Equalizer 行为文档.md C41-C44`
+- **install 5.4 模式检测改「VxAPO CLSID 成对」判定**（EDIFIER 实证：旧实现按任意 GUID 占槽误判 SfxMfx，实际 SFX/EFX 被 EAPO 占、MFX 被系统占）——**对应章节**：`install 5.4`
+- **install 5.3 槽位 API 补全**：`registry_pid`（实证 0/3/5/6/7，非连续）+ `read_slot_value` REG_SZ/Binary 双格式兼容 + 全零 GUID 归一 NoValue + `detect_install_mode`——**对应章节**：`install 5.3`
+- **install 5.5.2 安装实现对齐（2026-08-04 实证）**：FxProperties 已存在用 `open_for_write` 最小写权限（KEY_SET_VALUE|KEY_QUERY_VALUE，避开 MMDevices ACL 0x80070005）；verify 前 `CoInitializeEx`（修 0x800401F0）；子 APO 配置写独立信息区（删 FxProperties\ChildApoKeys 死代码）；self-preserve 过滤（重装不把 VxAPO 自己当子 APO）；槽位写 REG_SZ（GUID 字符串，防 EAPO wrong type）；EAPO 互斥删槽位（SfxEfx 保 MFX、SfxMfx 保 EFX）；capture 只装 PreMix——**对应章节**：`install 5.5.2`
+- **快照恢复语义（install/卸载）**：被覆盖槽位名+原值无条件备份（PreMixSlot/PostMixSlot + Value）；卸载只删 VxAPO CLSID → **删空才写回备份**（接管者不覆盖）→ 恢复后删信息区键——**对应章节**：`install 5.5.2`
+- **config 路径改系统级 `C:\ProgramData\VxAPO\{GUID}\config.txt`（用户指示修正）**：audiodg 是 SYSTEM 服务，`documents_folder()` 拿到 SYSTEM 的 Documents 读不到 CLI（用户进程）写入的文件——改用全用户共享 ProgramData（与快照目录同根）——**对应章节**：`object 7.1.8/7.1.9`、`CLI 引用规范.md`
+- **sys/registry 补 open_for_write**（KEY_SET_VALUE|KEY_QUERY_VALUE）+ `SAM_SET_VALUE` 常量 + create 文档警示 MMDevices ACL——**对应章节**：`install 5.5.2`
+- **ref_count 测试 flaky 修复（附带）**：`decrement` 改 `saturating_sub` 防测试并行 reset_for_test 交错下溢 panic
+- **feedback：P0-7-1 已修订**（detect_install_mode 实现先行 + 规范同步 + config 路径系统级）——**对应章节**：`feedback.md #P0-7-1`
+- **roadmap：P0-7 落点补充**（detect_mode_for_device/guid + 快照恢复 + ProgramData 路径；依赖 P0-4/P0-5/P0-6 均 Done）——**对应章节**：`roadmap P0-7`
+
 ## v8.8 — 2026-08-04
 
 变更类型：`文档同步`（P0-7 CLI 端到端验证——《CLI 引用规范.md》定稿）

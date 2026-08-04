@@ -275,7 +275,7 @@
 - 优先级：P0 ｜ 关联 Phase：Phase 10（P0 收尾）
 - 目标：CLI 依赖 vxapo-driver（as library），提供 **P0 达标口径的端到端验证**——设备 install/uninstall、config set/show、list/status、回滚 snapshot；验证驱动可安装、可加载、可按设备读 config（P0 链路收尾）
 - 影响模块：`vxapo-cli`（crate，规范外）、`vxapo-driver` 的 `install/selector/operation.rs`（install_endpoint/uninstall_endpoint 复用 + CLI 层 API）、`install/device/info.rs`（enumerate_devices 复用）、`install/device/slots.rs`（槽位失守检测只读 API + child_apo_key_exists）
-- 规范落点：**《CLI 引用规范.md》v8.8（2026-08-04 定稿）**——现状/可复用 API（源码实读）/ 边界/ 修改路线 Phase A-D / `<device>`·`<file>` 参数 / GUID 友好名称 4.5 / 快照=变更对比 Phase C / 行为流 5.1-5.5 / 命令状态流 5.4 / 约束；+ `install 5.3/5.4/5.5.2`（复用 API 来源）+ `intent 五/七/十一`（CLI 边界/槽位失守检测/config 语法）
+- 规范落点：**《CLI 引用规范.md》v8.8（2026-08-04 定稿）**——现状/可复用 API（源码实读）/ 边界/ 修改路线 Phase A-D / `<device>`·`<file>` 参数 / GUID 友好名称 4.5 / 快照=变更对比 Phase C / 行为流 5.1-5.5 / 命令状态流 5.4 / 约束；+ `install 5.3/5.4/5.5.2`（复用 API 来源 + v8.9：detect_install_mode/detect_mode_for_device·guid 自动探测 + 卸载语义 + 快照恢复）+ `install 5.4`（v8.9 VxAPO CLSID 成对判定）+ `object 7.1.8/7.1.9`（v8.9 config 路径 = `C:\ProgramData\VxAPO\{GUID}\config.txt` 系统级）+ `intent 五/七/十一`（CLI 边界/槽位失守检测/config 语法）
 - 依赖：P0-4、P0-5、P0-6（均 Done ✅）——P0-6 child 委托链端到端联调 + P0-4 听感验证均靠 CLI install/config set 覆盖
 - DoD：☑ 规范定稿（v8.8《CLI 引用规范.md》）☐ 实现 ☐ 测试（端到端：install → config set → driver 读回 → watcher 热重载生效 + 回滚验证 + child 委托链联调）
 
@@ -291,7 +291,7 @@
 > **能力集**：
 > - ① install `-d <device>`（调 `install_endpoint`，写 FxProperties 绑定）
 > - ② uninstall（调 `uninstall_endpoint` + driver selector 层事务回滚卸载）
-> - ③ config set（写 `Documents\VxAPO\{GUID}\config.txt`）
+> - ③ config set（写 `C:\ProgramData\VxAPO\{GUID}\config.txt`，v8.9 系统级——audiodg/SYSTEM 与用户进程共用）
 > - ④ config show（读回一致性验证——「写后读回」）
 > - ⑤ list / status（保留现有诊断：枚举设备、查询注册表、友好名称、**查看设备哪些槽位被接管**）
 > - ⑥ **回滚 snapshot**：对 driver 改动前先 snapshot（注册表/配置状态），失败可恢复

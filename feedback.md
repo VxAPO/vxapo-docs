@@ -6,6 +6,39 @@
 
 ---
 
+### [P0-7-1] driver 缺 `detect_install_mode` 自动探测 API（v8.9 + 执行端报告查验）
+
+**影响版本**：规范 v8.8 起（install 5.1/5.3/5.5.2）
+
+**问题**：
+- 分类：规范遗漏（执行端实现中提出）
+- VxAPO install 5.1 只有「已安装槽位推导」模式检测（SfxMfx/SfxEfx/LfxGfx 按槽位有无），**没有 EAPO 式「驱动特性探测」一等 API**——APP（未来 GUI/守护程序）无法自动决策安装模式
+- 执行端建议：driver 增加 `detect_install_mode(device) -> InstallMode`（移植 EAPO load() 396-413 三档探测），`InstallConfig` 支持 auto 模式；**CLI 保持 `--mode` 显式传参不动**（CLI = 显式接口分层，APP = 自动探测）
+
+**规范侧判定**：
+- **采纳**——`detect_install_mode` 为 driver 一等 API（install 层，只读探测），InstallConfig 增加 `InstallMode::Auto`（或独立 auto 标志）；CLI 显式传参不变。探测判据精确对齐 EAPO：
+  ① Win8.1+ 且 FxProperties 仅 LFX/GFX（无 SFX/MFX/EFX/multiSfx/multiMfx/multiEfx）→ LfxGfx（DeviceAPOInfo.cpp 396-408）
+  ② 端点 **Properties 子键**含 `{b3f8fa53-0004-438e-9003-51a46e139bfc},41`（**PKEY_Device_ContainerId**，51/410）→ SfxMfx（Win11 蓝牙组合，EFX 无效）
+  ③ 否则 → SfxEfx；旧 Windows（<8.1）默认 LfxGfx
+
+**修订记录**：
+- v8.9（实现先行，2026-08-04 执行端 commit 33f1ccf→4a0ada2 已落地 + 规范同步）：
+  - **实现（执行端，先于规范）**：`slots::detect_install_mode`（纯逻辑三档，6 测试）+ `info::detect_mode_for_device/detect_mode_for_guid`
+    + `info` 既有模式检测改 VxAPO CLSID 成对判定（EDIFIER 实证）；含 `{b3f8fa53-...},41` = PKEY_Device_ContainerId 判据
+  - **规范同步**：install 5.3 slots.rs 增加 `registry_pid`（PID 实证 0/3/5/6/7）+ `detect_install_mode` 纯逻辑 API +
+    `read_slot_value` 双格式兼容/全零归一；install 5.4 模式检测改「VxAPO CLSID 成对」+ 自动探测入口
+    `detect_mode_for_device/guid`（**CLI 缺省 --mode 用，APP 调用入口**；比 Auto 变体更简洁——CLI 显式传参、
+    APP 调探测函数，等价满足「CLI 显式 / APP 自动」分层）
+  - install 5.5.2 安装/卸载实现对齐（open_for_write 最小权限/verify CoInitializeEx/独立信息区/self-preserve/
+    BackupSlot 槽位名+原值无条件备份/删空才恢复+接管者不覆盖/EAPO capture 只 PreMix/互斥保 MFX-EFX/REG_SZ 强制）
+  - object 7.1.8 config 路径改 **`C:\ProgramData\VxAPO\{GUID}\config.txt`**（用户补充：audiodg 是 SYSTEM 服务，
+    它调 documents_folder() 拿到 SYSTEM 的 Documents 读不到用户级文件；ProgramData 全用户共享与快照同根）——
+    **对应章节**：`install 5.3/5.4/5.5.2`、`object 7.1.8/7.1.9`、`CLI 引用规范.md`、`Equalizer 行为文档.md C41-C44`
+
+**状态**：已修订（v8.9）
+
+---
+
 ### [P0-6-4] child.rs `is_input_format_supported` 参数签名 `*mut` → `Option<&>`（v8.6 + 执行端建议）
 
 **影响版本**：规范 v8.1 起（object 7.2）

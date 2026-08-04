@@ -110,7 +110,7 @@ pub struct ConfigParser;   // parse_file / parse_string（spec + filter 链）
 |------|----------|----------|
 | install 层 API | 依赖 vxapo-driver 调用 `install_endpoint`/`uninstall_endpoint`/`enumerate_devices` | 不自行写注册表（经 driver 事务） |
 | 槽位失守检测 | 经 `enumerate_devices` + `read_all_slots` 检测**安装模式槽位**（v8.5） | 提示重装 + 触发 `install_endpoint` 覆盖备份 childapo；不直接写 childApoPath |
-| config 管理 | `config set` 写 `Documents\VxAPO\{GUID}\config.txt`；`config show` 读回验证 | 不解析 DSP 语义（读回一致性仅文件级） |
+| config 管理 | `config set` 写 `C:\ProgramData\VxAPO\{GUID}\config.txt`（v8.9：系统级——audiodg/SYSTEM 与用户进程都可读写，避免用户级 Documents 链路断裂）；`config show` 读回验证 | 不解析 DSP 语义（读回一致性仅文件级） |
 | pipeline/RT | **不触碰** | 不做实时音频处理 |
 | 回滚 | 对 driver 改动前 snapshot（注册表/配置状态） | — |
 
@@ -152,9 +152,11 @@ resolve_device(device_ref) -> (device_guid, device_name, connection_name)
 **`<file>` 参数（仅 `config set -f`）**：**源文件**（要写入目标 config.txt 的内容来源）
 
 - 接受**绝对路径**或**相对路径**（相对当前工作目录）；含空格的路径用引号包裹（shell 层处理）
-- 文件必须存在且可读；CLI 读取内容后**原样写入** `Documents\VxAPO\{GUID}\config.txt`
-- 目标路径拼装：`documents_folder()\VxAPO\{GUID}\config.txt`——复用 driver `sys::known_folder::documents_folder`
-  （或 CLI 经 driver 暴露）获取 Documents；`{GUID}` 为设备 GUID（大写花括号格式）；目录不存在则创建
+- 文件必须存在且可读；CLI 读取内容后**原样写入** `C:\ProgramData\VxAPO\{GUID}\config.txt`
+- 目标路径拼装：固定 `C:\ProgramData\VxAPO\{GUID}\config.txt`（v8.9 系统级 CONFIG_ROOT——**不用用户级
+  Documents**：audiodg 是 SYSTEM 服务，它调 `documents_folder()` 拿到 SYSTEM 的 Documents，读不到
+  CLI（用户进程）写入的文件，导致「改 Documents 的 config 没效果」；ProgramData 全用户共享，
+  与快照目录同根）；`{GUID}` 为设备 GUID（大写花括号格式）；目录不存在则创建
 - **CLI 不修改文件内容**（纯复制）；语法合法性由后续 `ConfigParser::parse_file` 验证（config show/写入后备选）
 
 #### 4.4.2 命令表
@@ -163,7 +165,7 @@ resolve_device(device_ref) -> (device_guid, device_name, connection_name)
 |------|------|-----------|
 | `install -d <device> [--mode LfxGfx\|SfxMfx\|SfxEfx] [--no-child]` | 安装（默认 SfxEfx + use_original=true 保留前任为子 APO + verify=true 管线自检；`--no-child` 关子 APO 保留） | `install_endpoint` |
 | `uninstall -d <device>` | 卸载（含删除 childApoPath 键，v8.5） | `uninstall_endpoint` |
-| `config set -d <device> -f <file>` | 写 `Documents\VxAPO\{GUID}\config.txt` | 文件写（driver 不提供 config 写——CLI 直接写文件） |
+| `config set -d <device> -f <file>` | 写 `C:\ProgramData\VxAPO\{GUID}\config.txt`（v8.9） | 文件写（driver 不提供 config 写——CLI 直接写文件） |
 | `config show -d <device>` | 读回 config.txt + 语法验证 | `ConfigParser::parse_file` 合法性验证 |
 
 ### Phase C：快照 = 变更对比 + 基线保持（用户补充 2026-08-04）+ 注册表转储保留
@@ -278,14 +280,14 @@ main
 vxapo-cli config set -d <device> -f <file>
  └─ cli::config_set(args)
      ├─ 1. (guid, ..) = resolve_device(args.device)
-     ├─ 2. path = documents_folder()\VxAPO\{guid}\config.txt    # driver sys::known_folder::documents_folder
+     ├─ 2. path = C:\ProgramData\VxAPO\{guid}\config.txt        # v8.9 系统级 CONFIG_ROOT（audiodg/SYSTEM + 用户进程共用）
      ├─ 3. fs::create_dir_all(parent) + 读源文件 args.file 内容原样写 path（纯复制，不改写）
      └─ 4. 写回后自检：ConfigParser::parse_file(&path) 合法性（失败 → 报语法错误，保留旧链——P0-4 语义）
 
 vxapo-cli config show -d <device>
  └─ cli::config_show(args)
      ├─ 1. resolve_device → guid
-     ├─ 2. path = documents_folder()\VxAPO\{guid}\config.txt
+     ├─ 2. path = C:\ProgramData\VxAPO\{guid}\config.txt        # v8.9 系统级 CONFIG_ROOT
      ├─ 3. fs::read_to_string(path) → 打印内容
      └─ 4. ConfigParser::parse_file(&path) → 打印「语法有效（<N> 条滤波）」/ 语法错误明细（对应 intent 诊断呈现）
 
@@ -311,7 +313,7 @@ main
      │     └─（driver 内部）删除 childApoPath\{guid} 整个键（v8.5 卸载必删——再次安装回全量路径）
      ├─ 5. 成功 → 打印「已卸载 <guid>」+ `snapshot diff`（红绿对比卸载清除项/已还原项）
      ├─ 6. 失败 → 打印 driver Err（步骤级错误 → 5.4）+ `snapshot diff` + 建议 `snapshot restore`
-     └─ 7. 可选 config 清理：删除 Documents\VxAPO\{guid}\config.txt（用户确认）
+     └─ 7. 可选 config 清理：删除 C:\ProgramData\VxAPO\{guid}\config.txt（用户确认，v8.9）
 ```
 
 ### 5.4 命令状态流（用户补充 2026-08-04）

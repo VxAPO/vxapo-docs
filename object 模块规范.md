@@ -69,7 +69,6 @@ object/
 - `crate::pipeline::context::PipelineContext`
 - `crate::pipeline::format::{extract_format, is_float_format, AudioFormat}`
 - `crate::sys::audio_defs::get_channel_names`
-- `crate::sys::known_folder::documents_folder`（Initialize per-device 路径解析，v7.2）
 - `crate::sys::com::apo_types::APOInitSystemEffects`（Initialize 初始化数据，v7.2）
 - `crate::sys::com::prelude::guid_to_string`（设备 GUID 格式化，v7.2）
 - `crate::pipeline::dsp::filter::{DspContext, DeviceType, ProcessingStage}`
@@ -471,7 +470,8 @@ pub struct LockConfig {
 #### 7.1.8 `Initialize`（含 per-device 配置路径解析，v7.2）
 
 **职责**：初始化。解析 `APOInitSystemEffects`（提取子 APO CLSID + 设备 GUID），
-确定 per-device 配置路径并确保 `Documents\VxAPO\{GUID}\config.txt` 存在。
+确定 per-device 配置路径并确保 `C:\ProgramData\VxAPO\{GUID}\config.txt` 存在
+（v8.9 方案 A：系统级路径——audiodg 是 SYSTEM 服务，用户级 Documents 链路断裂）。
 
 ```rust
 fn Initialize(&self, cb_data_size: u32, pby_data: *mut u8) -> HRESULT {
@@ -494,12 +494,14 @@ fn Initialize(&self, cb_data_size: u32, pby_data: *mut u8) -> HRESULT {
     //      ——禁止读写 EAPO 安装信息区；依赖声明见下方「引用来源（v8.4）」）。
     //    - 子 APO GUID 为空/特殊值（APOGUID_NULL/NOKEY/NOVALUE）→ None（降级模式 Note 57）
     // 4. 如有子 APO GUID，创建 ChildApo（失败降级为无子 APO，不阻塞初始化）
-    // 5. 确定 per-device 配置路径（load_device_config）：
-    //    a. sys::known_folder::documents_folder() → Documents 路径
-    //       （SHGetKnownFolderPath(FOLDERID_Documents) 安全收窄）
+    // 5. 确定 per-device 配置路径（load_device_config，v8.9 方案 A——系统级 CONFIG_ROOT）：
+    //    a. CONFIG_ROOT = `C:\ProgramData\VxAPO`（全用户共享，SYSTEM + 当前用户都可读写；
+    //       **不用用户级 Documents**——APO 真实运行在 audiodg（SYSTEM 服务），它调
+    //       documents_folder() 拿到的是 SYSTEM 的 Documents，读不到 CLI（用户进程）写入
+    //       的文件，导致「改 Documents 的 config 没效果」；ProgramData 与快照目录同根）
     //    b. 设备 GUID → 大写格式字符串（guid_to_string：{XXXXXXXX-...}）
-    //    c. 拼接：{Documents}\VxAPO\{GUID}\  → config_path
-    //    d. 目录不存在 → std::fs::create_dir_all 创建
+    //    c. 拼接：{CONFIG_ROOT}\{GUID}\  → config_path
+    //    d. 目录不存在 → std::fs::create_dir_all 创建（失败 → 回退 DEFAULT_CONFIG_PATH）
     //    e. config.txt 不存在 → 写入默认 passthrough（空文件或仅注释行）
     // 6. 记录 config_path（watcher **不在 Initialize 启动**——v7.9 修订：
     //    此时未锁定（无 current_chain/active_spec），hot_reload 无处放新链；
@@ -509,7 +511,7 @@ fn Initialize(&self, cb_data_size: u32, pby_data: *mut u8) -> HRESULT {
 ```
 
 **watcher 启动约定（v7.9 修订，P0-4——v7.8 事件驱动 + v7.9 生命周期随锁定周期）**：
-> - 监控对象 = **config_path 父目录**（`Documents\VxAPO\{GUID}`），**非 config.txt 文件本身**——
+> - 监控对象 = **config_path 父目录**（`C:\ProgramData\VxAPO\{GUID}`，v8.9），**非 config.txt 文件本身**——
 >   监控文件在文件被删除重建时句柄可能失效，监控目录天然健壮（对齐 EAPO `FindFirstChangeNotificationW` 目录用法）
 > - **事件驱动**（v7.8，`config 6.2`）：`FindFirstChangeNotificationW` + `WaitForMultipleObjects`
 >   阻塞等待，替代旧 2000ms 轮询——延迟 10ms 级、无空闲 CPU
@@ -522,26 +524,28 @@ fn Initialize(&self, cb_data_size: u32, pby_data: *mut u8) -> HRESULT {
 > - **退出**：APO 实例持有 `shutdown_event`，UnlockForProcess 时 `SetEvent` + join watcher 线程
 > - `ConfigWatcher` 由 `ApoObject.watcher` 字段持有（`Option<ConfigWatcher>`），生命周期与锁定周期一致
 
-**config_path 确定规则（v7.2，P0-3）**：
+**config_path 确定规则（v7.2，P0-3；v8.9 方案 A 修订——系统级 ProgramData）**：
 
 ```
-Documents\VxAPO\{GUID}\config.txt
+C:\ProgramData\VxAPO\{GUID}\config.txt
 ```
 
+- **为什么系统级（v8.9，2026-08-04 用户确认）**：`{Documents}\VxAPO\{GUID}` 是**用户级路径**——
+  APO 真实运行在 **audiodg（SYSTEM 服务）**，它调 `documents_folder()` 拿到的是 **SYSTEM 的
+  Documents**，读不到 CLI（用户进程）写入的文件，导致「改 Documents 的 config 没效果」。
+  `C:\ProgramData\VxAPO` **全用户共享**（SYSTEM + 当前用户都可读写），与快照目录同根。
 - `{GUID}`：从 `APOInitSystemEffects.pAPOSystemEffectsProperties`（`IPropertyStore`）取
   `PKEY_AudioEndpoint_GUID`（PROPVARIANT VT_CLSID 的 `puuid`）获得端点 GUID（v7.6 修订），
   经 `sys/com/prelude::guid_to_string` 格式化为大写 `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`
-- **目录自动创建**：`VxAPO\{GUID}` 目录不存在时 `std::fs::create_dir_all` 创建
+- **目录自动创建**：`{CONFIG_ROOT}\{GUID}` 目录不存在时 `std::fs::create_dir_all` 创建
 - **config 默认写入**：config.txt 不存在时写入默认 passthrough（空文件或仅注释行，
   DLL 不创建预设——预设由 App/CLI 管理，dll 只兜底 passthrough）
 - **无设备 GUID 兜底**：`PKEY_AudioEndpoint_GUID` 提取失败 / 值为空（无端点属性）时，
-  回退单实例共用路径 `Documents\VxAPO\_default\config.txt`（日志告警，不阻断初始化）
-- **Documents 路径获取失败兜底（v7.6 修订，P0-3 实现对齐③）**：`documents_folder()` 失败时
-  回退**固定单实例路径** `C:\ProgramData\VxAPO\config.txt`（`DEFAULT_CONFIG_PATH` 常量，
-  非 `_default` 子目录——Documents 本身不可用时库路径也无意义，取系统级固定位置）
+  回退单实例共用路径 `C:\ProgramData\VxAPO\_default\config.txt`（日志告警，不阻断初始化）
+- **目录创建失败兜底**：`create_dir_all` 失败 → 回退**固定单实例路径**
+  `C:\ProgramData\VxAPO\config.txt`（`DEFAULT_CONFIG_PATH` 常量，非 `_default` 子目录）
 
 **引用来源**（追加）：
-- `crate::sys::known_folder::documents_folder`
 - `crate::sys::com::apo_types::APOInitSystemEffects`
 - `crate::sys::com::prelude::guid_to_string`
 - `crate::install::device::slots`（v8.4 新增，P0-6 三处矛盾消解——子 APO GUID 读取路径）：
@@ -656,7 +660,7 @@ fn LockForProcess(&self, num_input, pp_inputs, num_output, pp_outputs) -> HRESUL
     //   所有依赖必存在，杜绝"未锁定时新链无处放"分支。
     // - 前置 I/O 已完成：Initialize 的目录创建/默认 config 写入不会触发 watcher 空转。
     // - 对齐 EAPO：startMonitorThread() 在 LockForProcess 内调用。
-    // - watch_dir = config_path 父目录（Documents\VxAPO\{GUID}）；
+    // - watch_dir = config_path 父目录（C:\ProgramData\VxAPO\{GUID}，v8.9）；
     //   shutdown_event 由 APO 实例持有（UnlockForProcess 时 SetEvent + join）。
     // - 启动失败：降级（watcher=None，仅日志），不阻塞锁定——配置热重载失效但音频链路正常。
     //   （v7.10 实现缺口确认：start_watcher 接线属执行端 P0-4 剩余项，见 7.1.9 注）
