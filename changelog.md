@@ -1,5 +1,14 @@
 # Changelog
 
+## v8.12 — 2026-08-05
+
+变更类型：`引用边界收口`（系统 crate 类型只经 `sys/com/*` 重导出，HRESULT 常量集中于 prelude）
+
+- **`windows::Win32::Media::Audio::Apo` 不再被业务层直接引用**：接口 IID 统一走 `sys/com/apo_interfaces` 的 `IID_*` 常量；`APO_CONNECTION_*` / `APO_REG_PROPERTIES` / `WAVEFORMATEX` 走 `sys/com/apo_types` 重导出
+- **APOERR 错误码定义移至 `sys/com/prelude.rs`**：`apo_types.rs` 仅 re-export，消除 HRESULT 常量分散定义
+- **`SELFREG_E_CLASS` 收入 prelude**：`dll_exports.rs` 不再本地定义
+- **业务层原始 `HRESULT(0x...)` 清零**：`factory.rs`/`apo.rs`/`child.rs` 全部改用 prelude 常量
+
 ## v8.11 — 2026-08-05
 
 变更类型：`代码质量`（Rust 架构优化：安全/可读性/零成本抽象）

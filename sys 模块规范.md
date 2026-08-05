@@ -77,6 +77,23 @@ pub const E_INVALIDARG: HRESULT = HRESULT(0x8007_0057u32 as i32);
 pub const CLASS_E_CLASSNOTAVAILABLE: HRESULT = HRESULT(0x8004_0111u32 as i32);
 pub const E_OUTOFMEMORY: HRESULT = HRESULT(0x8007_000Eu32 as i32);
 pub const CLASS_E_NOAGGREGATION: HRESULT = HRESULT(0x8004_0110u32 as i32);
+pub const SELFREG_E_CLASS: HRESULT = HRESULT(0x8004_0201u32 as i32);
+
+// ── APO 专用 HRESULT 错误码（统一定义在 prelude，apo_types 仅重导出） ──
+pub const APOERR_ALREADY_INITIALIZED:          HRESULT = HRESULT(0x887D_0001u32 as i32);
+pub const APOERR_NOT_INITIALIZED:              HRESULT = HRESULT(0x887D_0002u32 as i32);
+pub const APOERR_FORMAT_NOT_SUPPORTED:         HRESULT = HRESULT(0x887D_0003u32 as i32);
+pub const APOERR_INVALID_APO_CLSID:            HRESULT = HRESULT(0x887D_0004u32 as i32);
+pub const APOERR_BUFFERS_OVERLAP:              HRESULT = HRESULT(0x887D_0005u32 as i32);
+pub const APOERR_ALREADY_UNLOCKED:             HRESULT = HRESULT(0x887D_0006u32 as i32);
+pub const APOERR_NUM_CONNECTIONS_INVALID:      HRESULT = HRESULT(0x887D_0007u32 as i32);
+pub const APOERR_INVALID_OUTPUT_MAXFRAMECOUNT: HRESULT = HRESULT(0x887D_0008u32 as i32);
+pub const APOERR_INVALID_CONNECTION_FORMAT:    HRESULT = HRESULT(0x887D_0009u32 as i32);
+pub const APOERR_APO_LOCKED:                   HRESULT = HRESULT(0x887D_000Au32 as i32);
+pub const APOERR_INVALID_COEFFCOUNT:           HRESULT = HRESULT(0x887D_000Bu32 as i32);
+pub const APOERR_INVALID_COEFFICIENT:          HRESULT = HRESULT(0x887D_000Cu32 as i32);
+pub const APOERR_INVALID_CURVE_PARAM:          HRESULT = HRESULT(0x887D_000Du32 as i32);
+pub const APOERR_INVALID_INPUTID:              HRESULT = HRESULT(0x887D_000Eu32 as i32);
 ```
 
 **禁止**：不包含任何自定义类型或业务逻辑。**唯一例外**：`guid_to_string` 函数——
@@ -270,6 +287,7 @@ pub use windows::Win32::Media::Audio::Apo::{
     APO_CONNECTION_DESCRIPTOR,   // 连接描述符（x64=40 / x86=20 字节）
     APO_CONNECTION_PROPERTY,     // 连接属性（x64=24 / x86=16 字节）
 };
+pub use windows::Win32::Media::Audio::{WAVEFORMATEX, WAVEFORMATEXTENSIBLE};
 ```
 
 > 结构体大小/偏移由 windows-rs 绑定保证，**不再需要** 3.3.8 中针对这些结构体的编译期断言。
@@ -283,9 +301,9 @@ pub use windows::Win32::Media::Audio::Apo::APOInitSystemEffects;
 ```
 
 > 由 windows-rs 0.62.2 提供，直接 re-export 不自定义。Initialize（`object 7.1.8`）接收
-> `pby_data` 指向 `APOInitSystemEffects`，从 `pAPOSystemEffectsProperties`（`IPropertyStore`）
-> 取 `PKEY_AudioEndpoint_GUID`（PROPVARIANT VT_CLSID 的 `puuid`）提取设备 GUID
-> （v7.2 定义，v7.6 修订为实测路径）。
+> `pby_data` 指向 `APOInitSystemEffects`，从 **`pAPOEndpointProperties`**（`IPropertyStore`）
+> 取 `PKEY_AudioEndpoint_GUID`（Windows 11 实测为 VT_LPWSTR；兼容 VT_CLSID）提取设备 GUID
+> （v7.2 定义，v7.6 修订为实测路径，v8.10 修正属性存储字段）。
 
 ---
 
@@ -365,21 +383,26 @@ pub const AUDIOMEDIATYPE_EQUAL_FORMAT_USER_DATA: u32 = 0x0000_0008;
 
 #### 3.3.7 APO 专用 HRESULT 错误码
 
+> APOERR 常量**统一定义在 `sys/com/prelude.rs`**（3.1），`apo_types` 仅做 re-export，
+> 避免 HRESULT 常量分散在多个系统子模块：
+
 ```rust
-pub const APOERR_ALREADY_INITIALIZED:          HRESULT = HRESULT(0x887D_0001u32 as i32);
-pub const APOERR_NOT_INITIALIZED:              HRESULT = HRESULT(0x887D_0002u32 as i32);
-pub const APOERR_FORMAT_NOT_SUPPORTED:         HRESULT = HRESULT(0x887D_0003u32 as i32);
-pub const APOERR_INVALID_APO_CLSID:            HRESULT = HRESULT(0x887D_0004u32 as i32);
-pub const APOERR_BUFFERS_OVERLAP:              HRESULT = HRESULT(0x887D_0005u32 as i32);
-pub const APOERR_ALREADY_UNLOCKED:             HRESULT = HRESULT(0x887D_0006u32 as i32);
-pub const APOERR_NUM_CONNECTIONS_INVALID:      HRESULT = HRESULT(0x887D_0007u32 as i32);
-pub const APOERR_INVALID_OUTPUT_MAXFRAMECOUNT: HRESULT = HRESULT(0x887D_0008u32 as i32);
-pub const APOERR_INVALID_CONNECTION_FORMAT:    HRESULT = HRESULT(0x887D_0009u32 as i32);
-pub const APOERR_APO_LOCKED:                   HRESULT = HRESULT(0x887D_000Au32 as i32);
-pub const APOERR_INVALID_COEFFCOUNT:           HRESULT = HRESULT(0x887D_000Bu32 as i32);
-pub const APOERR_INVALID_COEFFICIENT:          HRESULT = HRESULT(0x887D_000Cu32 as i32);
-pub const APOERR_INVALID_CURVE_PARAM:          HRESULT = HRESULT(0x887D_000Du32 as i32);
-pub const APOERR_INVALID_INPUTID:              HRESULT = HRESULT(0x887D_000Eu32 as i32);
+pub use crate::sys::com::prelude::{
+    APOERR_ALREADY_INITIALIZED,
+    APOERR_ALREADY_UNLOCKED,
+    APOERR_APO_LOCKED,
+    APOERR_BUFFERS_OVERLAP,
+    APOERR_FORMAT_NOT_SUPPORTED,
+    APOERR_INVALID_APO_CLSID,
+    APOERR_INVALID_COEFFCOUNT,
+    APOERR_INVALID_COEFFICIENT,
+    APOERR_INVALID_CONNECTION_FORMAT,
+    APOERR_INVALID_CURVE_PARAM,
+    APOERR_INVALID_INPUTID,
+    APOERR_INVALID_OUTPUT_MAXFRAMECOUNT,
+    APOERR_NOT_INITIALIZED,
+    APOERR_NUM_CONNECTIONS_INVALID,
+};
 ```
 
 #### 3.3.8 编译期断言
