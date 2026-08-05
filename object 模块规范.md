@@ -10,19 +10,14 @@
 
 ```
 object/
-├── apo.rs              # 核心模块
-│                        # ├── ApoObject（#[implement]，三接口）
-│                        # ├── ApoObjectState（核心状态）
-│                        # ├── StateCell（原子状态机 + RAII 回退守卫）
-│                        # ├── APOGUID_NOKEY / NOVALUE / GUID_NULL 常量
-│                        # ├── is_special_guid / is_valid_apo_guid / guid_matches
-│                        # ├── ConnectionFormat / LockConfig / FormatSupportResult
-│                        # ├── extract_format_from_media_type
-│                        # ├── IAudioProcessingObject_Impl（含完整校验）
-│                        # ├── IAudioProcessingObjectRT_Impl（含双链过渡 + catch_unwind）
-│                        # ├── IAudioProcessingObjectConfiguration_Impl（含 RAII 回退）
-│                        # ├── hot_reload（watcher 回调）
-│                        # └── 编译期断言
+├── apo.rs              # APO 核心模块入口（ApoObject + 四个 _Impl 接口实现）
+│   └── apo/
+│       ├── state.rs        # ApoState / StateCell / TransitionError / LockGuard
+│       ├── inner.rs        # ApoObjectInner + build_dsp_context
+│       ├── config.rs       # per-device 配置路径 + WatcherState + hot_reload_impl
+│       ├── negotiate.rs    # 格式协商（extract_format_ref / check_format_supported）
+│       ├── aggregate.rs    # COM 聚合委托外壳（NApo / NonDelegating）
+│       └── （预留 init.rs / process.rs / interfaces.rs 继续拆分）
 │
 ├── child.rs            # 子 APO COM 生命周期管理（类型化接口持有）
 │

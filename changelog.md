@@ -1,5 +1,14 @@
 # Changelog
 
+## v8.14 — 2026-08-05
+
+变更类型：`模块结构对齐`（apo.rs → apo.rs + apo/ 子模块，与 install/config/pipeline 同风格）
+
+- **`object/apo.rs` 改为模块入口**：保留 `ApoObject`、四个 COM `_Impl` 接口实现与公开 API
+- **新增 `object/apo/` 子模块**：`state.rs`（状态机）、`inner.rs`（ApoObjectInner）、`config.rs`（配置路径/热重载）、`negotiate.rs`（格式协商）
+- **聚合外壳收口**：`object/aggregate.rs` → `object/apo/aggregate.rs`，`factory.rs` 引用同步更新
+- **行为不变**：452 passed，外部引用路径仅 `factory.rs` 的 aggregate 路径更新
+
 ## v8.13 — 2026-08-05
 
 变更类型：`COM 引用边界收口`（`windows::Win32::System::Com` 统一经 prelude 重导出）
