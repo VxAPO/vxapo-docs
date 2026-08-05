@@ -1,5 +1,14 @@
 # Changelog
 
+## v8.11 — 2026-08-05
+
+变更类型：`代码质量`（Rust 架构优化：安全/可读性/零成本抽象）
+
+- **aggregate vtable 转发去重**：IAPO/RT/CFG stub 统一由 `forward_method!` 宏生成，消除重复的 vtable 索引/transmute 样板——对应 commit `b50ea9a`
+- **硬编码值提取常量**：AudioEngine 注册键（Flags/MaxInstances/连接数/接口 GUID）、MMDevices PKEY 值名、槽位 PID 均命名常量——对应 commit `b50ea9a`
+- **重复代码抽取**：`ChildApo::resolve_supported` 统一输入/输出格式协商；`make_reg_props` 统一 Pre/Post 注册属性——对应 commit `b50ea9a`
+- **可靠性修复**：`INST_COUNT::decrement` 改用 CAS 防下溢（并行测试 reset 交错不再把全局计数写成 u32::MAX）；移除 DSP process 路径里的 RT 探针 I/O——对应 commit `b50ea9a`
+
 ## v8.10 — 2026-08-05
 
 变更类型：`实现对齐 + 模块边界优化`（P0-7 父槽位加载/配置生效全链路修复 + utils/guid 下沉 + driver 安装卸载全流程收口）
