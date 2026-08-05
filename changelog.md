@@ -1,5 +1,16 @@
 # Changelog
 
+## v8.10 — 2026-08-05
+
+变更类型：`实现对齐 + 模块边界优化`（P0-7 父槽位加载/配置生效全链路修复 + utils/guid 下沉 + driver 安装卸载全流程收口）
+
+- **P0-7 父槽位加载闭环（driver 38a943b / cli ef1a0f4）**：聚合引用计数按 EAPO NonDelegating 语义修正；格式协商识别 WAVEFORMATEXTENSIBLE/IEEE_FLOAT；端点 GUID 从 `pAPOEndpointProperties` 读取并兼容 VT_LPWSTR；热重载过渡期 pending 不丢修改；`Chain::initialize()` 预计算 DSP 系数/状态——对应章节：`object 7.1.8/7.1.18`、`pipeline 4.5`、`install 5.5.2`
+- **driver 安装/卸载全流程收口**：`install_endpoint` 内置 DisableProtectedAudioDG、全局 APO 注册刷新、AudioSrv 重启；`uninstall_endpoint` 内置停服/重启——对应章节：`install 5.5.2`、`CLI 引用规范.md 5.1/5.3`
+- **`utils/guid.rs` 新增**：`guid_from_bytes` / `is_zero_guid` / `parse_guid_string` 从 `install/device/slots.rs` 下沉，安装层不再自持 GUID 解析——对应章节：`utils 8.3`、`install 5.3`
+- **模块边界表更新**：`install/selector/operation.rs` 允许依赖 `object/dll_exports::register_apo_with_path`；`Chain::initialize` 写入 pipeline/object 规范——对应章节：`install 引用约束总表`、`pipeline 4.5`、`object 7.1.8/7.1.18`
+
+> 对应 commit：`driver 38a943b / cli ef1a0f4`
+
 ## v8.9 — 2026-08-04
 
 变更类型：`实现对齐`（P0-7 端到端调试驱动——install/卸载/快照/EAPO 对齐 + config 路径系统级修正）

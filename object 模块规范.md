@@ -613,6 +613,7 @@ fn LockForProcess(&self, num_input, pp_inputs, num_output, pp_outputs) -> HRESUL
     let (filters, spec_chain) = self.config_parser.parse_file_with_spec(&self.config_path, &dsp_ctx)?;
     let mut chain = Chain::new();
     for f in filters { chain.add_filter(f)?; }
+    chain.initialize(dsp_ctx.sample_rate, &dsp_ctx.channel_names); // 预计算 DSP 系数/状态（GraphicEQ/PEQ/IIR/Delay/Convolution）
     let total_latency = chain.total_latency();
 
     // 预分配过渡缓冲区（v7.8 修订，杜绝 RT 线程 resize 扩容——EAPO 对齐：
@@ -719,7 +720,7 @@ fn UnlockForProcess(&self) -> HRESULT {
     if let Err(e) = self.state_cell.transition(ApoState::Locked, ApoState::Initialized) {
         return e.into();
     }
-    inner.current_chain = Box::new(Chain::new(0));
+    inner.current_chain = Box::new(Chain::new());
     inner.outgoing_chain = None;
     // R1（v6.9）：退役链由控制线程在锁内统一析构。
     inner.retired_chain = None;
@@ -958,7 +959,7 @@ fn CalcOutputFrames(&self, input_frames: u32) -> u32 {
 ```rust
 fn Reset(&self) -> HRESULT {
     let mut inner = self.mutex.lock().unwrap();
-    inner.current_chain = Box::new(Chain::new(0));
+    inner.current_chain = Box::new(Chain::new());
     inner.outgoing_chain = None;
     // R1（v6.9）：退役链由控制线程在锁内统一析构。
     inner.retired_chain = None;
@@ -1140,13 +1141,14 @@ fn hot_reload(&self) {
     }
 
     // 5. 构建新链（锁外）
-    let mut new_chain = Chain::new(current_ctx.max_frame_count);
+    let mut new_chain = Chain::new();
     for f in filters {
         if let Err(_) = new_chain.add_filter(f) {
             self.logger.log(LogLevel::Error, "hot_reload: add_filter failed");
             return;
         }
     }
+    new_chain.initialize(current_ctx.sample_rate, &get_channel_names(current_ctx.channel_mask));
 
     // 6. 短锁内交换（仅交换指针）
     let mut inner = self.mutex.lock().unwrap();

@@ -339,6 +339,7 @@ pub struct Chain {
 > - Chain 替换（`hot_reload`）不涉及缓冲区重分配
 > - 过渡模式下两个 Chain 共享同一组工作缓冲区（串行使用）
 > - `process()` 为纯计算操作，RT 安全
+> - **`initialize()` 必须在首次 `process()` 前调用**：GraphicEQ/PEQ/IIR/Delay/Convolution 等滤波器在 `initialize` 中预计算系数/分配状态；漏调会变成空处理（声音不变）
 
 **公开 API**：
 
@@ -346,6 +347,7 @@ pub struct Chain {
 impl Chain {
     pub fn new() -> Self;
     pub fn add_filter(&mut self, filter: Box<dyn Filter>) -> Result<()>;
+    pub fn initialize(&mut self, sample_rate: u32, channel_names: &[String]);
     pub fn total_latency(&self) -> u32;
     pub fn filter_count(&self) -> usize;
 

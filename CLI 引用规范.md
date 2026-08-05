@@ -263,13 +263,15 @@ main
      │        #   FxProperties 5 槽位 + childApoPath 键 + DisableEnhancements
      │        #   持久化 %ProgramData%\VxAPO\snapshots\{guid}.json
      │        #   （config 比对不属 CLI 快照——driver 目录监控 + spec 序列对齐，见 Phase C 注）
-     ├─ 5. ensure_can_load()                                 # driver audiodg：DisableProtectedAudioDG 检查
+     ├─ 5. auto_register_driver()                            # 每次安装刷新全局 APO 注册（幂等，补全 AudioEngine 键）
      ├─ 6. install_endpoint(&guid, &name, &conn, &config, true)  # driver：Note 47 七步 + v8.5 全量/非全量判定 + verify=true 管线自检
      │     └─（driver 内部，CLI 不可见）：
      │        internal: child_apo_key_exists(guid)           # → 全量备份 / 非全量（失守覆盖 childapo）路径
      │        internal: Transaction 保护（失败逆序回滚）
      │        internal: write FxProperties 槽位 + childApoPath 安装信息区 + 处理模式 GUID
+     │        internal: DisableProtectedAudioDG=1            # 第三方 APO 可加载前置
      │        internal: verify=true → 激活 IAudioClient 管线自检（E3.4 v8.3：GetMixFormat + Initialize）
+     │        internal: restart AudioSrv                     # 新槽位拓扑生效（EAPO 安装对齐）
      ├─ 7. 成功 → 打印「已安装 <guid>（模式 <mode>，子 APO 保留=...）」；失败 → 打印 driver Err + 建议 snapshot 恢复
      └─ 8. （可选）config set / config show 验证安装后配置（见 5.2 后续步骤）
 ```
@@ -309,8 +311,10 @@ main
      ├─ 2. (guid, ..) = resolve_device(args.device)
      ├─ 3. **不重照快照**（基线保持，用户明确）——`diff_snapshot(baseline, current)` 用**最开始的基线**
      │        # 展示「卸载是否恢复原状/清除了什么」；基线只在下次重新安装时替换（`snapshot_device(replace=true)`）
-     ├─ 4. uninstall_endpoint(&guid)                            # driver：删除 FxProperties 槽位 VxAPO CLSID
+     ├─ 4. uninstall_endpoint(&guid)                            # driver：停服务 → 删除 FxProperties 槽位 VxAPO CLSID → 重启服务
+     │     └─（driver 内部）停止 AudioSrv + taskkill 兜底（audiodg 句柄释放）
      │     └─（driver 内部）删除 childApoPath\{guid} 整个键（v8.5 卸载必删——再次安装回全量路径）
+     │     └─（driver 内部）重启 AudioSrv（恢复输出）
      ├─ 5. 成功 → 打印「已卸载 <guid>」+ `snapshot diff`（红绿对比卸载清除项/已还原项）
      ├─ 6. 失败 → 打印 driver Err（步骤级错误 → 5.4）+ `snapshot diff` + 建议 `snapshot restore`
      └─ 7. 可选 config 清理：删除 C:\ProgramData\VxAPO\{guid}\config.txt（用户确认，v8.9）

@@ -37,7 +37,7 @@ install/
 | `install/device/info.rs` | `device/endpoint`、`device/format`、`device/slots`、`sys/registry`、`object/vx_reg_props`、`utils/error` | `pipeline/`、`config/` |
 | `install/selector.rs` | `selector/select`、`selector/operation`（入口聚合） | `pipeline/`、`config/` |
 | `install/selector/select.rs` | `install/device/info`（`enumerate_devices`）、`utils/error` | `pipeline/`、`config/`、`sys/registry`（不得自行遍历） |
-| `install/selector/operation.rs` | `install/device/slots`、`install/device/format`、`sys/registry`、`object/vx_reg_props`、`sys/com/prelude`（`guid_to_string`）、`utils/error` | `pipeline/`、`config/` |
+| `install/selector/operation.rs` | `install/device/slots`、`install/device/format`、`sys/registry`、`object/vx_reg_props`、`object/dll_exports`（`register_apo_with_path`，安装注册刷新）、`sys/com/prelude`（`guid_to_string`）、`utils/error` | `pipeline/`、`config/` |
 | `install/audiodg.rs` | `sys/registry` | `pipeline/`、`config/` |
 
 ---
@@ -153,7 +153,7 @@ pub fn read_audio_format(
 
 **引用来源**：
 - `crate::sys::registry::RegKey`
-- `crate::utils::guid::{format_guid, parse_guid_from_bytes}`
+- `crate::utils::guid::{guid_from_bytes, is_zero_guid, parse_guid_string}`
 - `crate::sys::com::prelude::guid_to_string`（GUID 标准字符串格式化，安全收窄边界）
 
 **导出给**：`install/device/info.rs`、`install/selector/operation.rs`、`object/apo.rs`（v8.4：运行期子 APO GUID 读取——端点 GUID → `HKLM\SOFTWARE\VxAPO\Child APOs\{deviceGuid}\{PreMixChild|PostMixChild}`）
@@ -455,6 +455,7 @@ pub fn prompt_user(devices: &[DeviceInfo]) -> Result<usize>;
 - `install/device/format::*`
 - `crate::sys::registry::{RegKey, RegValue}`（备份经 `save_to_file` 委托）
 - `crate::object::vx_reg_props::{CLSID_VXAPO_PRE_MIX, CLSID_VXAPO_POST_MIX}`
+- `crate::object::dll_exports::register_apo_with_path`（安装前刷新全局 APO 注册，补全 AudioEngine 键）
 - `crate::sys::com::prelude::guid_to_string`（GUID 格式化）
 - `crate::utils::vx_error::{Result, VxApoError}`
 
@@ -525,6 +526,11 @@ pub fn uninstall_endpoint(device_guid: &str) -> Result<()>;
   uninstall 按此恢复被覆盖的第三方 APO（EAPO 等），否则快照恢复后槽位变 NoValue
   （2026-08-04 实测：VxAPO 把 EAPO 弄成子 APO 后另一软件又覆盖父槽位 → 卸载需恢复 EAPO）。
 
+**0a. 前置（v8.10，driver 全流程收口）**：
+- `DisableProtectedAudioDG=1`（`install/audiodg::disable`）——audiodg 创建 APO 实例前检查，缺值拒载；
+- `refresh_global_registration()`——读已有 CLSID→DLL 绑定并调 `object/dll_exports::register_apo_with_path`
+  补全/覆盖 `AudioEngine\AudioProcessingObjects` 完整字段（旧注册缺 MaxInstances 等导致父槽位不加载）。
+
 1. 创建 **VxAPO 独立安装信息区** `HKLM\SOFTWARE\VxAPO\Child APOs\{deviceGuid}` 键
    （v8.4 路径隔离修正：**对齐 EAPO `HKLM\SOFTWARE\EqualizerAPO\Child APOs`（childApoPath，
    RegistryHelper.h 33 + DeviceAPOInfo.cpp 43）的机制，但用 VxAPO 自己的 SOFTWARE\VxAPO 根**；
@@ -555,12 +561,16 @@ pub fn uninstall_endpoint(device_guid: &str) -> Result<()>;
    - **capture 特例（v8.9，EAPO DeviceAPOInfo.cpp 583/607/632 对齐）**：采集端点（路径含
      Capture）只装 PreMix、不装 PostMix（VxAPO 不做采集端增强）；`PreMixChild` 备份保留、
      PostMixChild 强制 None
+8. **重启 AudioSrv**（`install/audiodg::restart_audio_service`，EAPO 安装对齐）——
+   使新槽位拓扑/注册生效；CLI 不再重复重启
 
 整个安装在 `Transaction`（Drop 时逆序回滚）保护下执行，任何步骤失败时自动回滚。
 
 **卸载流程**（v8.5 补删键；v8.9 实现对齐——只删 VxAPO CLSID/删空才恢复/接管者不覆盖）：
 
 **卸载语义（2026-08-04 用户明确+实测）**：只卸载「能确定属于 VxAPO 的部分」，绝不碰其他 APO：
+0. **先停 AudioSrv**（`install/audiodg::stop_audio_service`）——audiodg 持有点端会锁
+   MMDevices 槽位句柄，不停服删除会失败
 1. 定位端点 FxProperties（不存在 → 视为未安装，返回成功）；**用 `open_for_write` 打开**
    （删除值需写权限；SAM_ALL 超权限在 MMDevices 端点键被拒 0x80070005）
 2. **只删 VxAPO 的 CLSID**：遍历 5 槽位，仅当槽位值 == VxAPO PRE/POST CLSID 才删除
@@ -568,15 +578,13 @@ pub fn uninstall_endpoint(device_guid: &str) -> Result<()>;
    **注意**：不能用 `read_all_slots`（期望端点根键、内部再 open FxProperties）；当前句柄已是
    FxProperties 键，需用 `read_slot_value` 直接在 fx_key 上读（2026-08-04 实测：uninstall 后
    slot 残留 VxAPO CLSID 即此因）
-3. **槽位空才写回备份（快照恢复核心）**——VxAPO 槽位被删后（NoValue/NoKey）才把信息区
-   `PreMixSlotValue` 读回写槽位（恢复 EAPO 等）；若槽位已被其他 APO 接管（Guid≠备份值）→
-   **尊重接管者，不覆盖**（用户实测：VxAPO 把 EAPO 弄成子 APO 后另一软件又覆盖父槽位，
-   卸载不覆盖接管软件所有权）
-4. **恢复完成后**再删除信息区 `HKLM\SOFTWARE\VxAPO\Child APOs\{deviceGuid}` 整个键
-   （先恢复槽位从信息区读值、再删键，避免读到一半被删；v8.5 产品意图：卸载必删键 →
-   再次安装回「全量路径」判定）
+3. **不写回第三方 APO**（v8.10，2026-08-05 用户纠正：**卸载 ≠ 快照恢复**）——
+   install 时备份的 EAPO 等前任 APO 只在 `snapshot restore` 时恢复；卸载只清 VxAPO 自己的 CLSID
+4. 删除信息区 `HKLM\SOFTWARE\VxAPO\Child APOs\{deviceGuid}` 整个键（v8.5 产品意图：
+   卸载必删键 → 再次安装回「全量路径」判定）
 5. 清理 FxProperties 上的旧遗留 VxAPO 配置值（childGuid/allowSilentBuffer/autoAdjust/version，
    best-effort）+ DisableEnhancements
+6. **重启 AudioSrv**（`install/audiodg::restart_audio_service`）恢复输出
 
 **事务回滚**（原 rollback.rs 职责，合并至此）：
 
@@ -631,6 +639,12 @@ pub fn restore() -> Result<()>;
 ///
 /// 由 object/apo.rs LockForProcess 调用。
 pub fn ensure_can_load() -> Result<()>;
+
+/// 停止 Windows 音频服务（只停不启，卸载前置）。
+pub fn stop_audio_service() -> Result<()>;
+
+/// 重启 Windows 音频服务（安装/卸载收尾，EAPO 安装对齐）。
+pub fn restart_audio_service() -> Result<()>;
 ```
 
 **注册表路径**：`HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Audio`

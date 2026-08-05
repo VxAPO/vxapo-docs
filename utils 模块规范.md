@@ -2,7 +2,7 @@
 
 **边界**：不依赖任何其他模块
 
-**允许依赖**：`windows-core`（仅 `vx_error.rs` 中的 `check_hresult`）
+**允许依赖**：`windows-core`（`vx_error.rs` 中的 `check_hresult`、`guid.rs` 中的 `GUID`）
 
 **禁止依赖**：`sys/`、`pipeline/`、`install/`、`config/`、`object/`、`telemetry/`
 
@@ -11,6 +11,7 @@
 ```
 utils/
 ├── align.rs       # SIMD 对齐工具
+├── guid.rs        # GUID 纯解析工具（字节/字符串 → GUID）
 └── vx_error.rs    # VxApoError 业务错误
 ```
 
@@ -76,4 +77,27 @@ impl From<VxApoError> for HRESULT {
 }
 ```
 
-> GUID 转换直接使用 `windows::core::GUID` 的 `Display` trait（`format!("{guid}")` 输出标准格式）和 `GUID::from_values` 构造，无需自定义工具函数。`sys/registry.rs` 中的 `get_guid_string` 内部通过 `GUID::from_values` 和 `Display` 完成二进制到字符串的转换。
+> GUID 字符串化统一走 `sys/com/prelude::guid_to_string`（`StringFromGUID2` 安全收窄）；`utils/guid` 只做反向解析（字节/字符串 → GUID），不重复实现正向格式化。
+
+### 8.3 `utils/guid.rs`
+
+**职责**：GUID 反向解析纯函数（16 字节小端原始数据 → GUID、`{XXXXXXXX-...}` 字符串 → GUID）。不包含 I/O、不包含业务逻辑、不感知 APO/注册表/COM。
+
+**引用来源**：
+- `windows::core::GUID`
+
+**导出给**：`install/device/slots.rs` 等需要把注册表二进制/字符串解析为 GUID 的模块。
+
+**公开 API**：
+```rust
+/// 16 字节小端（data1/data2/data3）+ data4 原始 → GUID。
+pub fn guid_from_bytes(bytes: &[u8]) -> Option<GUID>;
+
+/// GUID 是否为全零（Windows「无 APO」占位）。
+pub fn is_zero_guid(g: &GUID) -> bool;
+
+/// 解析 `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}` 格式 GUID 字符串。
+pub fn parse_guid_string(s: &str) -> Option<GUID>;
+```
+
+> 反向解析（字节/字符串 → GUID）统一收口到 `utils/guid`；正向格式化（GUID → 字符串）仍由 `sys/com/prelude::guid_to_string` 负责，避免在安装层重复实现解析逻辑。
