@@ -15,6 +15,8 @@
 - **feedback：P0-7-1 已修订**（detect_install_mode 实现先行 + 规范同步 + config 路径系统级）——**对应章节**：`feedback.md #P0-7-1`
 - **roadmap：P0-7 落点补充**（detect_mode_for_device/guid + 快照恢复 + ProgramData 路径；依赖 P0-4/P0-5/P0-6 均 Done）——**对应章节**：`roadmap P0-7`
 
+> 对应 commit：`d7e41da`
+
 ## v8.8 — 2026-08-04
 
 变更类型：`文档同步`（P0-7 CLI 端到端验证——《CLI 引用规范.md》定稿）
