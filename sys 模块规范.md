@@ -57,6 +57,10 @@ pub use windows::core::{
     IUnknown, IUnknown_Vtbl, Interface, interface, GUID, HRESULT, implement,
 };
 pub use windows::Win32::System::Com::{IClassFactory, StringFromGUID2};
+pub use windows::Win32::System::Com::{
+    CLSCTX_ALL, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx,
+    CoTaskMemAlloc, CoTaskMemFree, IClassFactory_Impl,
+};
 
 // ── GUID 格式化辅助（唯一允许的"自定义函数"特例） ──
 /// 将 GUID 格式化为标准字符串 `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`。

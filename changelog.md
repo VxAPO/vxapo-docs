@@ -1,5 +1,13 @@
 # Changelog
 
+## v8.13 — 2026-08-05
+
+变更类型：`COM 引用边界收口`（`windows::Win32::System::Com` 统一经 prelude 重导出）
+
+- **prelude 收口 COM 类接口/入口**：`IClassFactory` / `IClassFactory_Impl` / `CoCreateInstance` / `CoInitializeEx` / `CoTaskMemAlloc` / `CoTaskMemFree` / `CLSCTX_*` / `COINIT_MULTITHREADED`
+- **业务层不再直接引用 `System::Com`**：`apo.rs` / `child.rs` / `factory.rs` / `dll_exports.rs` / `operation.rs` 全部改走 prelude
+- **`IUnknown` / `Interface` / `GUID` / `HRESULT` / `implement` 也从 prelude 引入**，object/install 层不再出现 `windows::core::GUID` 等全限定 COM 类型
+
 ## v8.12 — 2026-08-05
 
 变更类型：`引用边界收口`（系统 crate 类型只经 `sys/com/*` 重导出，HRESULT 常量集中于 prelude）
