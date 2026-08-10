@@ -1335,16 +1335,21 @@ pub fn parse_copy_ops(spec: &str, channel_names: &[String]) -> Option<Vec<Channe
 
 ### 4.18 `pipeline/dsp/graphic_eq.rs`
 
-**职责**：图形均衡器（EqualizerAPO 对齐：对数频率插值 + 最小相位 FIR + 直接时域卷积）。
+**职责**：图形均衡器（EqualizerAPO 对齐：对数频率插值 + 最小相位 FIR + 分块 FFT 卷积）。
 
 **引用来源**：`crate::pipeline::dsp::filter::Filter`、`crate::pipeline::dsp::convolution::ConvolutionFilter`、`rustfft`
 
 **导出给**：仅 `pipeline/dsp/` 内部
 
-**v9.0 行为要点**：
+**行为要点（v9.0 建立，v9.5 修订卷积执行方式）**：
 - 节点增益在 `log(freq)` 上线性插值，频带外取端点增益；
-- 用 cepstrum 生成 **1024 点最小相位 FIR**，`initialize` 时通过 `ConvolutionFilter::with_ir_direct` 建立直接时域卷积；
-- 无分区块延迟，**不向引擎上报延迟**（GetLatency 无 child 返回 0，与 EAPO 对齐）；
+- 用 cepstrum 生成 **1024 点最小相位 FIR**，`initialize` 时通过 `ConvolutionFilter::with_ir`
+  建立**分块 FFT 卷积**（块 128，v9.5）——频响与旧直接 FIR 一致，单实例 CPU 约降 3~4 倍，
+  多路音频流（每路一个 PreMix 实例）不再吃满 audiodg；
+- 分块带来 128 采样隐藏延迟（≈2.7ms@48k），**不向引擎上报延迟**
+  （GetLatency 无 child 返回 0，与 EAPO 对齐）；
+- `GraphicEQ:` **空参数 = 显式移除 EQ**（不产生滤波器，等同 passthrough），
+  且产出 spec 指纹（与“无此命令”不同）——热重载据此把旧 EQ 链切换为空链（v9.5）；
 - 旧的「多段 biquad 级联」已废弃：Q=1.414 级联会让相邻负增益叠加，实测中心衰减 -11~-12 dB 而非目标 -3 dB。
 
 **公开 API**：

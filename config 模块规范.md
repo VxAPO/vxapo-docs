@@ -833,6 +833,9 @@ pub fn handle(value: &str, ctx: &mut ParseContext) -> Result<(), ConfigError>;
 
 **语义**：解析频段参数，通过 `registry.try_create("GraphicEQ", ...)` 动态创建。不直接 import `graphic_eq.rs`。
 
+> **空参数（v9.5）**：`GraphicEQ:` 空参数 = 显式移除 EQ（不产生滤波器，等同 passthrough）；
+> parser 仍产出 `graphiceq` spec 指纹（与“配置里没有 GraphicEQ”不同），热重载据此切换。
+
 ---
 
 ### 6.11 `config/commands/preamp.rs`
