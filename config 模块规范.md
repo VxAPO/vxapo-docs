@@ -924,7 +924,8 @@ pub fn handle(value: &str, ctx: &mut ParseContext) -> Result<(), ConfigError>;
 ### 6.16 效果器命令（v9.3，注册表分派）
 
 **职责**：`AuralEnhancer:` / `Reverb:` / `Maximizer:` / `Wide:` 四个可调参效果器
-（Reverb v9.3 起为 Dattorro 板式混响独立实现；其余三个仍为 FxSound 移植）。
+（Reverb v9.3 起为 Dattorro 板式混响独立实现；Maximizer v9.8 起为自动增益 +
+lookahead 峰值限幅独立实现；Aural / Wide 仍为 FxSound 移植）。
 无 `config/commands/*.rs` 文件——通过 `pipeline/dsp/factory.rs` 注册
 （`register_builtin_filters` 追加四个工厂），parser 默认分支按命令名精确分派
 （6.1 `try_create_named`），**无需静态分发分支**。
@@ -955,6 +956,9 @@ pub fn handle(value: &str, ctx: &mut ParseContext) -> Result<(), ConfigError>;
 - 全部参数先解析再 clamp 到效果器自身区间（Reverb v9.3 起不再引用 c_lex 区间）；
   任一 key 未知、缺值或值非法 →
   解析失败 → parser 报 `SyntaxError「命令无效」`（整体解析失败，保留旧链）；
+- Maximizer（v9.8）：`Target` 为自动增益回退的电平阈值（`GainBoost·rms > Target`
+  时有效增益降为 `max(Target/rms, 1.0)`）；`Lookahead` 同时作为 attack 时长与
+  延迟线长度；`MaxOutput` 为输出硬钳位上限；`Release` 为包络线性回弹时间；
 - 参数变更走现有 config 热重载（Filter 重建），不支持流内实时改写；
 - `process` 运行在 RT 线程：零分配、无锁、无 I/O；`latency()` 返回 0。
 

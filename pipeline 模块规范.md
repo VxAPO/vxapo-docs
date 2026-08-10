@@ -1463,10 +1463,10 @@ pub fn parse_loudness_params(spec: &str) -> Option<(f32, f32)>;
 
 ### 4.22 `pipeline/dsp/fxsound/`（效果器子模块，v9.3）
 
-**来源与许可**：`aural.rs` / `maximizer.rs` / `wide.rs` 移植自 FxSound `Auralp.c` /
-`Maxi16.c` / `Wide32.c`（AGPL-3.0-or-later，保留版权头与来源注释）；
-`reverb.rs` 自 v9.3 起按 Jon Dattorro 1997 论文独立实现（原创代码，无 AGPL 版权头，
-来源注释指向论文与 ValleyRackFree / johnhw 交叉核对）。
+**来源与许可**：`aural.rs` / `wide.rs` 移植自 FxSound `Auralp.c` / `Wide32.c`
+（AGPL-3.0-or-later，保留版权头与来源注释）；`reverb.rs` 自 v9.3 起按 Jon
+Dattorro 1997 论文独立实现；`maximizer.rs` 自 v9.8 起独立实现（原创代码，无
+AGPL 版权头，来源注释指向 FFmpeg `alimiter` 的多峰调度思想）。
 
 **职责**：四个可调参效果器，以 EAPO 风格 `Key Value` 命令接入 config：
 
@@ -1474,7 +1474,7 @@ pub fn parse_loudness_params(spec: &str) -> Option<(f32, f32)>;
 |------|------|------|
 | `aural.rs` | Aural Enhancer（二阶 Butterworth 高通 + sin 奇偶谐波激励，Wet/Dry） | `AuralEnhancer:` |
 | `reverb.rs` | Dattorro 板式混响（输入 4 级 AllPass 扩散 + 双槽交叉反馈 + 14 抽头输出，论文 Fig.1/Table 1/Table 2） | `Reverb:` |
-| `maximizer.rs` | Maximizer（0.1 Hz 电平估计 + lookahead 峰值限幅 + LCG 抖动 + 16-bit 量化） | `Maximizer:` |
+| `maximizer.rs` | Maximizer（v9.8 独立实现：自动增益 + lookahead 峰值限幅 + 多峰事件队列包络 + 16-bit 抖动量化） | `Maximizer:` |
 | `wide.rs` | Wide（M/S 分解立体声加宽：侧信号放大 + 中央补偿，无滤波/延迟） | `Wide:` |
 
 **引用来源**：`crate::pipeline::dsp::filter::Filter`（四个 Filter 均实现该 trait）。
@@ -1522,19 +1522,22 @@ pub struct WideFactory;                  // impl FilterFactory, command_name() =
 - Reverb：RoomSize 1.0 / Decay 0.565664 / Damping 0.408290 / Bandwidth 0.350110 /
   Density 1.0 / Lat5 0.70 / Lat6 0.50 / PreDelay 0 ms / MotionRate 0.110871 /
   MotionDepth 0.63 ms / Wet 0.3 / Dry 0.9；
-- Maximizer：GainBoost 6 dB / MaxOutput -0.3 dB / Release 10.18 ms（= β 0.997776 @44.1k）/
+- Maximizer：GainBoost 6 dB / MaxOutput -0.3 dB / Release 10.18 ms /
   Target 0.32 / Lookahead 0.75 ms / Dither Shaped / Wet 1.0 / Dry 0.0。
 - Wide：Intensity 0.354331（Wide32.c Starting Presets；0 时严格直通）。
 
-**关键移植换算**：
+**关键换算**：
 - Aural 高通：`omega = 2π·TuneHz/sr`，`tmp = 1/(4+ω²+2√2ω)`，
   `gain = 4·tmp`，`a1 = (8-2ω²)·tmp`，`a0 = (2√2ω-4-ω²)·tmp`；
 - Reverb（Dattorro）：参考采样率 29761 Hz；输入扩散 142/107/379/277；
   槽内 672/908（正交 LFO 调制 APF，深度 16 采样@29761Hz）、4453/4217、1800/2656、3720/3163；
   输出抽头按论文 Table 2（每项 0.6，左/右各 7 抽头）；RoomSize 只缩放槽内段长，
   输入扩散与输出抽头按物理时间固定；LoopGain = 0.25 + 0.70·Decay；
-- Maximizer 电平低通（0.1 Hz）：`a0 = 2 - cos(ω) - sqrt(cos²ω - 4cosω + 3)`，`filt_gain = 1 - a0`；
-  release：`beta = exp(-1/(ms·0.001·sr))`；lookahead：`trunc(sr·0.00075)`；
-  抖动 LCG：`seed = (3141592621·seed + 2718282829) % 4294967291`；
+- Maximizer（v9.8 独立实现）：自动增益电平估计为全声道单极点 RMS（τ≈250 ms），
+  `GainBoost·rms > Target` 时有效增益 `= max(Target/rms, 1.0)`；lookahead 环形延迟
+  `N = round(sr·lookahead_ms/1000)`（输出滞后 N-1 帧）；attack 斜率
+  `(limit/peak - att)/N`，超限峰值以事件队列按触发顺序调度（参考 FFmpeg alimiter
+  多峰调度），事件后以 `(1 - limit/peak)/(sr·release_sec)` 线性回弹，输出硬钳位到
+  `limit`；抖动用独立 xorshift64* PRNG（Uniform/Triangular/Shaped），16-bit 量化。
 - Wide：`mono = (L+R)·0.5`，侧增益 `1+3·Intensity`，中央补偿 `1-0.3·Intensity`；
   单声道输出按 C 语义 `out *= 0.5`；仅处理前两个选中通道（立体声 M/S 插件语义）。

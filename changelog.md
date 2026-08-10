@@ -1,5 +1,23 @@
 # Changelog
 
+## v9.8 — 2026-08-10
+
+变更类型：`结构重构 + 模块规范更新`（Maximizer 替换为独立 lookahead 峰值限幅器）
+
+- **Maximizer 算法替换（v9.8）**：移除 FxSound `Maxi16.c` 移植与 AGPL 版权头，
+  改为独立实现的「自动增益 + lookahead 峰值限幅」——全声道单极点 RMS 电平估计
+  （τ≈250 ms）+ `Target` 增益回退；环形延迟（`Lookahead` 兼作 attack 时长）+
+  多峰事件队列调度（参考 FFmpeg alimiter 思想）+ 线性 release + 输出硬钳位；
+  抖动改为独立 xorshift64* PRNG（Uniform/Triangular/Shaped，16-bit 量化）；
+  命令名与全部参数（GainBoost/MaxOutput/Release/Target/Lookahead/Dither/Wet/Dry）
+  保持不变，config 兼容、spec 指纹不变——**对应章节**：`pipeline 4.22`、`config 6.16`
+- **测试**：新增延迟线对齐、超限脉冲钳位、release 恢复、静音、自动增益满增益等
+  用例，Maximizer 模块 18 passed；全量 `cargo test --lib` 561 passed（4 个既有
+  管理员权限用例除外），release 构建成功。
+- **模块引用规范（无详细模块版）.md**：版本号 v9.7 → v9.8；模块树 fxsound 注释更新。
+
+> 对应 commit：driver `30a1a2e` / cli `无变更` / docs `待回填`
+
 ## v9.7 — 2026-08-10
 
 变更类型：`性能优化 + 模块规范更新`（GraphicEQ 1024 点 FIR + AVX2/FMA 向量化，移除启动静音）
@@ -14,7 +32,7 @@
   全量 `cargo test --lib` 556 passed（4 个既有管理员权限用例除外），release 构建成功。
 - **模块引用规范（无详细模块版）.md**：版本号 v9.6 → v9.7。
 
-> 对应 commit：driver `待回填` / cli `无变更` / docs `待回填`
+> 对应 commit：driver `7216d2d` / cli `无变更` / docs `277f017`
 
 ## v9.6 — 2026-08-10
 
