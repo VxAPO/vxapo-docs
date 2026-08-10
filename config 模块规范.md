@@ -924,8 +924,9 @@ pub fn handle(value: &str, ctx: &mut ParseContext) -> Result<(), ConfigError>;
 ### 6.16 效果器命令（v9.3，注册表分派）
 
 **职责**：`AuralEnhancer:` / `Reverb:` / `Maximizer:` / `Wide:` 四个可调参效果器
-（Reverb v9.3 起为 Dattorro 板式混响独立实现；Maximizer v9.8 起为自动增益 +
-lookahead 峰值限幅独立实现；Aural / Wide 仍为 FxSound 移植）。
+（均为独立实现：Reverb v9.3 Dattorro 板式混响；Maximizer v9.8 自动增益 +
+lookahead 峰值限幅；Wide v9.9 双频段 velvet 去相关加宽；Aural v9.9 tanh
+软饱和 + 电平跟随）。
 无 `config/commands/*.rs` 文件——通过 `pipeline/dsp/factory.rs` 注册
 （`register_builtin_filters` 追加四个工厂），parser 默认分支按命令名精确分派
 （6.1 `try_create_named`），**无需静态分发分支**。
@@ -949,8 +950,9 @@ lookahead 峰值限幅独立实现；Aural / Wide 仍为 FxSound 移植）。
     Target [0.01, 1.0]，Lookahead [0, 10] ms，Dither ∈ None|Uniform|Triangular|Shaped
     （None 不量化，其余 16-bit 量化 + 抖动）；默认 Wet 1.0 / Dry 0.0。
 - `Wide: Intensity 0.354331`
-  - Intensity [0, 1]（默认 0.354331；0 时严格直通）；立体声 M/S 插件语义，
-    只处理前两个选中通道，单声道按 C 语义输出减半。
+  - Intensity [0, 1]（默认 0.354331；0 时严格直通）；双频段加宽：500 Hz
+    Linkwitz-Riley 分频，低频段宽度为高频段 25%，每声道独立 velvet 去相关；
+    只处理前两个选中通道，单声道直通。
 
 **语义**：
 - 全部参数先解析再 clamp 到效果器自身区间（Reverb v9.3 起不再引用 c_lex 区间）；
@@ -959,7 +961,9 @@ lookahead 峰值限幅独立实现；Aural / Wide 仍为 FxSound 移植）。
 - Maximizer（v9.8）：`Target` 为自动增益回退的电平阈值（`GainBoost·rms > Target`
   时有效增益降为 `max(Target/rms, 1.0)`）；`Lookahead` 同时作为 attack 时长与
   延迟线长度；`MaxOutput` 为输出硬钳位上限；`Release` 为包络线性回弹时间；
+- Aural：`TuneHz` 为激励频段高通起点；`Drive` 驱动 tanh 软饱和；`Odd`/`Even`
+  混合奇次/偶次谐波；峰值电平跟随使谐波占比不随输入电平变化；
 - 参数变更走现有 config 热重载（Filter 重建），不支持流内实时改写；
 - `process` 运行在 RT 线程：零分配、无锁、无 I/O；`latency()` 返回 0。
 
-**实现位置**：`pipeline 模块规范.md 4.22`（`pipeline/dsp/fxsound/`）。
+**实现位置**：`pipeline 模块规范.md 4.22`（`pipeline/dsp/` 效果器）。

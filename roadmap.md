@@ -311,28 +311,28 @@
 > 达标口径：命令行完成设备配置管理、导入导出、预设；4 个 FxSound 效果可听。
 
 ### P1-1  FxSound 效果接入（Wide → Aural → Maximizer → Lex）
-- 状态：已实现（v9.1 Aural/Maximizer/Reverb + v9.2 Wide，4/4；v9.3 起算法逐个升级，
-  Reverb → Dattorro、Maximizer → 独立实现（v9.8）已完成；听感验证留手动）
+- 状态：已实现（v9.1 Aural/Maximizer/Reverb + v9.2 Wide，4/4；v9.3 Reverb →
+  Dattorro、v9.8 Maximizer、v9.9 Wide/Aural 均已完成独立实现；听感验证留手动）
 - 优先级：P1 ｜ 关联 Phase：Phase 11
 - 目标：四个 FxSound 效果作为原生 Filter 接入 config.txt 解析链路，按复杂度递增
-- 影响模块：`pipeline/dsp/fxsound/{aural,reverb,maximizer,wide}.rs`、`pipeline/dsp/factory.rs`
-- 规范落点：`pipeline 4.22`（fxsound 子模块）+ `config 6.16`（四个命令语法）+ `pipeline 4.10`（工厂注册）
+- 影响模块：`pipeline/dsp/{aural,reverb,maximizer,wide}.rs`、`pipeline/dsp/factory.rs`
+- 规范落点：`pipeline 4.22`（效果器模块）+ `config 6.16`（四个命令语法）+ `pipeline 4.10`（工厂注册）
 - 依赖：P0-2（解析链路先通）
 - DoD：☑ 规范定稿 ☑ 实现（4/4） ☑ 算法升级起步（v9.3 Reverb → Dattorro） ☐ 听感验证（留手动）
 
 ### P1-3  效果器算法升级（更优算法替换）
-- 状态：进行中（v9.3 Reverb → Dattorro、v9.8 Maximizer → 独立 lookahead 限幅
-  已完成；剩余 Wide → Aural）
+- 状态：已完成（v9.3 Reverb → Dattorro、v9.8 Maximizer → 独立 lookahead 限幅、
+  v9.9 Wide → 双频段 velvet 去相关、Aural → tanh 电平独立激励，4/4）
 - 优先级：P1 ｜ 关联 Phase：Phase 11
 - 目标：用户反馈 FxSound 移植效果听感一般；在命令名与参数面不变的前提下逐个替换为
-  文献级更优算法——Reverb（Dattorro，1997 论文）已完成；Maximizer（lookahead
-  attack/release + 多峰事件队列，参考 FFmpeg alimiter）v9.8 已完成；Wide
-  （M/S + 双频段 + 全通去相关，参考 DAFx24 StereoWidener）、Aural（tanh 软饱和 +
-  电平跟随，参考 Jatin Chowdhury / FAUST）待替换
-- 影响模块：`pipeline/dsp/fxsound/{reverb,maximizer,wide,aural}.rs`
+  文献级更优算法——Reverb（Dattorro，1997 论文）v9.3；Maximizer（lookahead
+  attack/release + 多峰事件队列，参考 FFmpeg alimiter）v9.8；Wide（双频段 +
+  velvet 去相关，参考 DAFx24 StereoWidener）v9.9；Aural（tanh 软饱和 + 电平跟随，
+  参考 Jatin Chowdhury / FAUST）v9.9——4/4 完成
+- 影响模块：`pipeline/dsp/{reverb,maximizer,wide,aural}.rs`
   （替换完成的文件同步移除对应 FxSound AGPL 版权头）
 - 规范落点：`pipeline 4.22` + `config 6.16`（每步随版本号递增同步）
-- DoD：☐ 规范定稿 ☐ 实现 ☐ 测试
+- DoD：☑ 规范定稿 ☑ 实现（4/4） ☑ 测试 ☐ 听感验证（留手动）
 
 ### P1-4  双实例与默认效果冲突修复（v9.4）
 - 状态：已实现（v9.4：PostMix 直通 + MSFX 运行期自愈 + watcher 防自旋）

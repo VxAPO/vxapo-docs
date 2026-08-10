@@ -1,5 +1,31 @@
 # Changelog
 
+## v9.9 — 2026-08-10
+
+变更类型：`结构重构 + 模块规范更新`（Wide/Aural 独立实现 + fxsound 目录平铺 dsp/）
+
+- **Wide 算法替换（v9.9）**：移除 FxSound `Wide32.c` 移植与 AGPL 版权头，改为
+  双频段加宽独立实现——4 阶 Linkwitz-Riley 分频（500 Hz，低频宽度为高频 25%）+
+  每声道独立 velvet 去相关（25 ms、对数间隔、能量归一）+ `cosβ·dry + sinβ·decorr`
+  混合（参考 DAFx24 StereoWidener）；Intensity=0 位精确直通，单声道直通
+  （不再按 C 语义减半）——**对应章节**：`pipeline 4.22`、`config 6.16`
+- **Aural 算法替换（v9.9）**：移除 FxSound `Auralp.c` 移植与 AGPL 版权头，改为
+  「HP + 峰值电平跟随（瞬时 attack / 120 ms release，声道共享）+ tanh 软饱和
+  奇次 + 半波整流 DC 阻塞偶次」的电平独立激励（参考 Jatin Chowdhury / FAUST 类
+  设计）；谐波占比不再随输入电平变化，大 Drive 不发刺——**对应章节**：
+  `pipeline 4.22`、`config 6.16`
+- **目录结构重构**：`pipeline/dsp/fxsound/`（含唯一 `mod.rs`）移除，四个效果器
+  平铺到 `pipeline/dsp/`，由 `pipeline/dsp.rs` 直接 `pub mod` 声明，与项目
+  「目录平铺 + 上级文件聚合」命名风格对齐；测试支撑 `test_ctx/test_loader` 移至
+  `pipeline/dsp.rs` `test_support`；parser 测试名 `fxsound_*` → `effect_*`——
+  **对应章节**：`pipeline 4.10/4.22`、`模块引用规范（无详细模块版）.md`
+- **测试**：Aural 谐波频域验证（偶次 2nd / 奇次 3rd）、电平独立性、Wide 去相关
+  对称性/低频紧实/确定性等新用例；全量 `cargo test --lib` 568 passed（4 个既有
+  管理员权限用例除外），release 构建成功。
+- **模块引用规范（无详细模块版）.md**：版本号 v9.8 → v9.9；模块树效果器平铺更新。
+
+> 对应 commit：driver `016ed9c` / cli `无变更` / docs `待回填`
+
 ## v9.8 — 2026-08-10
 
 变更类型：`结构重构 + 模块规范更新`（Maximizer 替换为独立 lookahead 峰值限幅器）
@@ -16,7 +42,7 @@
   管理员权限用例除外），release 构建成功。
 - **模块引用规范（无详细模块版）.md**：版本号 v9.7 → v9.8；模块树 fxsound 注释更新。
 
-> 对应 commit：driver `30a1a2e` / cli `无变更` / docs `待回填`
+> 对应 commit：driver `30a1a2e` / cli `无变更` / docs `f6f6fa1`
 
 ## v9.7 — 2026-08-10
 
