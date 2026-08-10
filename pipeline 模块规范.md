@@ -1341,12 +1341,15 @@ pub fn parse_copy_ops(spec: &str, channel_names: &[String]) -> Option<Vec<Channe
 
 **导出给**：仅 `pipeline/dsp/` 内部
 
-**行为要点（v9.0 建立，v9.5 分块 FFT，v9.6 改回 512 点直接 FIR）**：
+**行为要点（v9.0 建立，v9.5 分块 FFT，v9.6 改回直接 FIR，v9.7 1024 点 + SIMD）**：
 - 节点增益在 `log(freq)` 上线性插值，频带外取端点增益；
-- 用 cepstrum 生成 **512 点最小相位 FIR**，`initialize` 时通过 `ConvolutionFilter::with_ir_direct`
-  建立直接时域卷积（v9.6 起 FIR 长度 512）——**无块缓冲**：每个输入采样立即产生输出，
+- 用 cepstrum 生成 **1024 点最小相位 FIR**，`initialize` 时通过 `ConvolutionFilter::with_ir_direct`
+  建立直接时域卷积——**无块缓冲**：每个输入采样立即产生输出，
   流停止时不丢尾音（分块 FFT 会把最后 ≤128 采样压在块缓冲被引擎硬停丢弃，
   实测导致“从 M16+ 切换走时嗡一声”，v9.6 实锤后改回直接 FIR）；
+- **性能（v9.7）**：直接 FIR 改为“旧→新连续段切片 + 逆序系数点积”，
+  AVX2+FMA 8 路向量化（运行时探测，回退标量 mul_add）——1024 点 CPU 低于
+  旧 512 点标量实现，200Hz 以下低频分辨率 ≈46.9Hz bin @48k；
 - FIR 生成结果按（频段指纹, 采样率）进程内缓存（v9.6），设置页/多流批量实例化时
   不再重复 FFT；
 - **不向引擎上报延迟**（GetLatency 无 child 返回 0，与 EAPO 对齐）；
