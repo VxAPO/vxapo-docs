@@ -153,7 +153,7 @@
 | C51 | **EAPO 的 GraphicEQ 不是 biquad 级联**：`GraphicEQFilter` 继承 `ConvolutionFilter`，在 `initializeFilters` 中把节点增益按频率插值后生成频响，用 FFT 做最小相位变换，得到 FIR 再卷积 | GraphicEQFilter.cpp 44-101 | **VxAPO v9.0 对齐**：`pipeline/dsp/graphic_eq.rs` 采用对数频率插值 + 最小相位 FIR + 1024 点直接时域卷积 |
 | C52 | **节点间对数频率线性插值**：`GainIterator::gainAt` 在 `log(freq)` 上线性插值；低于首节点/高于末节点取端点增益（频带外平坦） | GainIterator.cpp 30-98 | **对齐**：`gain_at()` 同语义 |
 | C53 | **GetLatency 无 child 恒返回 0**：即使内部使用卷积（有滤波器固有延迟）也不向引擎上报；VxAPO 采用 1024 点直接 FIR（无分区块延迟），继续对齐该行为 | EqualizerAPO.cpp 82-95 | **对齐**：object 7.2 / 2026-08-10 延迟策略 |
-| C54 | **EAPO 不处理 CAPX `MSFX\N` 模板**：通用 USB 设备由 `wdma_usb.inf` 在设备接口注册「Microsoft Audio Home Theater Effects」（WMALFXGFX 两个 APO）；Windows 重启/重新枚举端点可能从模板恢复微软 APO，EAPO 不接管 | wdma_usb.inf `USBAudio.SysFx.Render` | **VxAPO v9.0 扩展**：install `device/sysfx.rs` 定位并替换 `MSFX\N` 的 StreamEffect/ModeEffect，卸载时恢复 |
+| C54 | **EAPO 不处理 CAPX `MSFX\N` 模板**：通用 USB 设备由 `wdma_usb.inf` 在设备接口注册「Microsoft Audio Home Theater Effects」（WMALFXGFX 两个 APO）；Windows 重启/重新枚举端点可能从模板恢复微软 APO，EAPO 不接管 | wdma_usb.inf `USBAudio.SysFx.Render` | **VxAPO v9.0 + v9.4 扩展**：install `device/sysfx.rs` 定位并替换 `MSFX\N` 的 StreamEffect/ModeEffect（卸载时恢复）；v9.4 起 DLL `Initialize` 时**运行期自愈**——设备重新枚举后被 Windows 灌回的微软 CAPX 由本 DLL 自动再接管（仅动微软 CLSID、幂等、失败降级） |
 | C55 | **强制启用增强**：EAPO 安装时删除 `{1da5d803-d492-4edd-8c23-e0c0ffee7f0e},5`（PKEY_AudioEndpoint_Disable_SysFx）；`fxTitle` 仅在新建 FxProperties 时写入 | DeviceAPOInfo.cpp 642-645 / 527 | **对齐 + 扩展**：VxAPO 同步删除该值；fxTitle 不写（避免历史音量/格式问题） |
 
 ---

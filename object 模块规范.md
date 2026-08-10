@@ -489,6 +489,12 @@ fn Initialize(&self, cb_data_size: u32, pby_data: *mut u8) -> HRESULT {
     //      ——禁止读写 EAPO 安装信息区；依赖声明见下方「引用来源（v8.4）」）。
     //    - 子 APO GUID 为空/特殊值（APOGUID_NULL/NOKEY/NOVALUE）→ None（降级模式 Note 57）
     // 4. 如有子 APO GUID，创建 ChildApo（失败降级为无子 APO，不阻塞初始化）
+    // 4b. 运行期自愈（v9.4）：Windows 重新枚举/重启后可能从驱动模板把微软 CAPX
+    //     重新灌回 `MSFX\N`（与 VxAPO 同时加载 → 断断续续/慢放）。按端点 GUID
+    //     定位 MMDevices 路径，调用 `install/device/sysfx::ensure_takeover_for_endpoint`：
+    //     仅当端点 FxProperties 已装 VxAPO 才动作；只替换/删除微软 CAPX CLSID，
+    //     绝不覆盖第三方 APO；同时删除 DisableEnhancements / Disable_SysFx 强制启用
+    //     增强链。失败仅降级日志，不阻塞初始化（控制线程，非 RT）。
     // 5. 确定 per-device 配置路径（load_device_config，v8.9 方案 A——系统级 CONFIG_ROOT）：
     //    a. CONFIG_ROOT = `C:\ProgramData\VxAPO`（全用户共享，SYSTEM + 当前用户都可读写；
     //       **不用用户级 Documents**——APO 真实运行在 audiodg（SYSTEM 服务），它调
@@ -518,6 +524,10 @@ fn Initialize(&self, cb_data_size: u32, pby_data: *mut u8) -> HRESULT {
 >   配置更新无意义，重新 Lock 必然重读 config 建立新基线——unlocked 期间的变更在重新 Lock 时自然生效
 > - **退出**：APO 实例持有 `shutdown_event`，UnlockForProcess 时 `SetEvent` + join watcher 线程
 > - `ConfigWatcher` 由 `ApoObject.watcher` 字段持有（`Option<ConfigWatcher>`），生命周期与锁定周期一致
+> - **防自旋（v9.4）**：`FindNextChangeNotificationW` 重置失败 → 关闭句柄并标记无效，
+>   循环干净退出（等效不监控），**绝不无限重载**；`hot_reload` 增加 config.txt
+>   (mtime,size) 文件级预检——目录事件 ≠ 文件变化时直接跳过（避免无关文件触发
+>   重复解析/重建链导致 audiodg CPU 高位、声音设置页卡顿）
 
 **config_path 确定规则（v7.2，P0-3；v8.9 方案 A 修订——系统级 ProgramData）**：
 
@@ -605,6 +615,10 @@ fn LockForProcess(&self, num_input, pp_inputs, num_output, pp_outputs) -> HRESUL
     };
     // v7.9 修订：parse_file_with_spec → (滤波器列表, spec chain) 双返回。
     // active_spec 即本次解析产出的配置指纹（LockForProcess 建立基线）。
+    // v9.4：**PostMix 实例默认直通**——Windows 对渲染设备同时挂 SFX(PreMix)+EFX(PostMix)
+    // 两个 VxAPO 实例，若都加载同一 config 会把用户配置应用两次（GraphicEQ 双重卷积：
+    // 音量异常偏低 + 双倍隐藏延迟/CPU）。PostMix 不解析 config（空链直通），保留
+    // child APO 委托（前任 EFX APO 仍生效），且**不启动 watcher**（无配置可热重载）。
     let (filters, spec_chain) = self.config_parser.parse_file_with_spec(&self.config_path, &dsp_ctx)?;
     let mut chain = Chain::new();
     for f in filters { chain.add_filter(f)?; }
@@ -660,7 +674,8 @@ fn LockForProcess(&self, num_input, pp_inputs, num_output, pp_outputs) -> HRESUL
     //   shutdown_event 由 APO 实例持有（UnlockForProcess 时 SetEvent + join）。
     // - 启动失败：降级（watcher=None，仅日志），不阻塞锁定——配置热重载失效但音频链路正常。
     //   （v7.10 实现缺口确认：start_watcher 接线属执行端 P0-4 剩余项，见 7.1.9 注）
-    if let Err(e) = self.start_watcher() {
+    // v9.4：PostMix 直通实例跳过 watcher（无配置可热重载，避免双实例重复解析）。
+    if !self.is_postmix && let Err(e) = self.start_watcher() {
         self.logger.log(LogLevel::Warn, &format!("LockForProcess: watcher start failed: {e}"));
     }
     S_OK

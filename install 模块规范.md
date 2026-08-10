@@ -568,6 +568,11 @@ pub fn uninstall_endpoint(device_guid: &str) -> Result<()>;
 8. **接管 CAPX「设备默认效果」**（v9.0，`install/device/sysfx.rs`）：
    - 按设备实例 ID + JackSubType 定位 `HKLM\SYSTEM\...\DeviceClasses\...\Device Parameters\MSFX\N`
    - 微软 StreamEffectClsid（`,5`）→ VxAPO PreMix；删除 ModeEffectClsid（`,6`，避免微软 MFX 与 VxAPO PostMix 重复处理）
+   - **运行期自愈（v9.4）**：安装时接管只覆盖当时存在的模板；Windows 重新枚举/
+     重启后可能把微软 CAPX 重新灌回 `MSFX\N`。DLL `Initialize` 时对已装 VxAPO 的
+     端点再次调用 `ensure_takeover_for_endpoint`——只动微软 CLSID、不覆盖第三方、
+     幂等（无微软条目零写入）、失败仅降级日志；同时删除 DisableEnhancements /
+     Disable_SysFx 强制启用增强链。
    - 端点 FxProperties 残留的微软 `,6` 同样删除；原始值写入 VxAPO 安装信息区（`SysFxBackups`）
    - 卸载时恢复微软默认效果（优先用备份，无备份按 CAPX 默认值兜底）
 9. **重启 AudioSrv**（`install/audiodg::restart_audio_service`，EAPO 安装对齐）——

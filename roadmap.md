@@ -332,6 +332,17 @@
 - 规范落点：`pipeline 4.22` + `config 6.16`（每步随版本号递增同步）
 - DoD：☐ 规范定稿 ☐ 实现 ☐ 测试
 
+### P1-4  双实例与默认效果冲突修复（v9.4）
+- 状态：已实现（v9.4：PostMix 直通 + MSFX 运行期自愈 + watcher 防自旋）
+- 优先级：P1 ｜ 关联 Phase：Phase 11
+- 目标：修复「切换音频设备后带 GraphicEQ 慢放/断断续续」与「声音设置页卡顿」——
+  根因①渲染设备 SFX+EFX 双 VxAPO 实例重复应用 config；根因②Windows 重新枚举后
+  从 `MSFX\N` 模板灌回微软 CAPX 与 VxAPO 叠加；根因③watcher 事件风暴导致
+  audiodg CPU 持续高位
+- 影响模块：`object/apo/{init,process}.rs`、`config/watcher.rs`、`install/device/sysfx.rs`
+- 规范落点：`object 7.1.8/7.1.9/7.1.18` + `install 5.5.2` + `Equalizer 行为文档 2.10`
+- DoD：☑ 规范定稿 ☑ 实现 ☐ 真机验证（设备切换 + 设置页）
+
 ### P1-2  CLI per-device 配置管理
 - 状态：Backlog
 - 优先级：P1 ｜ 关联 Phase：Phase 12

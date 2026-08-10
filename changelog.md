@@ -1,5 +1,29 @@
 # Changelog
 
+## v9.4 — 2026-08-10
+
+变更类型：`缺陷修复 + 模块规范更新`（双实例重复处理、默认效果运行期自愈、watcher 防自旋）
+
+- **PostMix 实例默认直通**：Windows 对渲染设备同时挂 SFX(PreMix)+EFX(PostMix) 两个
+  VxAPO 实例，此前都加载同一 config → GraphicEQ 双重卷积（音量异常偏低 + 双倍
+  隐藏延迟/CPU，设备切换后帧协商更易错位）。v9.4 起 PostMix 不再解析用户 config
+  （空链直通），保留 child APO 委托（前任 EFX APO 仍生效），且不启动 watcher——
+  对应 `object 7.1.9`。
+- **运行期默认效果自愈**：`Initialize` 时对已装 VxAPO 的端点调用
+  `ensure_takeover_for_endpoint`——Windows 重新枚举/重启后从驱动模板灌回的微软
+  CAPX 由 DLL 自动再接管（只动微软 CLSID、不覆盖第三方、幂等、失败降级），
+  同时删除 DisableEnhancements / Disable_SysFx 强制启用增强链——对应
+  `object 7.1.8`、`install 5.5.2`、`Equalizer 行为文档 2.10 C54`。
+- **watcher 防自旋**：`FindNextChangeNotificationW` 重置失败 → 关闭句柄退出循环
+  （不再无限重载）；`hot_reload` 增加 config.txt (mtime,size) 文件级预检，目录级
+  事件由无关文件触发时直接跳过——修复 audiodg CPU 持续高位、声音设置页卡顿——
+  对应 `object 7.1.9/7.1.18`。
+- **测试**：`msfx_heal_action` 纯决策单测（微软 CAPX 替换/删除、第三方不动）；
+  全量 `cargo test --lib` 551 passed（4 个既有管理员权限用例除外），release 构建成功。
+- **模块引用规范（无详细模块版）.md**：版本号 v9.3 → v9.4。
+
+> 对应 commit：driver `待回填` / cli `无变更` / docs `待回填`
+
 ## v9.3 — 2026-08-10
 
 变更类型：`算法替换 + 模块规范更新`（Reverb 由 Lexicon 移植替换为 Dattorro 板式混响）
@@ -20,7 +44,7 @@
 - **roadmap**：P1-1 更新为「四个效果已接入，v9.3 起逐个替换为更优算法」；新增 P1-3 算法升级项。
 - **模块引用规范（无详细模块版）.md**：版本号 v9.2 → v9.3；模块树 fxsound 注释更新。
 
-> 对应 commit：driver `待回填` / cli `无变更` / docs `待回填`
+> 对应 commit：driver `cef16ef` / cli `无变更` / docs `7b2222c`
 
 ## v9.2 — 2026-08-10
 
