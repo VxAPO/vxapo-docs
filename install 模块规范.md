@@ -17,6 +17,7 @@ install/
 │   ├── endpoint.rs        # 端点状态/名称查询（只读）
 │   ├── format.rs          # WAVEFORMATEX 解析 + 通道掩码兜底（只读）
 │   ├── slots.rs           # 5 槽位读取 + 3 模式 + GUID 回退（只读）
+│   ├── sysfx.rs           # CAPX MSFX 模板定位/接管/恢复（v9.0）
 │   └── info.rs            # 组合查询层 + 设备枚举唯一入口（只读）
 ├── selector.rs            # 模块入口（pub mod select; pub mod operation;）
 ├── audiodg.rs             # DisableProtectedAudioDG 检查与修复
@@ -35,9 +36,10 @@ install/
 | `install/device/format.rs` | `sys/registry`、`utils/error`、`sys/audio_defs`（仅 `default_channel_mask`） | `config/` |
 | `install/device/slots.rs` | `sys/registry`、`utils/guid`、`sys/com/prelude`（`guid_to_string`，GUID 字符串化安全边界） | `pipeline/`、`config/` |
 | `install/device/info.rs` | `device/endpoint`、`device/format`、`device/slots`、`sys/registry`、`object/vx_reg_props`、`utils/error` | `pipeline/`、`config/` |
+| `install/device/sysfx.rs` | `device/slots`、`object/vx_reg_props`、`sys/registry`、`sys/com/prelude`、`utils/error` | `pipeline/`、`config/` |
 | `install/selector.rs` | `selector/select`、`selector/operation`（入口聚合） | `pipeline/`、`config/` |
 | `install/selector/select.rs` | `install/device/info`（`enumerate_devices`）、`utils/error` | `pipeline/`、`config/`、`sys/registry`（不得自行遍历） |
-| `install/selector/operation.rs` | `install/device/slots`、`install/device/format`、`sys/registry`、`object/vx_reg_props`、`object/dll_exports`（`register_apo_with_path`，安装注册刷新）、`sys/com/prelude`（`guid_to_string`）、`utils/error` | `pipeline/`、`config/` |
+| `install/selector/operation.rs` | `install/device/slots`、`install/device/sysfx`、`install/device/format`、`sys/registry`、`object/vx_reg_props`、`object/dll_exports`（`register_apo_with_path`，安装注册刷新）、`sys/com/prelude`（`guid_to_string`）、`utils/error` | `pipeline/`、`config/` |
 | `install/audiodg.rs` | `sys/registry` | `pipeline/`、`config/` |
 
 ---
@@ -558,10 +560,17 @@ pub fn uninstall_endpoint(device_guid: &str) -> Result<()>;
 6. 写入默认处理模式 GUID（`KSDATAFORMAT_SUBTYPE_DEFAULT_PROCESSMODE` =
    AUDIO_SIGNALPROCESSINGMODE_DEFAULT，REG_SZ）
 7. 删除 DisableEnhancements
+   - **v9.0 对齐 EAPO**：同时删除 `{1da5d803-d492-4edd-8c23-e0c0ffee7f0e},5`
+     （PKEY_AudioEndpoint_Disable_SysFx），强制启用增强链
    - **capture 特例（v8.9，EAPO DeviceAPOInfo.cpp 583/607/632 对齐）**：采集端点（路径含
      Capture）只装 PreMix、不装 PostMix（VxAPO 不做采集端增强）；`PreMixChild` 备份保留、
      PostMixChild 强制 None
-8. **重启 AudioSrv**（`install/audiodg::restart_audio_service`，EAPO 安装对齐）——
+8. **接管 CAPX「设备默认效果」**（v9.0，`install/device/sysfx.rs`）：
+   - 按设备实例 ID + JackSubType 定位 `HKLM\SYSTEM\...\DeviceClasses\...\Device Parameters\MSFX\N`
+   - 微软 StreamEffectClsid（`,5`）→ VxAPO PreMix；删除 ModeEffectClsid（`,6`，避免微软 MFX 与 VxAPO PostMix 重复处理）
+   - 端点 FxProperties 残留的微软 `,6` 同样删除；原始值写入 VxAPO 安装信息区（`SysFxBackups`）
+   - 卸载时恢复微软默认效果（优先用备份，无备份按 CAPX 默认值兜底）
+9. **重启 AudioSrv**（`install/audiodg::restart_audio_service`，EAPO 安装对齐）——
    使新槽位拓扑/注册生效；CLI 不再重复重启
 
 整个安装在 `Transaction`（Drop 时逆序回滚）保护下执行，任何步骤失败时自动回滚。
@@ -580,11 +589,13 @@ pub fn uninstall_endpoint(device_guid: &str) -> Result<()>;
    slot 残留 VxAPO CLSID 即此因）
 3. **不写回第三方 APO**（v8.10，2026-08-05 用户纠正：**卸载 ≠ 快照恢复**）——
    install 时备份的 EAPO 等前任 APO 只在 `snapshot restore` 时恢复；卸载只清 VxAPO 自己的 CLSID
-4. 删除信息区 `HKLM\SOFTWARE\VxAPO\Child APOs\{deviceGuid}` 整个键（v8.5 产品意图：
+4. **恢复 CAPX MSFX 模板**（v9.0）：先于删除信息区执行，按 `SysFxBackups` 恢复微软
+   StreamEffect/ModeEffect；无备份时按 CAPX 默认 CLSID 兜底
+5. 删除信息区 `HKLM\SOFTWARE\VxAPO\Child APOs\{deviceGuid}` 整个键（v8.5 产品意图：
    卸载必删键 → 再次安装回「全量路径」判定）
-5. 清理 FxProperties 上的旧遗留 VxAPO 配置值（childGuid/allowSilentBuffer/autoAdjust/version，
+6. 清理 FxProperties 上的旧遗留 VxAPO 配置值（childGuid/allowSilentBuffer/autoAdjust/version，
    best-effort）+ DisableEnhancements
-6. **重启 AudioSrv**（`install/audiodg::restart_audio_service`）恢复输出
+7. **重启 AudioSrv**（`install/audiodg::restart_audio_service`）恢复输出
 
 **事务回滚**（原 rollback.rs 职责，合并至此）：
 

@@ -74,7 +74,7 @@ pipeline/
     ├── gain.rs         # 增益（含内部平滑插值）
     ├── delay.rs        # 延迟线（环形缓冲实现）
     ├── copy.rs         # 通道复制/混音
-    ├── graphic_eq.rs   # 图形均衡器（多段）
+    ├── graphic_eq.rs   # 图形均衡器（对数插值 + 最小相位 FIR 卷积）
     ├── convolution.rs  # 卷积（FFT 骨架）
     ├── vst.rs          # 已移除实现，仅注释（VstFactory 静默 NoMatch，保留注册入口）
     └── loudness.rs     # ISO 226 等响曲线
@@ -340,6 +340,7 @@ pub struct Chain {
 > - 过渡模式下两个 Chain 共享同一组工作缓冲区（串行使用）
 > - `process()` 为纯计算操作，RT 安全
 > - **`initialize()` 必须在首次 `process()` 前调用**：GraphicEQ/PEQ/IIR/Delay/Convolution 等滤波器在 `initialize` 中预计算系数/分配状态；漏调会变成空处理（声音不变）
+> - **v9.0：`initialize()` 末尾重算 `total_latency`**——卷积型滤波器的延迟要到 initialize 才知道（IR/分块），不能在 `add_filter` 时一次性累计
 
 **公开 API**：
 
@@ -473,7 +474,11 @@ pub fn apply_error_policy(
             match policy {
                 ErrorPolicy::Bypass => {
                     let copy_len = input_slice.len().min(output_buffer.len());
-                    output_buffer[..copy_len].copy_from_slice(&input_slice[..copy_len]);
+                    // in-place APO 输入输出可能重叠：逐元素拷贝（memmove 语义），
+                    // 不能用 copy_from_slice（重叠 UB，2026-08-10 实证）。
+                    for i in 0..copy_len {
+                        output_buffer[i] = input_slice[i];
+                    }
                     if output_buffer.len() > copy_len {
                         output_buffer[copy_len..].fill(0.0);
                     }
@@ -513,6 +518,8 @@ pub fn apply_error_policy(
 /// # 实时安全
 ///
 /// 所有缓冲区预分配。无堆分配、无锁、无 I/O。
+/// v9.0 防御：若 `frame_count` 超过 `temp` 平面缓冲或 `input/output` 交织缓冲容量，
+/// 直接逐元素旁通（memmove 语义），不 panic、不谎报帧数。
 pub fn process_chain_interleaved(
     chain: &mut Chain,
     input: &[f32],
@@ -579,6 +586,8 @@ pub fn process_chain_interleaved(
 ///
 /// 预分配要求：temp_buffers 由调用方（object/apo.rs）在 LockForProcess 时预分配，
 /// 通道数 = max(input_channels, output_channels)，每通道帧数 = max_frame_count。
+/// v9.0：临时缓冲额外预留延迟余量；若引擎传入帧数超过 temp/输入/输出任一容量，
+/// 直接旁通并只报实际写入帧数，不 panic、不谎报帧数。
 pub fn process_audio(
     input_props: &[APO_CONNECTION_PROPERTY],
     output_props: &mut [APO_CONNECTION_PROPERTY],
@@ -1283,34 +1292,50 @@ pub fn parse_copy_ops(spec: &str, channel_names: &[String]) -> Option<Vec<Channe
 
 ### 4.18 `pipeline/dsp/graphic_eq.rs`
 
-**职责**：图形均衡器（多段 PEQ 级联）。
+**职责**：图形均衡器（EqualizerAPO 对齐：对数频率插值 + 最小相位 FIR + 直接时域卷积）。
 
-**引用来源**：`crate::pipeline::dsp::filter::Filter`、`crate::pipeline::dsp::peq::PeqFilter`
+**引用来源**：`crate::pipeline::dsp::filter::Filter`、`crate::pipeline::dsp::convolution::ConvolutionFilter`、`rustfft`
 
 **导出给**：仅 `pipeline/dsp/` 内部
+
+**v9.0 行为要点**：
+- 节点增益在 `log(freq)` 上线性插值，频带外取端点增益；
+- 用 cepstrum 生成 **1024 点最小相位 FIR**，`initialize` 时通过 `ConvolutionFilter::with_ir_direct` 建立直接时域卷积；
+- 无分区块延迟，**不向引擎上报延迟**（GetLatency 无 child 返回 0，与 EAPO 对齐）；
+- 旧的「多段 biquad 级联」已废弃：Q=1.414 级联会让相邻负增益叠加，实测中心衰减 -11~-12 dB 而非目标 -3 dB。
 
 **公开 API**：
 
 ```rust
 pub struct GraphicEqFilter { ... }
 impl GraphicEqFilter {
-    pub fn new(bands: Vec<(f32, f32)>) -> Self;
-    pub fn set_bands(&mut self, bands: Vec<(f32, f32)>, sample_rate: f32);
+    pub fn new(bands: Vec<EqBand>) -> Self;
+    pub fn band_count(&self) -> usize;
 }
 impl Filter for GraphicEqFilter { ... }
 
-pub fn parse_graphic_eq_params(spec: &str) -> Option<Vec<(f32, f32)>>;
+pub struct EqBand { pub frequency: f32, pub gain_db: f32 }
+pub fn parse_graphic_eq_params(spec: &str) -> Option<Vec<EqBand>>;
 ```
 
 ---
 
 ### 4.19 `pipeline/dsp/convolution.rs`
 
-**职责**：卷积（FFT 骨架）。
+**职责**：卷积（短 IR 直接时域 FIR + 长 IR 分区 FFT，支持调用方注入 IR）。
 
 **引用来源**：`crate::pipeline::dsp::filter::Filter`
 
-**导出给**：仅 `pipeline/dsp/` 内部
+**导出给**：`pipeline/dsp/graphic_eq.rs`、`config/commands/convolution.rs`
+
+**v9.0 新增 API**：
+
+```rust
+impl ConvolutionFilter {
+    /// 使用内存 IR，并强制直接时域 FIR（GraphicEQ 用，无分区块延迟）。
+    pub fn with_ir_direct(ir: Vec<f32>, gain_db: f32) -> Self;
+}
+```
 
 **公开 API**：
 
@@ -1318,6 +1343,8 @@ pub fn parse_graphic_eq_params(spec: &str) -> Option<Vec<(f32, f32)>>;
 pub struct ConvolutionFilter { ... }
 impl ConvolutionFilter {
     pub fn new(path: &str, gain_db: f32) -> Self;
+    pub fn with_ir(ir: Vec<f32>, gain_db: f32) -> Self;
+    pub fn with_ir_direct(ir: Vec<f32>, gain_db: f32) -> Self;
 }
 impl Filter for ConvolutionFilter { ... }
 

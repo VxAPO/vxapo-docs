@@ -1,5 +1,27 @@
 # Changelog
 
+## v9.0 — 2026-08-10
+
+变更类型：`行为修正 + 模块规范更新`（CAPX 设备默认效果接管、GraphicEQ 卷积化、多流稳定性）
+
+- **install/device/sysfx.rs（新增）**：接管 Windows CAPX「设备默认效果」`MSFX\N` 模板——
+  替换微软 StreamEffect 为 VxAPO PreMix、删除微软 ModeEffect；端点 FxProperties 残留 MFX 同步清理；
+  原始值备份到 `SysFxBackups`，卸载恢复——对应 `install 模块规范.md 5.5.2 Step 8/卸载 Step 4`
+- **install Step 7 对齐 EAPO**：删除 `{1da5d803-...},5`（PKEY_AudioEndpoint_Disable_SysFx）强制启用增强
+- **pipeline/dsp/graphic_eq.rs 重写**：弃用多段 biquad 级联（负增益叠加导致 -11~-12 dB），
+  改为 EqualizerAPO 对齐的对数频率插值 + 最小相位 FIR + 1024 点直接时域卷积——对应 `pipeline 模块规范.md 4.18`
+- **pipeline/dsp/convolution.rs**：新增 `with_ir` / `with_ir_direct` 内存 IR 注入
+- **延迟策略**：GraphicEQ 直接 FIR 无分区块延迟，GetLatency 无 child 返回 0（EAPO 对齐）；
+  `Chain::initialize` 末尾重算 total_latency
+- **多流稳定性**：`process_audio` / `process_chain_interleaved` 增加输入/输出/临时缓冲
+  长度校验与逐元素旁通（memmove 语义，修复 in-place `copy_from_slice` 重叠 UB）；
+  RT 路径锁污染后 `into_inner` 不再二次 panic
+- **Equalizer 行为文档.md**：新增 2.10（GraphicEQ 卷积实现 + CAPX MSFX），修正未确认清单
+- **模块引用规范（无详细模块版）.md**：版本号 v9.0；模块树/依赖表对齐实际 driver 树
+  （含 `object/apo/` 拆分、`pipeline/dsp/math.rs`、`install/device/sysfx.rs`、`utils/guid.rs` 等）
+
+> 对应 commit：driver `9d4e1b5` / cli `f2a4aca` / docs `dbe84e0`
+
 ## v8.15 — 2026-08-06
 
 变更类型：`新增规范`（App 引用规范——Tauri 前端架构草案落地为规范文档）
@@ -11,6 +33,8 @@
   超范围主动限幅在 App 写回时做（[-120,+48]、滤波深切地板 -60、NaN/inf 拒绝）；
   调音组件开关/总开关后续——对应 `App 引用规范 六`
 - **主规范版本**：v8.9 → v8.15（头部版本滞后补齐，与 changelog v8.10-v8.14 对齐）
+
+> 对应 commit：a4916bf（本地回填，随下次自然变更一并提交）
 
 ## v8.14 — 2026-08-05
 

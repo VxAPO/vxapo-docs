@@ -23,6 +23,9 @@
 | `DeviceAPOInfo.cpp` | 498-645（install 三模式互斥写 + per-device 备份） | install 5.5.2 / object 7.2 |
 | `DeviceAPOInfo.cpp` | 500-576（槽位备份 + childApoPath） | object 7.2 |
 | `DeviceAPOInfo.cpp` | 777-815（testAPOInstallation） | install 5.5.2（E3.4） |
+| `filters/GraphicEQFilter.cpp` | 44-101（最小相位 FIR 卷积生成） | pipeline 4.18 |
+| `helpers/GainIterator.cpp` | 30-98（对数频率线性插值） | pipeline 4.18 |
+| `wdma_usb.inf` | `USBAudio.SysFx.Render`（CAPX MSFX 模板） | install 5.5.2（v9.0） |
 | `Setup/Setup.nsi` | 35（`RequestExecutionLevel admin` 安装器提权） | CLI 引用规范 六 |
 | `DeviceSelector/DeviceSelector.vcxproj` | 169-248（6 处 `<UACExecutionLevel>RequireAdministrator</UACExecutionLevel>`） | CLI 引用规范 六 |
 | `helpers/TaskSchedulerHelper.cpp` | 34-186（登录计划任务跑 UpdateChecker，非提权） | CLI 引用规范（更新检查预留） |
@@ -143,6 +146,16 @@
 | C49 | **已安装设备保留模式**：`load()` 检测 `foundAt`（LFX/SFX→premix、GFX/MFX/EFX→postmix）→ 保留现有安装状态 | DeviceAPOInfo.cpp 339-352 | **对齐**：install 5.1 已装保留 |
 | C50 | **版本升级**：`canBeUpgraded()` = `installed && version != installVersion`（"2"） | DeviceAPOInfo.cpp 421-423 | **对齐**：install 5.4 can_be_upgraded |
 
+### 2.10 GraphicEQ 与 CAPX「设备默认效果」（2026-08-10 源码确认）
+
+| # | 行为（源码确认） | 源码位置 | VxAPO 对齐 |
+|---|------------------|----------|------------|
+| C51 | **EAPO 的 GraphicEQ 不是 biquad 级联**：`GraphicEQFilter` 继承 `ConvolutionFilter`，在 `initializeFilters` 中把节点增益按频率插值后生成频响，用 FFT 做最小相位变换，得到 FIR 再卷积 | GraphicEQFilter.cpp 44-101 | **VxAPO v9.0 对齐**：`pipeline/dsp/graphic_eq.rs` 采用对数频率插值 + 最小相位 FIR + 1024 点直接时域卷积 |
+| C52 | **节点间对数频率线性插值**：`GainIterator::gainAt` 在 `log(freq)` 上线性插值；低于首节点/高于末节点取端点增益（频带外平坦） | GainIterator.cpp 30-98 | **对齐**：`gain_at()` 同语义 |
+| C53 | **GetLatency 无 child 恒返回 0**：即使内部使用卷积（有滤波器固有延迟）也不向引擎上报；VxAPO 采用 1024 点直接 FIR（无分区块延迟），继续对齐该行为 | EqualizerAPO.cpp 82-95 | **对齐**：object 7.2 / 2026-08-10 延迟策略 |
+| C54 | **EAPO 不处理 CAPX `MSFX\N` 模板**：通用 USB 设备由 `wdma_usb.inf` 在设备接口注册「Microsoft Audio Home Theater Effects」（WMALFXGFX 两个 APO）；Windows 重启/重新枚举端点可能从模板恢复微软 APO，EAPO 不接管 | wdma_usb.inf `USBAudio.SysFx.Render` | **VxAPO v9.0 扩展**：install `device/sysfx.rs` 定位并替换 `MSFX\N` 的 StreamEffect/ModeEffect，卸载时恢复 |
+| C55 | **强制启用增强**：EAPO 安装时删除 `{1da5d803-d492-4edd-8c23-e0c0ffee7f0e},5`（PKEY_AudioEndpoint_Disable_SysFx）；`fxTitle` 仅在新建 FxProperties 时写入 | DeviceAPOInfo.cpp 642-645 / 527 | **对齐 + 扩展**：VxAPO 同步删除该值；fxTitle 不写（避免历史音量/格式问题） |
+
 ---
 
 ## 三、VxAPO 对齐结论汇总（源码确认依据）
@@ -160,6 +173,9 @@
 | 安装自检 | **E3.4 描述需修订**（实际是 IAudioClient 管线自检） | C37 |
 | 安装提权（manifest 声明式） | **VxAPO CLI 借鉴**：安装器 `RequestExecutionLevel admin` + 程序 `RequireAdministrator`，无运行时提权代码 | C38-C40 |
 | 安装槽位模式探测 + 互斥写 | 对齐（LfxGfx 独占/SfxMfx 蓝牙/SfxEfx 默认三档 + 按 mode 互斥写+删槽位） | C41-C50 |
+| GraphicEQ 实现 | **v9.0 对齐**：对数频率插值 + 最小相位 FIR + 直接时域卷积（非 biquad 级联） | C51-C52 |
+| CAPX「设备默认效果」 | **EAPO 不处理**；VxAPO v9.0 扩展：接管 `MSFX\N` 模板，替换微软 APO | C54 |
+| 延迟上报 | 对齐：GetLatency 无 child 返回 0；VxAPO 直接 FIR 无块延迟 | C53 |
 
 ---
 
@@ -195,7 +211,7 @@
 
 > 以下事项**尚未通读源码确认**，不视为 EAPO 行为事实：
 
-- 滤波器 DSP 内部的逐样本处理细节（GraphicEQ/BiQuad/IIR 等 filters/ 目录）
+- 滤波器 DSP 内部的逐样本处理细节（BiQuad/IIR 等 filters/ 目录；**GraphicEQ 已确认，见 2.10**）
 - VSTPlugin 加载路径（helpers/VSTPluginInstance.cpp）
 - 默认设备判定边界的完整流程（E3.1 已确认 driver 枚举 + GetDefaultAudioEndpoint 边界，但 Configurator 交互未读）
 - 其他文件（Editor/、Setup/、DeviceSelector/、Wiki/）
