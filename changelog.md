@@ -1,5 +1,28 @@
 # Changelog
 
+## v9.10 — 2026-08-10
+
+变更类型：`结构重构 + 模块规范更新`（Wide 分频改为线性相位 FIR）
+
+- **Wide FIR 分频重构（v9.10）**：200 Hz 分频由 IIR（LR4/Butterworth）改为
+  1024 点线性相位 FIR（Hamming 窗理想低通 + 互补高通，
+  `hp = 延迟 center 帧原信号 − lp`），两路逐样本完美重建、无 IIR 相位旋转/
+  群延迟差——解决低频散；延迟 511 采样并按实际值上报 `latency()`——
+  **对应章节**：`pipeline 4.22`、`config 6.16`
+- **Wide 参数面迭代汇总（v9.9→v9.10）**：低频支路（<200 Hz）完全不处理；
+  幂指数映射 `i' = Intensity^0.6`，`gHigh = 1+2.3·i'`（甜点 0.5 ≈2.52×、
+  满档 3.3×）、`gComp = 1-0.10·i'`（缓解中频能量不足）；高频支路 tanh
+  软限幅 `headroom_db = 0.2+0.8·(1-Intensity)`——**对应章节**：`pipeline 4.22`、`config 6.16`
+- **复用 SIMD FIR 基础设施**：`convolution.rs` 的 `dot`/`init_fir_simd`
+  提升为 `pub(crate)`，Wide 与 GraphicEQ 共用 AVX2/FMA 点积——**对应章节**：
+  `pipeline 4.18/4.22`
+- **测试**：Wide 18 用例（FIR 完美重建、脉冲延迟 = center、latency = 511、
+  低频直通、高频宽度单调、极端反相有界等）；全量 `cargo test --lib`
+  575 passed（4 个既有管理员权限用例除外），release 构建成功。
+- **模块引用规范（无详细模块版）.md**：版本号 v9.9 → v9.10。
+
+> 对应 commit：driver `31efd6d` / cli `无变更` / docs `待回填`
+
 ## v9.9 — 2026-08-10
 
 变更类型：`结构重构 + 模块规范更新`（Wide/Aural 独立实现 + fxsound 目录平铺 dsp/）
@@ -24,7 +47,7 @@
   管理员权限用例除外），release 构建成功。
 - **模块引用规范（无详细模块版）.md**：版本号 v9.8 → v9.9；模块树效果器平铺更新。
 
-> 对应 commit：driver `016ed9c` / cli `无变更` / docs `待回填`
+> 对应 commit：driver `016ed9c` / cli `无变更` / docs `cd70e4f`
 
 ## v9.8 — 2026-08-10
 

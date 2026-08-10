@@ -1461,13 +1461,13 @@ pub fn parse_loudness_params(spec: &str) -> Option<(f32, f32)>;
 
 ---
 
-### 4.22 `pipeline/dsp/` 效果器（aural/reverb/maximizer/wide，v9.9）
+### 4.22 `pipeline/dsp/` 效果器（aural/reverb/maximizer/wide，v9.10）
 
 **来源与许可**：四个效果器均为独立实现（原创代码，无 AGPL 版权头）——
 `reverb.rs`（v9.3，按 Jon Dattorro 1997 论文）、`maximizer.rs`（v9.8，参考
-FFmpeg `alimiter` 多峰调度）、`wide.rs`（v9.9，参考 DAFx24 StereoWidener：
-双频段 + velvet 去相关）、`aural.rs`（v9.9，参考 Jatin Chowdhury / FAUST 类
-电平独立软饱和）。
+FFmpeg `alimiter` 多峰调度）、`wide.rs`（v9.10，200 Hz 线性相位 FIR 分频 +
+高频 M/S 幂指数加宽 + tanh 软限幅，原创实现）、`aural.rs`（v9.9，参考 Jatin
+Chowdhury / FAUST 类电平独立软饱和）。
 文件直接平铺在 `pipeline/dsp/` 下，无 `fxsound/` 子目录、无 `mod.rs`。
 
 **职责**：四个可调参效果器，以 EAPO 风格 `Key Value` 命令接入 config：
@@ -1477,7 +1477,7 @@ FFmpeg `alimiter` 多峰调度）、`wide.rs`（v9.9，参考 DAFx24 StereoWiden
 | `aural.rs` | Aural Enhancer（二阶 Butterworth 高通 + 峰值电平跟随 + tanh 软饱和奇次 + 半波整流偶次，Wet/Dry） | `AuralEnhancer:` |
 | `reverb.rs` | Dattorro 板式混响（输入 4 级 AllPass 扩散 + 双槽交叉反馈 + 14 抽头输出，论文 Fig.1/Table 1/Table 2） | `Reverb:` |
 | `maximizer.rs` | Maximizer（v9.8 独立实现：自动增益 + lookahead 峰值限幅 + 多峰事件队列包络 + 16-bit 抖动量化） | `Maximizer:` |
-| `wide.rs` | Wide（双频段 LR-4 分频 500 Hz + 每声道 velvet 去相关 + cos/sin 混合，低频宽度为高频 25%） | `Wide:` |
+| `wide.rs` | Wide（200 Hz 1024 点线性相位 FIR 分频 + 高频 M/S 幂指数加宽 + tanh 软限幅，低频支路不处理） | `Wide:` |
 
 **引用来源**：`crate::pipeline::dsp::filter::Filter`（四个 Filter 均实现该 trait）。
 
@@ -1489,7 +1489,8 @@ FFmpeg `alimiter` 多峰调度）、`wide.rs`（v9.9，参考 DAFx24 StereoWiden
   最大抽头」预留，保证小 RoomSize 下输出抽头仍有效；调制深度按论文
   EXCURSION=16 采样@29761Hz 换算）；
 - `process` 零分配、无锁、无 I/O、无 panic；输出非有限时置 0；
-- `latency()` 返回 0（与当前 VxAPO 不向引擎上报效果内部延迟的策略一致）；
+- `latency()`：Aural/Reverb/Maximizer 返回 0；Wide（v9.10）与 GraphicEQ 一致，
+  按实际 FIR 延迟上报（511 采样）；
 - 参数变更走 config 热重载（Filter 重建），不支持流内实时改写。
 
 **公开 API**：
@@ -1543,8 +1544,10 @@ pub struct WideFactory;                  // impl FilterFactory, command_name() =
   `(limit/peak - att)/N`，超限峰值以事件队列按触发顺序调度（参考 FFmpeg alimiter
   多峰调度），事件后以 `(1 - limit/peak)/(sr·release_sec)` 线性回弹，输出硬钳位到
   `limit`；抖动用独立 xorshift64* PRNG（Uniform/Triangular/Shaped），16-bit 量化。
-- Wide：`β_high = Intensity·π/2`，`β_low = 0.25·β_high`；逐频段
-  `out = cosβ·dry + sinβ·decorr`；4 阶 Linkwitz-Riley 分频（500 Hz，两个二阶
-  Butterworth 级联）；velvet 去相关 25 ms 尾音、约 1500 imp/s、对数间隔、
-  12 dB 衰减、能量归一，每声道独立确定性序列；仅处理前两个选中通道，
-  单声道直通，Intensity=0 位精确直通。
+- Wide（v9.10）：200 Hz 1024 点线性相位 FIR 分频（Hamming 窗理想低通 + 互补
+  高通：`hp = 延迟 center 帧的原信号 − lp`，两路逐样本完美重建，无 IIR 相位
+  旋转/群延迟差）；低频支路（<200 Hz）完全不处理；高频 M/S：
+  `i' = Intensity^0.6`，`gHigh = 1 + 2.3·i'`（甜点 0.5 → ≈2.52×、满档 → 3.3×），
+  `gComp = 1 - 0.10·i'`；高频支路 tanh 软限幅
+  `headroom_db = 0.2 + 0.8·(1-Intensity)`；延迟 511 采样（`latency()` 上报）；
+  仅处理前两个选中通道，单声道直通，Intensity=0 位精确直通。
