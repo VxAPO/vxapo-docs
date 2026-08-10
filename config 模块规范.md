@@ -360,7 +360,7 @@ for (i, line) in content.lines().enumerate() {
             // 静态命令（Device/Stage/Channel/Eval/Include/Filter/GraphicEQ/Preamp/Copy/Delay）
             // 与 REW `Filter N:` 前缀已在上方静态/guard 分支命中；此处剩余命令名必须 ∈
             // registry.factory_names()（IIR/Biquad/Convolution/VSTPlugin/LoudnessCorrection/
-            // AuralEnhancer/Reverb/Maximizer，v9.1）——
+            // AuralEnhancer/Reverb/Maximizer/Wide，v9.2）——
             // 否则 SyntaxError「未知命令」，**不落 registry**（修复 v7.11「Unmatched 判定失效」：
             // Convolution 宽容解析不再接管未知命令）。
             if !is_known_dsp_command(&cmd_lower, &ctx.registry.factory_names()) {
@@ -918,11 +918,11 @@ pub fn handle(value: &str, ctx: &mut ParseContext) -> Result<(), ConfigError>;
 
 ---
 
-### 6.16 FxSound 效果器命令（v9.1，注册表分派）
+### 6.16 FxSound 效果器命令（v9.2，注册表分派）
 
-**职责**：`AuralEnhancer:` / `Reverb:` / `Maximizer:` 三个 FxSound 移植效果器。
+**职责**：`AuralEnhancer:` / `Reverb:` / `Maximizer:` / `Wide:` 四个 FxSound 移植效果器。
 无 `config/commands/*.rs` 文件——通过 `pipeline/dsp/factory.rs` 注册
-（`register_builtin_filters` 追加三个工厂），parser 默认分支按命令名精确分派
+（`register_builtin_filters` 追加四个工厂），parser 默认分支按命令名精确分派
 （6.1 `try_create_named`），**无需静态分发分支**。
 
 **语法**（EAPO 风格 `Key Value`，键名大小写不敏感，单位可选）：
@@ -940,6 +940,9 @@ pub fn handle(value: &str, ctx: &mut ParseContext) -> Result<(), ConfigError>;
   - GainBoost [0, 30] dB，MaxOutput [-30, 0] dB，Release [0.1, 100] ms，
     Target [0.01, 1.0]，Lookahead [0, 10] ms，Dither ∈ None|Uniform|Triangular|Shaped
     （None 不量化，其余 16-bit 量化 + 抖动）；默认 Wet 1.0 / Dry 0.0。
+- `Wide: Intensity 0.354331`
+  - Intensity [0, 1]（默认 0.354331；0 时严格直通）；立体声 M/S 插件语义，
+    只处理前两个选中通道，单声道按 C 语义输出减半。
 
 **语义**：
 - 全部参数先解析再 clamp 到原始 c_* 区间；任一 key 未知、缺值或值非法 →

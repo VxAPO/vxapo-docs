@@ -1062,7 +1062,7 @@ pub enum OutcomeKind {
 #### 工厂索引常量
 
 ```rust
-pub const FACTORY_COUNT: usize = 18;
+pub const FACTORY_COUNT: usize = 19;
 
 pub mod index {
     pub const DEVICE: usize = 0;
@@ -1083,6 +1083,7 @@ pub mod index {
     pub const AURAL_ENHANCER: usize = 15;
     pub const REVERB: usize = 16;
     pub const MAXIMIZER: usize = 17;
+    pub const WIDE: usize = 18;
 }
 ```
 
@@ -1091,17 +1092,17 @@ pub mod index {
 #### 工厂注册
 
 ```rust
-/// 创建默认工厂列表（18 个，按优先级排序）。
+/// 创建默认工厂列表（19 个，按优先级排序）。
 pub fn create_default_registry() -> Vec<Box<dyn FilterFactory>>;
 
 /// 注册所有内置 Filter 工厂到 FilterRegistry。
 pub fn register_builtin_filters(registry: &mut FilterRegistry);
 ```
 
-**注册顺序（v9.1）**：IIR → Biquad → Preamp → Delay → Copy → Convolution → GraphicEQ
-→ VSTPlugin → LoudnessCorrection → **AuralEnhancer → Reverb → Maximizer**。
+**注册顺序（v9.2）**：IIR → Biquad → Preamp → Delay → Copy → Convolution → GraphicEQ
+→ VSTPlugin → LoudnessCorrection → **AuralEnhancer → Reverb → Maximizer → Wide**。
 
-**命令语法（v9.1，`AuralEnhancer:` / `Reverb:` / `Maximizer:`）**：
+**命令语法（v9.2，`AuralEnhancer:` / `Reverb:` / `Maximizer:` / `Wide:`）**：
 
 - `AuralEnhancer: TuneHz 1760 Drive 1.77 Odd 1.5 Even 0.0 Wet 1.0 Dry 0.0`
   - TuneHz 默认 1760 Hz（原 Quick preset 1 / MIDI 53），范围 [500, 10000] Hz；
@@ -1113,8 +1114,11 @@ pub fn register_builtin_filters(registry: &mut FilterRegistry);
 - `Maximizer: GainBoost 6 dB MaxOutput -0.3 dB Release 100 ms Target 0.32 Lookahead 0.75 ms Dither Shaped`
   - GainBoost [0, 30] dB、MaxOutput [-30, 0] dB、Release [0.1, 100] ms、
     Dither ∈ None|Uniform|Triangular|Shaped（None 不做量化，其余 16-bit 量化 + 抖动）。
+- `Wide: Intensity 0.354331`
+  - Intensity [0, 1]（默认 0.354331，Wide32.c Starting Presets）；
+    0 时严格直通（`1+3·0` 侧增益 / `1-0.3·0` 中央补偿均为 1）。
 
-> 三个命令均通过工厂注册进入 `factory_names()`，parser 默认分支**无需静态分发**；
+> 四个命令均通过工厂注册进入 `factory_names()`，parser 默认分支**无需静态分发**；
 > 参数解析失败返回 `NoMatch`，由 parser 精确分派（`try_create_named`）落到
 > `SyntaxError「命令无效」`。
 
@@ -1409,7 +1413,7 @@ pub fn parse_convolution_params(spec: &str) -> Result<(String, f32), ParseError>
 **文件内容**：仅保留模块注释（说明当前行为与未来路径，供开发者查看），**无任何实现/测试**。
 
 **保留不动**：
-- `FACTORY_COUNT = 18`（v9.1 新增 FxSound 三工厂；VST 槽位仍为 `index::VST_PLUGIN = 13`）
+- `FACTORY_COUNT = 19`（v9.2 起 FxSound 四工厂在尾部追加；VST 槽位仍为 `index::VST_PLUGIN = 13`）
 - `index::VST_PLUGIN = 13`
 - `register_builtin_filters` 仍注册 `VstFactory`
 
@@ -1443,23 +1447,24 @@ pub fn parse_loudness_params(spec: &str) -> Option<(f32, f32)>;
 
 ---
 
-### 4.22 `pipeline/dsp/fxsound/`（FxSound 效果器移植，v9.1）
+### 4.22 `pipeline/dsp/fxsound/`（FxSound 效果器移植，v9.2）
 
-**来源与许可**：移植自 FxSound `Auralp.c` / `Lex16.c` / `Maxi16.c`
+**来源与许可**：移植自 FxSound `Auralp.c` / `Lex16.c` / `Maxi16.c` / `Wide32.c`
 （AGPL-3.0-or-later），全部文件保留版权头与来源注释。
 
-**职责**：三个可调参效果器，以 EAPO 风格 `Key Value` 命令接入 config：
+**职责**：四个可调参效果器，以 EAPO 风格 `Key Value` 命令接入 config：
 
 | 文件 | 效果 | 命令 |
 |------|------|------|
 | `aural.rs` | Aural Enhancer（二阶 Butterworth 高通 + sin 奇偶谐波激励，Wet/Dry） | `AuralEnhancer:` |
 | `reverb.rs` | Lexicon 风格 Reverb（预延迟 + 四级 Lattice 扩散 + 调制延迟网络 + 多抽头） | `Reverb:` |
 | `maximizer.rs` | Maximizer（0.1 Hz 电平估计 + lookahead 峰值限幅 + LCG 抖动 + 16-bit 量化） | `Maximizer:` |
+| `wide.rs` | Wide（M/S 分解立体声加宽：侧信号放大 + 中央补偿，无滤波/延迟） | `Wide:` |
 
-**引用来源**：`crate::pipeline::dsp::filter::Filter`（三个 Filter 均实现该 trait）。
+**引用来源**：`crate::pipeline::dsp::filter::Filter`（四个 Filter 均实现该 trait）。
 
 **导出给**：`pipeline/dsp/factory.rs`（注册 `AuralEnhancerFactory` / `ReverbFactory` /
-`MaximizerFactory`）；`config/` 禁止直接引用。
+`MaximizerFactory` / `WideFactory`）；`config/` 禁止直接引用。
 
 **RT 约束**：
 - `initialize` 预计算系数并分配状态/延迟线（Reverb 延迟线长度与 C 端 `MasterLen`
@@ -1487,6 +1492,11 @@ pub struct MaximizerParams { ... }
 pub fn parse_maximizer_params(params: &str) -> Option<MaximizerParams>;
 pub struct MaximizerFilter { ... }       // impl Filter
 pub struct MaximizerFactory;             // impl FilterFactory, command_name() = "Maximizer"
+
+pub struct WideParams { pub intensity: f32 }
+pub fn parse_wide_params(params: &str) -> Option<WideParams>;
+pub struct WideFilter { ... }            // impl Filter
+pub struct WideFactory;                  // impl FilterFactory, command_name() = "Wide"
 ```
 
 **默认值**（取原 Quick preset 1 精神，Wet/Dry 可覆盖）：
@@ -1496,6 +1506,7 @@ pub struct MaximizerFactory;             // impl FilterFactory, command_name() =
   MotionDepth 0.63 ms / Wet 0.3 / Dry 0.9；
 - Maximizer：GainBoost 6 dB / MaxOutput -0.3 dB / Release 10.18 ms（= β 0.997776 @44.1k）/
   Target 0.32 / Lookahead 0.75 ms / Dither Shaped / Wet 1.0 / Dry 0.0。
+- Wide：Intensity 0.354331（Wide32.c Starting Presets；0 时严格直通）。
 
 **关键移植换算**：
 - Aural 高通：`omega = 2π·TuneHz/sr`，`tmp = 1/(4+ω²+2√2ω)`，
@@ -1504,4 +1515,6 @@ pub struct MaximizerFactory;             // impl FilterFactory, command_name() =
   分配 = 标称 + `trunc(sr·0.002)` + 1；调制深度由 ms 转采样数；
 - Maximizer 电平低通（0.1 Hz）：`a0 = 2 - cos(ω) - sqrt(cos²ω - 4cosω + 3)`，`filt_gain = 1 - a0`；
   release：`beta = exp(-1/(ms·0.001·sr))`；lookahead：`trunc(sr·0.00075)`；
-  抖动 LCG：`seed = (3141592621·seed + 2718282829) % 4294967291`。
+  抖动 LCG：`seed = (3141592621·seed + 2718282829) % 4294967291`；
+- Wide：`mono = (L+R)·0.5`，侧增益 `1+3·Intensity`，中央补偿 `1-0.3·Intensity`；
+  单声道输出按 C 语义 `out *= 0.5`；仅处理前两个选中通道（立体声 M/S 插件语义）。

@@ -1,5 +1,23 @@
 # Changelog
 
+## v9.2 — 2026-08-10
+
+变更类型：`新增能力 + 模块规范更新`（FxSound Wide 立体声加宽接入）
+
+- **新增 `pipeline/dsp/fxsound/wide.rs`**：移植 FxSound `Wide32.c`
+  （Theremino V2.0.3 简化环绕版，AGPL-3.0-or-later，保留版权头）——
+  M/S 分解 + 侧信号放大（`1+3·Intensity`）+ 中央补偿（`1-0.3·Intensity`），
+  无滤波/延迟；单声道按 C 语义输出减半。
+- **`Wide:` 命令接入 config**：`Wide: Intensity 0.354331`（Intensity [0, 1]，
+  0 时严格直通）；工厂注册追加，`FACTORY_COUNT` 18 → 19，`index::WIDE = 18`；
+  parser 默认分支无需改动（`try_create_named` 精确分派）——
+  对应 `pipeline 4.10/4.22`、`config 6.16`。
+- **测试**：解析/直通/纯侧放大/纯中央补偿/单声道语义/有限性/工厂与 parser 集成。
+- **roadmap P1-1**：Wide 落地后四个 FxSound 效果全部实现（听感验证留手动）。
+- **模块引用规范（无详细模块版）.md**：版本号 v9.1 → v9.2；模块树新增 `wide.rs`。
+
+> 对应 commit：driver `0eb5075` / cli `无变更` / docs `（提交后本地回填）`
+
 ## v9.1 — 2026-08-10
 
 变更类型：`新增能力 + 模块规范更新`（FxSound DSP 效果器拆分：Aural Enhancer / Reverb / Maximizer）
@@ -23,7 +41,7 @@
 - **模块引用规范（无详细模块版）.md**：版本号 v9.0 → v9.1；模块树新增
   `pipeline/dsp/fxsound/`；依赖表同步。
 
-> 对应 commit：driver `3f02df6` / cli `无变更（lockfile 未动）` / docs `（提交后本地回填）`
+> 对应 commit：driver `99aad5b` / cli `无变更（lockfile 未动）` / docs `a9e3328`
 
 ## v9.0 — 2026-08-10
 
