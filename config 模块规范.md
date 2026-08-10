@@ -353,13 +353,14 @@ for (i, line) in content.lines().enumerate() {
         _ if command.to_ascii_lowercase().starts_with("filter ") => {
             rew::handle(value, &mut ctx)?
         }
-        // DSP 命令（v7.12 白名单三段式——冒号校验 → 命令名白名单 → try_create）
+        // DSP 命令（v7.12 白名单三段式——冒号校验 → 命令名白名单 → try_create_named）
         _ => {
             let cmd_lower = command.to_ascii_lowercase();
             // ── 白名单校验（v7.12）：命令名必须已知 ──
             // 静态命令（Device/Stage/Channel/Eval/Include/Filter/GraphicEQ/Preamp/Copy/Delay）
             // 与 REW `Filter N:` 前缀已在上方静态/guard 分支命中；此处剩余命令名必须 ∈
-            // registry.factory_names()（IIR/Biquad/Convolution/VSTPlugin/LoudnessCorrection）——
+            // registry.factory_names()（IIR/Biquad/Convolution/VSTPlugin/LoudnessCorrection/
+            // AuralEnhancer/Reverb/Maximizer，v9.1）——
             // 否则 SyntaxError「未知命令」，**不落 registry**（修复 v7.11「Unmatched 判定失效」：
             // Convolution 宽容解析不再接管未知命令）。
             if !is_known_dsp_command(&cmd_lower, &ctx.registry.factory_names()) {
@@ -378,7 +379,10 @@ for (i, line) in content.lines().enumerate() {
                     message: format!("命令无效 '{}'：该命令当前未启用（预留）", command),
                 });
             }
-            let outcome = ctx.registry.try_create(value, ctx.dsp_ctx, ...);
+            // v9.1：改为按命令名精确分派（try_create_named）——只尝试与命令名一致的工厂，
+            // 避免 Convolution 等宽容工厂把已知命令的非法参数（如
+            // `AuralEnhancer: Bogus 1`）当作自己的 IR 路径吞掉。
+            let outcome = ctx.registry.try_create_named(command, value, ctx.dsp_ctx, ...);
             match outcome.result {
                 OutcomeKind::FilterAdded(f) => ctx.filters.push(f),
                 OutcomeKind::MatchedNoFilter => {},
@@ -911,3 +915,36 @@ pub fn handle(value: &str, ctx: &mut ParseContext) -> Result<(), ConfigError>;
 **语法**：`Filter 1: ON PK Fc 50,0 Hz Gain -10,0 dB Q 2,50`
 
 **语义**：解析 REW Room EQ V5 格式行（含逗号小数点），转换为标准参数后通过 `registry.try_create("PK", ...)` 创建。
+
+---
+
+### 6.16 FxSound 效果器命令（v9.1，注册表分派）
+
+**职责**：`AuralEnhancer:` / `Reverb:` / `Maximizer:` 三个 FxSound 移植效果器。
+无 `config/commands/*.rs` 文件——通过 `pipeline/dsp/factory.rs` 注册
+（`register_builtin_filters` 追加三个工厂），parser 默认分支按命令名精确分派
+（6.1 `try_create_named`），**无需静态分发分支**。
+
+**语法**（EAPO 风格 `Key Value`，键名大小写不敏感，单位可选）：
+
+- `AuralEnhancer: TuneHz 1760 Drive 1.77 Odd 1.5 Even 0.0 Wet 1.0 Dry 0.0`
+  - TuneHz [500, 10000] Hz（默认 1760），Drive [0, 4.25]，Odd [0, 1.5]，
+    Even [0, 0.75]，Wet/Dry [0, 1]；默认 Wet 1.0 / Dry 0.0。
+- `Reverb: RoomSize 1.0 Decay 0.566 Damping 0.408 Bandwidth 0.350
+  Density 1.0 Lat5 0.70 Lat6 0.50 PreDelay 0 ms MotionRate 0.11
+  MotionDepth 0.63 ms Wet 0.3 Dry 0.9`
+  - RoomSize [0.5, 1.5]，Decay/Damping/Bandwidth/Density/Lat5/Lat6 [0, 1]，
+    PreDelay [0, 100] ms，MotionRate [0.05, 2.0]，MotionDepth [0, 2.0] ms。
+- `Maximizer: GainBoost 6 dB MaxOutput -0.3 dB Release 100 ms
+  Target 0.32 Lookahead 0.75 ms Dither Shaped [Wet 1.0 Dry 0.0]`
+  - GainBoost [0, 30] dB，MaxOutput [-30, 0] dB，Release [0.1, 100] ms，
+    Target [0.01, 1.0]，Lookahead [0, 10] ms，Dither ∈ None|Uniform|Triangular|Shaped
+    （None 不量化，其余 16-bit 量化 + 抖动）；默认 Wet 1.0 / Dry 0.0。
+
+**语义**：
+- 全部参数先解析再 clamp 到原始 c_* 区间；任一 key 未知、缺值或值非法 →
+  解析失败 → parser 报 `SyntaxError「命令无效」`（整体解析失败，保留旧链）；
+- 参数变更走现有 config 热重载（Filter 重建），不支持流内实时改写；
+- `process` 运行在 RT 线程：零分配、无锁、无 I/O；`latency()` 返回 0。
+
+**实现位置**：`pipeline 模块规范.md 4.22`（`pipeline/dsp/fxsound/`）。

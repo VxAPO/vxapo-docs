@@ -311,13 +311,13 @@
 > 达标口径：命令行完成设备配置管理、导入导出、预设；4 个 FxSound 效果可听。
 
 ### P1-1  FxSound 效果接入（Wide → Aural → Maximizer → Lex）
-- 状态：Backlog
+- 状态：进行中（v9.1：Aural / Maximizer / Reverb 已落地；Wide 待做）
 - 优先级：P1 ｜ 关联 Phase：Phase 11
 - 目标：四个 FxSound 效果作为原生 Filter 接入 config.txt 解析链路，按复杂度递增
-- 影响模块：`pipeline/dsp/{wide,aural,maximizer,lex}.rs`、`pipeline/dsp/factory.rs`、`config/commands/`
-- 规范落点：（定稿时回填；含 pipeline 4.9 Filter 扩展 + config 命令语法）
+- 影响模块：`pipeline/dsp/fxsound/{aural,reverb,maximizer}.rs`（+ 未来 `wide.rs`）、`pipeline/dsp/factory.rs`
+- 规范落点：`pipeline 4.22`（fxsound 子模块）+ `config 6.16`（三个命令语法）+ `pipeline 4.10`（工厂注册）
 - 依赖：P0-2（解析链路先通）
-- DoD：☐ 规范定稿 ☐ 实现 ☐ 测试（可听感验证）
+- DoD：☐ 规范定稿（Wide 部分） ☑ 实现（Aural/Reverb/Maximizer） ☐ 测试（cargo test 已过；可听感验证留手动）
 
 ### P1-2  CLI per-device 配置管理
 - 状态：Backlog

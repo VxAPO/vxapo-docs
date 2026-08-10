@@ -1,5 +1,30 @@
 # Changelog
 
+## v9.1 — 2026-08-10
+
+变更类型：`新增能力 + 模块规范更新`（FxSound DSP 效果器拆分：Aural Enhancer / Reverb / Maximizer）
+
+- **新增 `pipeline/dsp/fxsound/` 子模块**：移植 FxSound `Auralp.c` / `Lex16.c` / `Maxi16.c`
+  （AGPL-3.0-or-later，保留版权头与来源注释）——
+  - `aural.rs`：二阶 Butterworth 高通（`filtDesign2ndButHighPass`）+ sin 奇偶谐波 + Wet/Dry；
+  - `reverb.rs`：预延迟 + 四级 Lattice AllPass + 调制延迟网络（延迟线长度与 C 端
+    `MasterLen` 一致，按实际 RoomSize + 最大 2 ms 调制预留）；
+  - `maximizer.rs`：0.1 Hz 单极点电平估计 + lookahead 峰值限幅 + LCG 抖动 +
+    16-bit 量化（`Dither None` 不量化）。
+- **三个 EAPO 风格命令接入 config**：`AuralEnhancer:` / `Reverb:` / `Maximizer:`，
+  参数解析后 clamp 到原始 c_* 区间；默认值取原 Quick preset 1 精神（Wet/Dry 可覆盖）。
+- **工厂注册**：`factory.rs` 新增 `AuralEnhancerFactory` / `ReverbFactory` /
+  `MaximizerFactory`，`FACTORY_COUNT` 15 → 18，`index` 新增 15/16/17；
+  parser 默认分支改为 `try_create_named` 精确分派——修复宽容工厂（Convolution）
+  吞掉已知命令非法参数的问题（v7.12「命令无效」契约真正生效）——对应
+  `pipeline 4.10`、`config 6.1/6.16`。
+- **测试**：解析/初始化/处理/RT 安全覆盖（44.1k/48k/96k、最大参数、静音、
+  峰值不超 MaxOutput、Dither 复现、单声道语义、dry 直通、spec 指纹变化）。
+- **模块引用规范（无详细模块版）.md**：版本号 v9.0 → v9.1；模块树新增
+  `pipeline/dsp/fxsound/`；依赖表同步。
+
+> 对应 commit：driver `3f02df6` / cli `无变更（lockfile 未动）` / docs `（提交后本地回填）`
+
 ## v9.0 — 2026-08-10
 
 变更类型：`行为修正 + 模块规范更新`（CAPX 设备默认效果接管、GraphicEQ 卷积化、多流稳定性）

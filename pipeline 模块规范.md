@@ -1021,6 +1021,18 @@ impl FilterRegistry {
         ctx: &DspContext,
         loader: &dyn ConfigLoader,
     ) -> TryCreateOutcome;
+
+    /// 按命令名精确分派（v9.1）。
+    /// 只尝试 `command_name()` 与给定命令（不区分大小写）一致的工厂；
+    /// 无工厂命中时返回 `Unmatched`。parser 默认分支使用此方法，
+    /// 避免 Convolution 等宽容工厂吞掉已知命令的非法参数。
+    pub fn try_create_named(
+        &self,
+        command: &str,
+        params: &str,
+        ctx: &DspContext,
+        loader: &dyn ConfigLoader,
+    ) -> TryCreateOutcome;
 }
 ```
 
@@ -1050,7 +1062,7 @@ pub enum OutcomeKind {
 #### 工厂索引常量
 
 ```rust
-pub const FACTORY_COUNT: usize = 15;
+pub const FACTORY_COUNT: usize = 18;
 
 pub mod index {
     pub const DEVICE: usize = 0;
@@ -1068,6 +1080,9 @@ pub mod index {
     pub const GRAPHIC_EQ: usize = 12;
     pub const VST_PLUGIN: usize = 13;
     pub const LOUDNESS_CORRECTION: usize = 14;
+    pub const AURAL_ENHANCER: usize = 15;
+    pub const REVERB: usize = 16;
+    pub const MAXIMIZER: usize = 17;
 }
 ```
 
@@ -1076,12 +1091,32 @@ pub mod index {
 #### 工厂注册
 
 ```rust
-/// 创建默认工厂列表（15 个，按优先级排序）。
+/// 创建默认工厂列表（18 个，按优先级排序）。
 pub fn create_default_registry() -> Vec<Box<dyn FilterFactory>>;
 
 /// 注册所有内置 Filter 工厂到 FilterRegistry。
 pub fn register_builtin_filters(registry: &mut FilterRegistry);
 ```
+
+**注册顺序（v9.1）**：IIR → Biquad → Preamp → Delay → Copy → Convolution → GraphicEQ
+→ VSTPlugin → LoudnessCorrection → **AuralEnhancer → Reverb → Maximizer**。
+
+**命令语法（v9.1，`AuralEnhancer:` / `Reverb:` / `Maximizer:`）**：
+
+- `AuralEnhancer: TuneHz 1760 Drive 1.77 Odd 1.5 Even 0.0 Wet 1.0 Dry 0.0`
+  - TuneHz 默认 1760 Hz（原 Quick preset 1 / MIDI 53），范围 [500, 10000] Hz；
+    Drive [0, 4.25]，Odd [0, 1.5]，Even [0, 0.75]，Wet/Dry [0, 1]。
+- `Reverb: RoomSize 1.0 Decay 0.566 Damping 0.408 Bandwidth 0.350
+  Density 1.0 Lat5 0.70 Lat6 0.50 PreDelay 0 ms MotionRate 0.11 MotionDepth 0.63 ms Wet 0.3 Dry 0.9`
+  - 各参数 clamp 到原 c_lex 区间：RoomSize [0.5, 1.5]、Decay/Damping/Bandwidth/Density [0, 1]、
+    PreDelay [0, 100] ms、MotionRate [0.05, 2.0]、MotionDepth [0, 2.0] ms。
+- `Maximizer: GainBoost 6 dB MaxOutput -0.3 dB Release 100 ms Target 0.32 Lookahead 0.75 ms Dither Shaped`
+  - GainBoost [0, 30] dB、MaxOutput [-30, 0] dB、Release [0.1, 100] ms、
+    Dither ∈ None|Uniform|Triangular|Shaped（None 不做量化，其余 16-bit 量化 + 抖动）。
+
+> 三个命令均通过工厂注册进入 `factory_names()`，parser 默认分支**无需静态分发**；
+> 参数解析失败返回 `NoMatch`，由 parser 精确分派（`try_create_named`）落到
+> `SyntaxError「命令无效」`。
 
 ---
 
@@ -1374,7 +1409,7 @@ pub fn parse_convolution_params(spec: &str) -> Result<(String, f32), ParseError>
 **文件内容**：仅保留模块注释（说明当前行为与未来路径，供开发者查看），**无任何实现/测试**。
 
 **保留不动**：
-- `FACTORY_COUNT = 15`
+- `FACTORY_COUNT = 18`（v9.1 新增 FxSound 三工厂；VST 槽位仍为 `index::VST_PLUGIN = 13`）
 - `index::VST_PLUGIN = 13`
 - `register_builtin_filters` 仍注册 `VstFactory`
 
@@ -1405,3 +1440,68 @@ impl Filter for LoudnessFilter { ... }
 
 pub fn parse_loudness_params(spec: &str) -> Option<(f32, f32)>;
 ```
+
+---
+
+### 4.22 `pipeline/dsp/fxsound/`（FxSound 效果器移植，v9.1）
+
+**来源与许可**：移植自 FxSound `Auralp.c` / `Lex16.c` / `Maxi16.c`
+（AGPL-3.0-or-later），全部文件保留版权头与来源注释。
+
+**职责**：三个可调参效果器，以 EAPO 风格 `Key Value` 命令接入 config：
+
+| 文件 | 效果 | 命令 |
+|------|------|------|
+| `aural.rs` | Aural Enhancer（二阶 Butterworth 高通 + sin 奇偶谐波激励，Wet/Dry） | `AuralEnhancer:` |
+| `reverb.rs` | Lexicon 风格 Reverb（预延迟 + 四级 Lattice 扩散 + 调制延迟网络 + 多抽头） | `Reverb:` |
+| `maximizer.rs` | Maximizer（0.1 Hz 电平估计 + lookahead 峰值限幅 + LCG 抖动 + 16-bit 量化） | `Maximizer:` |
+
+**引用来源**：`crate::pipeline::dsp::filter::Filter`（三个 Filter 均实现该 trait）。
+
+**导出给**：`pipeline/dsp/factory.rs`（注册 `AuralEnhancerFactory` / `ReverbFactory` /
+`MaximizerFactory`）；`config/` 禁止直接引用。
+
+**RT 约束**：
+- `initialize` 预计算系数并分配状态/延迟线（Reverb 延迟线长度与 C 端 `MasterLen`
+  完全一致——按实际 RoomSize + 最大 2 ms 调制预留，保证整条主延迟净推进 1 采样/迭代）；
+- `process` 零分配、无锁、无 I/O、无 panic；输出非有限时置 0；
+- `latency()` 返回 0（与当前 VxAPO 不向引擎上报效果内部延迟的策略一致）；
+- 参数变更走 config 热重载（Filter 重建），不支持流内实时改写。
+
+**公开 API**：
+
+```rust
+pub struct AuralParams { pub tune_hz: f32, pub drive: f32, pub odd: f32,
+    pub even: f32, pub wet: f32, pub dry: f32 }
+pub fn parse_aural_params(params: &str) -> Option<AuralParams>;
+pub struct AuralEnhancerFilter { ... }   // impl Filter
+pub struct AuralEnhancerFactory;         // impl FilterFactory, command_name() = "AuralEnhancer"
+
+pub struct ReverbParams { ... }
+pub fn parse_reverb_params(params: &str) -> Option<ReverbParams>;
+pub struct ReverbFilter { ... }          // impl Filter
+pub struct ReverbFactory;                // impl FilterFactory, command_name() = "Reverb"
+
+pub enum DitherType { None, Uniform, Triangular, Shaped }
+pub struct MaximizerParams { ... }
+pub fn parse_maximizer_params(params: &str) -> Option<MaximizerParams>;
+pub struct MaximizerFilter { ... }       // impl Filter
+pub struct MaximizerFactory;             // impl FilterFactory, command_name() = "Maximizer"
+```
+
+**默认值**（取原 Quick preset 1 精神，Wet/Dry 可覆盖）：
+- Aural：TuneHz 1760 / Drive 1.76993 / Odd 1.5 / Even 0.0 / Wet 1.0 / Dry 0.0；
+- Reverb：RoomSize 1.0 / Decay 0.565664 / Damping 0.408290 / Bandwidth 0.350110 /
+  Density 1.0 / Lat5 0.70 / Lat6 0.50 / PreDelay 0 ms / MotionRate 0.110871 /
+  MotionDepth 0.63 ms / Wet 0.3 / Dry 0.9；
+- Maximizer：GainBoost 6 dB / MaxOutput -0.3 dB / Release 10.18 ms（= β 0.997776 @44.1k）/
+  Target 0.32 / Lookahead 0.75 ms / Dither Shaped / Wet 1.0 / Dry 0.0。
+
+**关键移植换算**：
+- Aural 高通：`omega = 2π·TuneHz/sr`，`tmp = 1/(4+ω²+2√2ω)`，
+  `gain = 4·tmp`，`a1 = (8-2ω²)·tmp`，`a0 = (2√2ω-4-ω²)·tmp`；
+- Reverb 房间尺寸段：`tap = trunc(sr·秒·RoomSize)`；`lat5/lat7 标称 = trunc(sr·0.0226/0.0305·RoomSize)`，
+  分配 = 标称 + `trunc(sr·0.002)` + 1；调制深度由 ms 转采样数；
+- Maximizer 电平低通（0.1 Hz）：`a0 = 2 - cos(ω) - sqrt(cos²ω - 4cosω + 3)`，`filt_gain = 1 - a0`；
+  release：`beta = exp(-1/(ms·0.001·sr))`；lookahead：`trunc(sr·0.00075)`；
+  抖动 LCG：`seed = (3141592621·seed + 2718282829) % 4294967291`。
