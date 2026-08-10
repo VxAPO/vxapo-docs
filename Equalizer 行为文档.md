@@ -150,9 +150,9 @@
 
 | # | 行为（源码确认） | 源码位置 | VxAPO 对齐 |
 |---|------------------|----------|------------|
-| C51 | **EAPO 的 GraphicEQ 不是 biquad 级联**：`GraphicEQFilter` 继承 `ConvolutionFilter`，在 `initializeFilters` 中把节点增益按频率插值后生成频响，用 FFT 做最小相位变换，得到 FIR 再卷积 | GraphicEQFilter.cpp 44-101 | **VxAPO v9.0 + v9.5 对齐**：`pipeline/dsp/graphic_eq.rs` 对数频率插值 + 最小相位 FIR + 1024 点分块 FFT 卷积（块 128，v9.5 由直接 FIR 改为分块 FFT 以降 CPU） |
+| C51 | **EAPO 的 GraphicEQ 不是 biquad 级联**：`GraphicEQFilter` 继承 `ConvolutionFilter`，在 `initializeFilters` 中把节点增益按频率插值后生成频响，用 FFT 做最小相位变换，得到 FIR 再卷积 | GraphicEQFilter.cpp 44-101 | **VxAPO v9.0 + v9.6 对齐**：`pipeline/dsp/graphic_eq.rs` 对数频率插值 + 最小相位 FIR + **512 点直接时域卷积**（v9.5 试过分块 FFT 降 CPU，但其块缓冲在流停止时丢尾音 → 切换设备“嗡”声，v9.6 改回直接 FIR） |
 | C52 | **节点间对数频率线性插值**：`GainIterator::gainAt` 在 `log(freq)` 上线性插值；低于首节点/高于末节点取端点增益（频带外平坦） | GainIterator.cpp 30-98 | **对齐**：`gain_at()` 同语义 |
-| C53 | **GetLatency 无 child 恒返回 0**：即使内部使用卷积（有滤波器固有延迟）也不向引擎上报；VxAPO 采用 1024 点分块 FFT（块 128，隐藏延迟 ≈2.7ms@48k，v9.5），继续对齐该行为 | EqualizerAPO.cpp 82-95 | **对齐**：object 7.2 / 2026-08-10 延迟策略 |
+| C53 | **GetLatency 无 child 恒返回 0**：即使内部使用卷积（有滤波器固有延迟）也不向引擎上报；VxAPO 采用 512 点直接 FIR（v9.6，无块缓冲），继续对齐该行为 | EqualizerAPO.cpp 82-95 | **对齐**：object 7.2 / 2026-08-10 延迟策略 |
 | C54 | **EAPO 不处理 CAPX `MSFX\N` 模板**：通用 USB 设备由 `wdma_usb.inf` 在设备接口注册「Microsoft Audio Home Theater Effects」（WMALFXGFX 两个 APO）；Windows 重启/重新枚举端点可能从模板恢复微软 APO，EAPO 不接管 | wdma_usb.inf `USBAudio.SysFx.Render` | **VxAPO v9.0 + v9.4 扩展**：install `device/sysfx.rs` 定位并替换 `MSFX\N` 的 StreamEffect/ModeEffect（卸载时恢复）；v9.4 起 DLL `Initialize` 时**运行期自愈**——设备重新枚举后被 Windows 灌回的微软 CAPX 由本 DLL 自动再接管（仅动微软 CLSID、幂等、失败降级） |
 | C55 | **强制启用增强**：EAPO 安装时删除 `{1da5d803-d492-4edd-8c23-e0c0ffee7f0e},5`（PKEY_AudioEndpoint_Disable_SysFx）；`fxTitle` 仅在新建 FxProperties 时写入 | DeviceAPOInfo.cpp 642-645 / 527 | **对齐 + 扩展**：VxAPO 同步删除该值；fxTitle 不写（避免历史音量/格式问题） |
 
@@ -173,9 +173,9 @@
 | 安装自检 | **E3.4 描述需修订**（实际是 IAudioClient 管线自检） | C37 |
 | 安装提权（manifest 声明式） | **VxAPO CLI 借鉴**：安装器 `RequestExecutionLevel admin` + 程序 `RequireAdministrator`，无运行时提权代码 | C38-C40 |
 | 安装槽位模式探测 + 互斥写 | 对齐（LfxGfx 独占/SfxMfx 蓝牙/SfxEfx 默认三档 + 按 mode 互斥写+删槽位） | C41-C50 |
-| GraphicEQ 实现 | **v9.0 + v9.5 对齐**：对数频率插值 + 最小相位 FIR + 分块 FFT 卷积（块 128，非 biquad 级联） | C51-C52 |
+| GraphicEQ 实现 | **v9.0 + v9.6 对齐**：对数频率插值 + 最小相位 FIR + 512 点直接时域卷积（非 biquad 级联） | C51-C52 |
 | CAPX「设备默认效果」 | **EAPO 不处理**；VxAPO v9.0 扩展：接管 `MSFX\N` 模板，替换微软 APO | C54 |
-| 延迟上报 | 对齐：GetLatency 无 child 返回 0；VxAPO 分块 FFT 隐藏延迟不上报 | C53 |
+| 延迟上报 | 对齐：GetLatency 无 child 返回 0；VxAPO 直接 FIR 无块延迟不上报 | C53 |
 
 ---
 

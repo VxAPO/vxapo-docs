@@ -344,14 +344,15 @@
 - DoD：☑ 规范定稿 ☑ 实现 ☐ 真机验证（设备切换 + 设置页）
 
 ### P1-5  GraphicEQ 性能与热重载补强（v9.5）
-- 状态：已实现（v9.5：分块 FFT 卷积降 CPU + 热重载补载修复 + 空命令 passthrough）
+- 状态：已实现（v9.5 分块 FFT + v9.6 改回 512 点直接 FIR：分块块缓冲致切换嗡声，
+  已实锤并修复；热重载补载 + 空命令 passthrough + 100ms 启动静音）
 - 优先级：P1 ｜ 关联 Phase：Phase 11
 - 目标：多路音频流时 audiodg 不再吃满（声音设置页卡顿）；配置热重载在所有
-  时序下可靠；`GraphicEQ:` 空参数能显式移除 EQ
+  时序下可靠；`GraphicEQ:` 空参数能显式移除 EQ；设备切换无嗡声/无首段断续
 - 影响模块：`pipeline/dsp/graphic_eq.rs`、`object/apo/config.rs`、`config/watcher.rs`、
   `config/commands/graphic.rs`、`config/parser.rs`
-- 规范落点：`pipeline 4.18` + `config 6.10` + `object 7.1.9/7.1.18`
-- DoD：☑ 规范定稿 ☑ 实现 ☐ 真机验证（设置页卡顿 + 空命令热重载）
+- 规范落点：`pipeline 4.18` + `config 6.10` + `object 7.1.9/7.1.18` + `Equalizer 行为文档 2.10`
+- DoD：☑ 规范定稿 ☑ 实现 ☑ 真机验证（设置页卡顿 / 空命令热重载 / 切换嗡声 / 首段断续）
 
 ### P1-2  CLI per-device 配置管理
 - 状态：Backlog
