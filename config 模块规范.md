@@ -918,9 +918,10 @@ pub fn handle(value: &str, ctx: &mut ParseContext) -> Result<(), ConfigError>;
 
 ---
 
-### 6.16 FxSound 效果器命令（v9.2，注册表分派）
+### 6.16 效果器命令（v9.3，注册表分派）
 
-**职责**：`AuralEnhancer:` / `Reverb:` / `Maximizer:` / `Wide:` 四个 FxSound 移植效果器。
+**职责**：`AuralEnhancer:` / `Reverb:` / `Maximizer:` / `Wide:` 四个可调参效果器
+（Reverb v9.3 起为 Dattorro 板式混响独立实现；其余三个仍为 FxSound 移植）。
 无 `config/commands/*.rs` 文件——通过 `pipeline/dsp/factory.rs` 注册
 （`register_builtin_filters` 追加四个工厂），parser 默认分支按命令名精确分派
 （6.1 `try_create_named`），**无需静态分发分支**。
@@ -935,6 +936,9 @@ pub fn handle(value: &str, ctx: &mut ParseContext) -> Result<(), ConfigError>;
   MotionDepth 0.63 ms Wet 0.3 Dry 0.9`
   - RoomSize [0.5, 1.5]，Decay/Damping/Bandwidth/Density/Lat5/Lat6 [0, 1]，
     PreDelay [0, 100] ms，MotionRate [0.05, 2.0]，MotionDepth [0, 2.0] ms。
+  - v9.3 起 Dattorro 语义：RoomSize 缩放槽内延迟；Decay 控制尾音长度；Damping/Bandwidth
+    分别为槽内/输入低通（0=暗淡，1=明亮）；Density 控制扩散密度；Lat5 早反射、
+    Lat6 尾音电平；MotionRate 为 LFO 频率（Hz）；MotionDepth 2 ms = 论文满深度。
 - `Maximizer: GainBoost 6 dB MaxOutput -0.3 dB Release 100 ms
   Target 0.32 Lookahead 0.75 ms Dither Shaped [Wet 1.0 Dry 0.0]`
   - GainBoost [0, 30] dB，MaxOutput [-30, 0] dB，Release [0.1, 100] ms，
@@ -945,7 +949,8 @@ pub fn handle(value: &str, ctx: &mut ParseContext) -> Result<(), ConfigError>;
     只处理前两个选中通道，单声道按 C 语义输出减半。
 
 **语义**：
-- 全部参数先解析再 clamp 到原始 c_* 区间；任一 key 未知、缺值或值非法 →
+- 全部参数先解析再 clamp 到效果器自身区间（Reverb v9.3 起不再引用 c_lex 区间）；
+  任一 key 未知、缺值或值非法 →
   解析失败 → parser 报 `SyntaxError「命令无效」`（整体解析失败，保留旧链）；
 - 参数变更走现有 config 热重载（Filter 重建），不支持流内实时改写；
 - `process` 运行在 RT 线程：零分配、无锁、无 I/O；`latency()` 返回 0。

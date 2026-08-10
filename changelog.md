@@ -1,5 +1,27 @@
 # Changelog
 
+## v9.3 — 2026-08-10
+
+变更类型：`算法替换 + 模块规范更新`（Reverb 由 Lexicon 移植替换为 Dattorro 板式混响）
+
+- **`pipeline/dsp/fxsound/reverb.rs` 重写**：移除 FxSound `Lex16.c` 移植（AGPL 版权头一并移除），
+  改为按 Jon Dattorro 1997 论文独立实现的板式混响——输入 4 级 AllPass 扩散
+  （142/107/379/277）、双槽交叉反馈环路（672/908 正交 LFO 调制 APF + 4453/4217 主延迟 +
+  1800/2656 扩散 APF + 3720/3163 尾延迟）、论文 Table 2 的 14 抽头输出（每抽头 0.6）；
+  正确性经论文原文与 ValleyRackFree / johnhw 参考实现交叉核对，本文件为原创代码——
+  对应 `pipeline 4.22`。
+- **命令与参数完全兼容**：`Reverb:` 语法与取值范围不变；语义重映射——RoomSize → 槽内延迟缩放、
+  Decay → 环路反馈（内部 0.25..0.95）、Damping/Bandwidth → 槽内/输入低通截止、
+  Density → 扩散系数（1.0 = 论文默认 0.75/0.625/0.7/0.5）、Lat5/Lat6 → 早反射/尾音电平、
+  MotionRate/MotionDepth → 调制 LFO 频率/深度（2 ms = 论文 EXCURSION 16 采样@29761 Hz）——
+  对应 `pipeline 4.10/4.22`、`config 6.16`。
+- **测试**：解析/静音/dry 精确直通/有限性/44.1k·48k·96k 最大参数/单声道尾音/工厂注册；
+  全量 `cargo test --lib` 550 passed（4 个既有管理员权限用例除外），release 构建成功。
+- **roadmap**：P1-1 更新为「四个效果已接入，v9.3 起逐个替换为更优算法」；新增 P1-3 算法升级项。
+- **模块引用规范（无详细模块版）.md**：版本号 v9.2 → v9.3；模块树 fxsound 注释更新。
+
+> 对应 commit：driver `待回填` / cli `无变更` / docs `待回填`
+
 ## v9.2 — 2026-08-10
 
 变更类型：`新增能力 + 模块规范更新`（FxSound Wide 立体声加宽接入）
@@ -16,7 +38,7 @@
 - **roadmap P1-1**：Wide 落地后四个 FxSound 效果全部实现（听感验证留手动）。
 - **模块引用规范（无详细模块版）.md**：版本号 v9.1 → v9.2；模块树新增 `wide.rs`。
 
-> 对应 commit：driver `0eb5075` / cli `无变更` / docs `（提交后本地回填）`
+> 对应 commit：driver `0eb5075` / cli `无变更` / docs `c7fef40`
 
 ## v9.1 — 2026-08-10
 
