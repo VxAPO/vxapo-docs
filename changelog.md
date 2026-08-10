@@ -20,7 +20,7 @@
 - **模块引用规范（无详细模块版）.md**：版本号 v9.0；模块树/依赖表对齐实际 driver 树
   （含 `object/apo/` 拆分、`pipeline/dsp/math.rs`、`install/device/sysfx.rs`、`utils/guid.rs` 等）
 
-> 对应 commit：driver `9d4e1b5` / cli `f2a4aca` / docs `dbe84e0`
+> 对应 commit：driver `9d4e1b5` / cli `f2a4aca` / docs `53edd94`
 
 ## v8.15 — 2026-08-06
 
