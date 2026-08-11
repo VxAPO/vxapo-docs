@@ -34,14 +34,9 @@ object/
 
 ### 引用约束总表
 
-| 模块 | 可依赖 | 不可依赖 |
-|------|--------|----------|
-| `object/apo.rs` | `sys/com/`（全部）、`sys/registry`、`sys/known_folder`、`object/child.rs`、`object/vx_reg_props.rs`、`object/ref_count.rs`、`object/factory.rs`、`pipeline/`、`config/`、`install/audiodg`、`install/device/slots`（v8.4 新增——子 APO GUID 读取：`childApoPath\{deviceGuid}`）、`telemetry/logger`、`utils/` | — |
-| `object/child.rs` | `sys/com/prelude`、`sys/com/apo_interfaces`、`sys/com/apo_types` | `object/apo.rs`（禁止循环） |
-| `object/factory.rs` | `sys/com/prelude`、`sys/com/apo_interfaces`、`object/apo.rs`、`object/vx_reg_props.rs`、`object/ref_count.rs` | — |
-| `object/ref_count.rs` | `core` | 所有其他 |
-| `object/vx_reg_props.rs` | `sys/com/prelude`、`sys/com/apo_types` | 所有其他 |
-| `object/dll_exports.rs` | `object/*`、`sys/com/prelude`、`telemetry` | — |
+> v9.17（单一事实源）：本表不再独立维护——以主规范
+> `模块引用规范（无详细模块版）.md` 第十一节「引用约束总表」为唯一基线，
+> object 各文件的允许/禁止依赖逐行见主规范。
 
 > 较原规范变更：`dll_exports.rs` 不再依赖 `installation/clsid_entries`，改为依赖 `object/vx_reg_props`（注册条目已合并）。
 

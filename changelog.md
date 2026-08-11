@@ -1,5 +1,51 @@
 # Changelog
 
+## v9.17 — 2026-08-11
+
+变更类型：`缺陷修复 + 结构重构 + 文档同步`（代码审查 13 项阻断级整改 + 依赖治理）
+
+- **RT 零分配逻辑保证**：`object/apo/process.rs` 消除过渡/正常路径每帧
+  `Box::new(Chain::new())` 占位分配（字段拆借用）；过渡缓冲 `Vec::resize` 改为
+  容量断言 + `[..n].fill(0.0)`——**对应章节**：`object 7.1.11`、`主规范 十一`
+- **引擎违约越界防护**：新增 `checked_interleaved_slice` 统一切片构造（先 clamp
+  `frames ≤ max_frame_count` 再建切片），process 各分支与 panic 兜底补指针判空；
+  `pipeline/process.rs` 同样先 clamp 再处理——**对应章节**：`object 7.1.11`、
+  `pipeline 4.6`
+- **控制型 COM 入口 panic 兜底**：`Reset/GetLatency/GetInputChannelCount/
+  LockForProcess/UnlockForProcess` 统一 catch_unwind，控制路径锁改为
+  `into_inner` 容忍中毒；`unsafe impl Send/Sync` 补 SAFETY 注释——**对应章节**：
+  `object 7.1`、`主规范 十五`
+- **热重载防覆盖修复**：`reloading` 在短锁检查后立即置位、RAII 保证任意提前返回
+  路径复位；`diag_append` 全部移出 inner 锁（R5），`diag.log` 加 1MB 轮转——
+  **对应章节**：`object 7.1.18`
+- **事务回滚真实生效**：`DeleteKey` 回滚改 `delete_tree`（原“打开后传全路径”静默
+  空操作）；新建安装信息区登记回滚；卸载删除信息区失败返回 Err；重启/停服失败
+  改 best-effort 日志——**对应章节**：`install 5.5.2`
+- **sys/registry 质量修复**：`.reg` 导出 MULTI_SZ 改 UTF-16LE hex(7) 双终止、
+  QWORD 改完整 8 字节 hex(b)、根头按 root 参数输出、读值失败记警告；
+  `delete_sub_key` 改相对句柄语义并修正调用方；补 `write_qword`——**对应章节**：
+  `sys 3.4`
+- **对象层护栏**：`object/factory.rs` 空指针先校验后写入、`lock_decrement` 零值
+  CAS 保护；`aggregate.rs` x64 偏移加编译期断言并补 outer 契约 SAFETY——
+  **对应章节**：`object 7.5/7.2`
+- **死代码与探针清理**：删除全部 `*_probe.txt` 写盘探针（factory/dll_exports/
+  apo/config/init/process）；删除 `parse_{aural,loudness,maximizer,wide,reverb}
+  _params` 及旧命令解析测试；`pipeline/process.rs` 静音检测死分支删除——
+  **对应章节**：`pipeline 4.x`、`object 7.x`
+- **规范总表修订 + 单一事实源**：主规范第十一节按实际代码补录 10+ 行（含脚本新
+  发现的 audiodg/select/state/apo_types 等缺口）；新增第三方依赖登记、D1–D8
+  依赖铁律与自动校验说明；四份子规范引用约束总表改为指向主规范——
+  **对应章节**：`主规范 十一`
+- **依赖校验脚本**：新增 `vxapo-driver/scripts/check_deps.ps1`（按文件白名单
+  断言 crate::/super:: 引用，忽略 cfg(test)，与总表三文件联动）——
+  **对应章节**：`主规范 11.3`
+- **测试**：全量 435 passed / 0 failed（注册表/回滚新测试在真实环境验证），
+  release 零警告构建
+- **模块引用规范（无详细模块版）.md**：版本号 v9.16 → v9.17。
+
+> 对应 commit：driver `c05efde` / cli `无变更` / docs `待提交`（docs hash 按下
+> changelog-rule v8.3 随下次自然变更本地回填）
+
 ## v9.16 — 2026-08-11
 
 变更类型：`契约落地 + 文档同步`（UI 卡片模型段数契约落地）

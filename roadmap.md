@@ -422,6 +422,37 @@
 - 依赖：P1-2、P1-3（导入需落到 DeviceProfile/预设容器）
 - DoD：☐ 规范定稿 ☐ 实现 ☐ 测试
 
+### P1-8  代码审查整改与依赖治理（v9.17）
+- 状态：Done（v9.17 合规核对通过）
+- 优先级：P1 ｜ 关联 Phase：治理基线
+- 目标：按 `代码审查报告/00-索引.md` 的 13 项阻断级问题 + 建议稿 P0
+  （registry `.reg`/`delete_sub_key` + install 事务回滚）+ 通用清理类
+  （debug 探针、`parse_*_params` 死代码、过期注释、unsafe SAFETY 注释）先行
+  落地；同步完成规范总表修订（单一事实源）与依赖校验脚本
+- 影响模块：`object/apo/{process,config,apo,aggregate}`、`object/factory.rs`、
+  `install/selector/operation.rs`、`sys/registry.rs`、`pipeline/process.rs`、
+  `pipeline/dsp/{aural,loudness,maximizer,wide,reverb}.rs`、`主规范 十一`、
+  四份子规范引用约束总表、`scripts/check_deps.ps1`
+- 规范落点：`主规范 十一`（总表修订 + 11.1 第三方登记 + 11.2 铁律 D1–D8 +
+  11.3 自动校验）、`object 7.1/7.2/7.5`、`install 5.5.2`、`sys 3.4`、
+  `pipeline 4.6`；`pipeline/install/config/object` 四份子规范引用约束总表
+  改为指向主规范（单一事实源）
+- 依赖：无
+- DoD：☑ 规范定稿（v9.17）☑ 实现 ☑ 测试（435 passed + release 零警告 +
+  check_deps.ps1 全绿）
+
+> **意图落点**：`intent.md 五节`（安装可靠性/三层边界；APP 侧契约以
+> `UI 设计规范/01` 为准，本轮无 APP 变更——api 薄层/可见性收敛留待 APP 需要时再定）。
+>
+> **合规核对记录（v9.17）**：13 项阻断级逐项闭环——①⑤⑥ 占位分配/过渡 resize/
+> reloading 防覆盖（process.rs + config.rs 重构，RT 零分配逻辑保证）；②③⑫
+> unsafe 注释 + 切片先 clamp（`checked_interleaved_slice` + pipeline/process
+> clamp）；④⑬ `unsafe impl Send/Sync` SAFETY 注释；⑦⑧ 事务回滚 DeleteKey 改
+> `delete_tree` + 信息区登记回滚（新增回滚单测）；⑨⑩ factory 空指针先校验 +
+> `lock_decrement` CAS 零值保护（新增回归测试）；⑪ aggregate x64 编译期护栏；
+> 通用清理：全部 `*_probe.txt` 探针删除、`parse_*_params` 死代码删除、过期注释
+> 重写、registry unsafe 注释补齐；依赖校验脚本 70 文件 0 违规。
+
 ---
 
 ## P2 — 增强（预留，后补）

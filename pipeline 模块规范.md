@@ -84,20 +84,9 @@ pipeline/
 
 ### 引用约束总表
 
-| 模块 | 可依赖 | 不可依赖 |
-|------|--------|----------|
-| `pipeline/context.rs` | 无 | `install/`、`config/`、`object/` |
-| `pipeline/buffer.rs` | `sys/com/apo_types` | `install/`、`config/`、`object/` |
-| `pipeline/format.rs` | `sys/com/apo_interfaces`、`sys/com/apo_types` | `install/`、`config/`、`object/` |
-| `pipeline/interleave.rs` | 无 | `install/`、`config/`、`object/` |
-| `pipeline/chain.rs` | `dsp/filter`、`utils/` | `install/`、`config/`、`object/`、`dsp/transition` |
-| `pipeline/process.rs` | `context`、`chain`、`buffer`、`interleave`、`dsp/filter`、`dsp/transition`、`sys/com/apo_types`、`utils/` | `install/`、`config/`、`object/` |
-| `pipeline/realtime/contract.rs` | `core` | 其他 |
-| `pipeline/realtime/ring.rs` | `core` | 其他 |
-| `pipeline/dsp/filter.rs` | `utils/` | `install/`、`config/`、`object/` |
-| `pipeline/dsp/factory.rs` | `dsp/filter`、`dsp/model`（EffectConfig/EffectType）、`dsp/*`（**仅为静态分派实例化具体类型的必要例外**，v9.11）、`utils/` | `install/`、`config/`、`object/` |
-| `pipeline/dsp/transition.rs` | 无 | `install/`、`config/`、`object/` |
-| `pipeline/dsp/*.rs`（具体 Filter） | `dsp/filter`、`dsp/biquad`（如需要）、`utils/` | `install/`、`config/`、`object/` |
+> v9.17（单一事实源）：本表不再独立维护——以主规范
+> `模块引用规范（无详细模块版）.md` 第十一节「引用约束总表」为唯一基线，
+> pipeline 各文件的允许/禁止依赖逐行见主规范。
 
 > **关键设计决策**：Chain 不拥有缓冲区。缓冲区由 `object/apo.rs` 的 `ApoObjectInner` 预分配并持有，Chain 仅接受外部传入的去交织缓冲区引用执行处理。此设计保证：
 > 1. **缓冲区稳定性**——预分配于 `LockForProcess`，生命周期由 `ApoObjectInner` 管理

@@ -76,14 +76,9 @@ q = 1.0
 
 ### 引用约束总表
 
-| 模块 | 可依赖 | 不可依赖 |
-|------|--------|----------|
-| `config/error.rs` | `std` | 所有其他 |
-| `config/model.rs` | `config/error`、`pipeline/dsp/model`、`pipeline/dsp/{aural,maximizer,reverb,wide}`（参数结构） | `install/`、`object/`、`pipeline/process/chain/context` |
-| `config/parser.rs` | `config/error`、`config/model`、`pipeline/dsp/model`、`pipeline/dsp/filter`、`pipeline/dsp/factory` | `install/`、`object/`、`pipeline/chain`、`pipeline/process`、`pipeline/context`、任何 `pipeline/dsp/*.rs` 具体实现、`sys/audio_defs` |
-| `config/watcher.rs` | `config/error`、`utils/` | 其他 |
-| `config/commands.rs` | —（v9.11 删除） | — |
-| `config/commands/*.rs` | —（v9.11 删除） | — |
+> v9.17（单一事实源）：本表不再独立维护——以主规范
+> `模块引用规范（无详细模块版）.md` 第十一节「引用约束总表」为唯一基线，
+> config 各文件的允许/禁止依赖逐行见主规范。
 
 ---
 

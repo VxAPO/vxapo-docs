@@ -30,17 +30,9 @@ install/
 
 ### 引用约束总表
 
-| 模块 | 可依赖 | 不可依赖 |
-|------|--------|----------|
-| `install/device/endpoint.rs` | `sys/registry`、`utils/error` | `pipeline/`、`config/` |
-| `install/device/format.rs` | `sys/registry`、`utils/error`、`sys/audio_defs`（仅 `default_channel_mask`） | `config/` |
-| `install/device/slots.rs` | `sys/registry`、`utils/guid`、`sys/com/prelude`（`guid_to_string`，GUID 字符串化安全边界） | `pipeline/`、`config/` |
-| `install/device/info.rs` | `device/endpoint`、`device/format`、`device/slots`、`sys/registry`、`object/vx_reg_props`、`utils/error` | `pipeline/`、`config/` |
-| `install/device/sysfx.rs` | `device/slots`、`object/vx_reg_props`、`sys/registry`、`sys/com/prelude`、`utils/error` | `pipeline/`、`config/` |
-| `install/selector.rs` | `selector/select`、`selector/operation`（入口聚合） | `pipeline/`、`config/` |
-| `install/selector/select.rs` | `install/device/info`（`enumerate_devices`）、`utils/error` | `pipeline/`、`config/`、`sys/registry`（不得自行遍历） |
-| `install/selector/operation.rs` | `install/device/slots`、`install/device/sysfx`、`install/device/format`、`sys/registry`、`object/vx_reg_props`、`object/dll_exports`（`register_apo_with_path`，安装注册刷新）、`sys/com/prelude`（`guid_to_string`）、`utils/error` | `pipeline/`、`config/` |
-| `install/audiodg.rs` | `sys/registry` | `pipeline/`、`config/` |
+> v9.17（单一事实源）：本表不再独立维护——以主规范
+> `模块引用规范（无详细模块版）.md` 第十一节「引用约束总表」为唯一基线，
+> install 各文件的允许/禁止依赖逐行见主规范。
 
 ---
 
