@@ -335,6 +335,39 @@
 - 规范落点：`pipeline 4.22` + `config 6.16`（每步随版本号递增同步）
 - DoD：☑ 规范定稿 ☑ 实现（4/4） ☑ 测试 ☐ 听感验证（留手动）
 
+### P1-6  混合式 PEQ（200 Hz IIR + 最小相位 FIR，v9.11 目标）
+- 状态：已完成（v9.11：`peq_hybrid.rs` 混合引擎 + TOML `peq` 类型接入）
+- 优先级：P1 ｜ 关联 Phase：Phase 11
+- 目标：以现代语法 `PEQ:`（6–31 段 peaking，Fc/Gain/Q）取代 `GraphicEQ:`；
+  200 Hz 分频——Fc<200 段走 IIR 级联、Fc≥200 段走采样率自适应最小相位 FIR
+  （1024–8192 抽头，≤2048 直接 FIR / >2048 分块 FFT）；整体频响 = 总目标 −
+  IIR 频响（级联精确拟合）；激活引擎帧数延迟补偿；不 EAPO 对齐、不做 IR 卷积
+- 影响模块：`pipeline/dsp/peq_hybrid.rs`（新）、`pipeline/dsp/factory.rs`、
+  `config/commands/graphic.rs`（移除）、`object/apo/process.rs`（延迟补偿激活）
+- 规范落点：`PEQ 设计文档.md` → 定稿并入 `config 6.10/6.16` + `pipeline 4.18/4.22` +
+  `Equalizer 行为文档 2.10`
+- 依赖：P0-2（解析链路）、GraphicEQ FIR/cepstrum 基础设施（v9.0/v9.7）
+- DoD：☑ 规范定稿 ☑ 实现 ☑ 测试 ☐ 真机听感验证
+
+### P1-7  config TOML 迁移（模型驱动，v9.11 目标）
+- 状态：已完成（v9.11：双模型 + 静态分派 + convert + watcher/指纹迁移；
+  APP 适配留待后续）
+- 优先级：P1 ｜ 关联 Phase：Phase 11
+- 目标：`config.txt`（EAPO 逐行命令）→ `config.toml`（serde 模型三端共用：
+  driver/CLI/APP）；`[[effects]]` 数组表保序表达效果链，浮动段数用
+  `[[effects.bands]]`；移除 Device/If/Include/Stage/REW 运行时解析/GraphicEQ/
+  Convolution；双模型分层：FileModel（config 层，含 name/group/meta）→
+  ChainModel（dsp 层，纯 DSP 语义），转换在 config 层；factory 静态 match
+  分派（删除注册表）；spec 指纹改为模型序列化哈希；watcher/CLI 导入/APP
+  JSON bridge 同步迁移；提供 `config convert` 一次性转换
+- 影响模块：`config/parser.rs`（重写为 TOML）、`config/watcher.rs`、
+  `config/commands/*`（移除/合并）、`pipeline/dsp/factory.rs`、
+  `vxapo-cli`、`vxapo-app`（src-tauri）
+- 规范落点：`config TOML 设计文档.md` → 定稿并入 `config 6.x` + `pipeline 4.10` +
+  `CLI 引用规范` + `模块引用规范（无详细模块版）.md`
+- 依赖：P1-6（PEQ 是首个 TOML 效果器类型）
+- DoD：☑ 规范定稿 ☑ 实现 ☑ 测试 ☐ CLI 真机联调 ☐ APP 适配（后续）
+
 ### P1-4  双实例与默认效果冲突修复（v9.4）
 - 状态：已实现（v9.4：PostMix 直通 + MSFX 运行期自愈 + watcher 防自旋）
 - 优先级：P1 ｜ 关联 Phase：Phase 11

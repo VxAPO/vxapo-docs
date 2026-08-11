@@ -5,14 +5,15 @@
 **允许依赖**：
 - `sys/`
 - `utils/`
-- `pipeline/dsp/filter.rs`（Filter trait + ConfigLoader trait）
-- `pipeline/dsp/factory.rs`（FilterFactory、FilterRegistry、DspContext）
+- `pipeline/dsp/filter.rs`（Filter trait + DspContext）
+- `pipeline/dsp/model.rs`（ChainModel / EffectType，v9.11 转换目标）
+- `pipeline/dsp/factory.rs`（`create_from_model` 静态分派，v9.11）
 - （通道名由调用方注入 `DspContext.channel_names`，config **不直接依赖** `sys/audio_defs`）
 
 **禁止依赖**：
 - `install/`、`object/`
 - `pipeline/process.rs`、`pipeline/chain.rs`、`pipeline/context.rs`
-- **任何 `pipeline/dsp/*.rs` 具体实现文件（如 `peq.rs`、`biquad.rs`）**
+- **任何 `pipeline/dsp/*.rs` 具体实现文件（如 `peq_hybrid.rs`、`wide.rs`）**
 
 ---
 
@@ -20,12 +21,55 @@
 
 ```
 config/
-├── parser.rs              # 配置文件解析器 + ConfigParser 结构体
+├── parser.rs              # TOML 配置解析（FileModel → ChainModel → 链）
+├── model.rs               # FileModel（serde，含 name/group/meta APP 元数据）
 ├── error.rs               # ConfigError 错误类型
 ├── watcher.rs             # 配置文件变更监控
-├── commands.rs            # 命令工厂入口（注册所有命令工厂）
-└── commands/
-    ├── channel.rs         # Channel: → 通道选择
+```
+
+### 6.0 v9.11 TOML 配置模型（现行，取代旧逐行命令）
+
+> v9.11 起配置文件为 `config.toml`（per-device `C:\ProgramData\VxAPO\{GUID}\config.toml`）。
+> 旧 `config.txt` 逐行命令体系（`config/commands/*`、EAPO 对齐、GraphicEQ: 等）
+> 全部移除；迁移工具 `vxapo-cli config convert` 做一次性转换。
+
+**双模型分层（定稿）**：
+- `FileModel`（`config/model.rs`）：TOML 反序列化目标，含 `version` /
+  `[meta]` / `[[effects]]`（`name`/`group` 为 APP 元数据）；
+- `ChainModel`（`pipeline/dsp/model.rs`）：纯 DSP 语义模型（类型、参数、
+  `enabled`、`channels`），无 APP 元数据；
+- 转换（`FileModel → ChainModel`，含范围/段数/声道名校验）是 **config 层
+  职责**；依赖方向保持 `config → pipeline/dsp`。
+
+**Schema（v1）**：
+
+```toml
+version = 1
+
+[meta]
+app = "vxapo"
+schema = 1
+
+[[effects]]
+type = "peq"
+name = "脚步声增强"          # 可选，APP 元数据，driver 忽略
+group = "FPS 预设"           # 可选，APP 元数据，driver 忽略
+crossover_hz = 200
+[[effects.bands]]
+fc = 1000
+gain_db = 3.0
+q = 1.0
+```
+
+**效果器类型（v1 保留集）**：`peq`（混合式，见 `pipeline 4.22`）、`preamp`、
+`aural`、`reverb`、`maximizer`、`wide`、`loudness`；`enabled = false` 旁路；
+`channels = ["FL", "FR"]` 限定作用声道（缺省全部）。
+
+**校验**：未知 type / 未知键 / 不适用字段 / 缺必填键 / 超范围 / PEQ 段数
+不在 [6, 31] / 声道名重复或不存于设备 → 整文件解析失败，保留旧链。
+
+**指纹与热重载**：spec 指纹 = `EffectConfig::spec()`（DSP 字段稳定序列化，
+`name`/`group`/`meta` 不参与）；watcher 监控 `config.toml`。
     ├── cond.rs            # If:/ElseIf:/Else:/EndIf: → 条件分支系统
     ├── device.rs          # Device: → 设备匹配 + AbortFile
     ├── expr.rs            # Eval: → 变量赋值 + 表达式求值

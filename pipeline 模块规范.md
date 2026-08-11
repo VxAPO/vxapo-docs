@@ -979,10 +979,14 @@ pub trait ConfigLoader {
 
 ### 4.10 `pipeline/dsp/factory.rs`
 
-**职责**：`FilterRegistry` + 工厂注册 + 工厂遍历匹配。
+**职责**：v9.11 起为 **模型 → Filter 静态分派**：`create_from_model(EffectConfig,
+DspContext) -> Box<dyn Filter>`，`match EffectType` 穷尽 7 个类型；已删除
+`FilterFactory` / `FilterRegistry` / `FilterCreateResult` / `OutcomeKind` /
+`index` 常量与注册顺序测试（不再 EAPO 对齐）。
 
 **引用来源**：
 - `crate::pipeline::dsp::filter::*`
+- `crate::pipeline::dsp::model::*`（EffectConfig/EffectType，v9.11）
 - `crate::pipeline::dsp/*.rs`（**具体 Filter 实现：工厂注册中心必要例外**——注册必须实例化具体类型）
 - `crate::utils::vx_error::VxApoError`
 
@@ -1335,6 +1339,10 @@ pub fn parse_copy_ops(spec: &str, channel_names: &[String]) -> Option<Vec<Channe
 
 ### 4.18 `pipeline/dsp/graphic_eq.rs`
 
+> **v9.11 废弃**：`GraphicEQ:` 命令与 `graphic_eq.rs` 已移除，由
+> `pipeline/dsp/peq_hybrid.rs`（混合式 PEQ，TOML `[[effects]] type = "peq"`）
+> 取代。本节保留为历史记录。
+
 **职责**：图形均衡器（EqualizerAPO 对齐：对数频率插值 + 最小相位 FIR + 直接时域卷积）。
 
 **引用来源**：`crate::pipeline::dsp::filter::Filter`、`crate::pipeline::dsp::convolution::ConvolutionFilter`、`rustfft`
@@ -1461,7 +1469,13 @@ pub fn parse_loudness_params(spec: &str) -> Option<(f32, f32)>;
 
 ---
 
-### 4.22 `pipeline/dsp/` 效果器（aural/reverb/maximizer/wide，v9.10）
+### 4.22 `pipeline/dsp/` 效果器（aural/reverb/maximizer/wide/peq_hybrid，v9.11）
+
+> v9.11 新增 `pipeline/dsp/peq_hybrid.rs`：混合式 PEQ——200 Hz 分频，
+> `Fc<200` 段 IIR biquad 级联、`Fc≥200` 段采样率自适应最小相位 FIR
+> （1024–8192 抽头，≤2048 直接 FIR / >2048 分块 FFT）；FIR 目标 =
+> 总目标 − IIR 频响（级联精确拟合）；`latency()` 按执行模式上报
+> （直接 = N-1，分块 = 128）。详见 `PEQ 设计文档.md`。
 
 **来源与许可**：四个效果器均为独立实现（原创代码，无 AGPL 版权头）——
 `reverb.rs`（v9.3，按 Jon Dattorro 1997 论文）、`maximizer.rs`（v9.8，参考

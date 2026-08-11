@@ -155,6 +155,7 @@
 | C53 | **GetLatency 无 child 恒返回 0**：即使内部使用卷积（有滤波器固有延迟）也不向引擎上报；VxAPO 采用 1024 点直接 FIR（v9.7，无块缓冲），继续对齐该行为 | EqualizerAPO.cpp 82-95 | **对齐**：object 7.2 / 2026-08-10 延迟策略 |
 | C54 | **EAPO 不处理 CAPX `MSFX\N` 模板**：通用 USB 设备由 `wdma_usb.inf` 在设备接口注册「Microsoft Audio Home Theater Effects」（WMALFXGFX 两个 APO）；Windows 重启/重新枚举端点可能从模板恢复微软 APO，EAPO 不接管 | wdma_usb.inf `USBAudio.SysFx.Render` | **VxAPO v9.0 + v9.4 扩展**：install `device/sysfx.rs` 定位并替换 `MSFX\N` 的 StreamEffect/ModeEffect（卸载时恢复）；v9.4 起 DLL `Initialize` 时**运行期自愈**——设备重新枚举后被 Windows 灌回的微软 CAPX 由本 DLL 自动再接管（仅动微软 CLSID、幂等、失败降级） |
 | C55 | **强制启用增强**：EAPO 安装时删除 `{1da5d803-d492-4edd-8c23-e0c0ffee7f0e},5`（PKEY_AudioEndpoint_Disable_SysFx）；`fxTitle` 仅在新建 FxProperties 时写入 | DeviceAPOInfo.cpp 642-645 / 527 | **对齐 + 扩展**：VxAPO 同步删除该值；fxTitle 不写（避免历史音量/格式问题） |
+| C56 | **v9.11 起 VxAPO 不再对齐 EAPO EQ 体系**：`GraphicEQ:` 命令与 `graphic_eq.rs` 移除，由 TOML `[[effects]] type="peq"` 混合式 PEQ 取代（200 Hz 分频：Fc<200 段 IIR 级联、Fc≥200 段采样率自适应最小相位 FIR，1024–8192 抽头）；命令解析/工厂注册不再 EAPO 对齐；延迟策略更新——`GetLatency` 仍返回 0，但引擎帧数补偿激活（`latency_frames_atomic` = 链总延迟，`CalcInputFrames/CalcOutputFrames` 生效） | —（独立设计） | **VxAPO v9.11**：`config TOML 设计文档.md` + `PEQ 设计文档.md` + `pipeline 4.10/4.18/4.22` + `config 6.0` |
 
 ---
 

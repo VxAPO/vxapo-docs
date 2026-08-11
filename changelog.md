@@ -1,5 +1,41 @@
 # Changelog
 
+## v9.11 — 2026-08-11
+
+变更类型：`结构重构 + 模块规范更新`（TOML 模型驱动 + 混合式 PEQ + 精简 DSP）
+
+- **config TOML 模型驱动（P1-7 完成）**：`config.txt` 逐行命令体系整体移除
+  （`config/commands/*` 删除），改为 `config.toml` + serde 双模型
+  （FileModel → ChainModel，转换/校验在 config 层）；`[[effects]]` 保序链 +
+  `[[effects.bands]]` 浮动段；`name`/`group`/`meta` 为 APP 元数据
+  （driver 忽略、不参与指纹）；spec 指纹 = `EffectConfig::spec()`；
+  watcher 监控 config.toml；`vxapo-cli config convert` 提供旧 txt 一次性
+  转换——**对应章节**：`config 6.0`、`config TOML 设计文档.md`
+- **混合式 PEQ（P1-6 完成）**：`pipeline/dsp/peq_hybrid.rs`——200 Hz 分频
+  （Fc<200 段 IIR biquad 级联，Fc≥200 段最小相位 FIR，200.0 归 FIR）；
+  FIR 目标 = 总目标 − IIR 频响（级联精确拟合）；抽头
+  `next_pow2(sr×0.0213)` 夹 [1024, 8192]，≤2048 直接 FIR（AVX2）/ >2048
+  分块 FFT（输出驱动 + 补块 flush，修复切换“嗡声”）——
+  **对应章节**：`pipeline 4.22`、`PEQ 设计文档.md`
+- **DSP 精简与工厂静态分派**：移除 graphic_eq / peq / copy / delay / vst /
+  hp_lp / convolution；`biquad.rs` 保留为 loudness 内部工具（不再作为
+  config 类型）；`factory.rs` 改为 `match EffectType` 穷尽分派，删除
+  FilterRegistry / FilterCreateResult / OutcomeKind / index；保留集 =
+  peq / preamp / aural / reverb / maximizer / wide / loudness——
+  **对应章节**：`pipeline 4.10`
+- **延迟补偿激活**：`latency_frames_atomic = chain.total_latency()`
+  （Lock 时写入），`CalcInputFrames/CalcOutputFrames` 生效；
+  `MAX_APO_LATENCY_SAMPLES` 提升到 8192；`GetLatency` 仍返回 0——
+  **对应章节**：`Equalizer 行为文档 2.10 C56`
+- **通道语义**：per-effect `channels` → `ChannelScopedFilter` +
+  `Filter::fixed_channel_indices`；Chain 初始化优先使用固定槽位。
+- **测试**：TOML 解析/校验/指纹、PEQ 频响拟合（跨 200 Hz 多采样率 ±0.5 dB）、
+  分块 FFT 与朴素卷积逐样本一致 + 尾部 flush；全量 441 passed
+  （4 个既有管理员权限用例除外），release 零警告构建。
+- **模块引用规范（无详细模块版）.md**：版本号 v9.10 → v9.11；树与依赖表更新。
+
+> 对应 commit：driver `a5f89e8` / cli `b2d72d1` / docs `待回填`
+
 ## v9.10 — 2026-08-10
 
 变更类型：`结构重构 + 模块规范更新`（Wide 分频改为线性相位 FIR）
@@ -21,7 +57,7 @@
   575 passed（4 个既有管理员权限用例除外），release 构建成功。
 - **模块引用规范（无详细模块版）.md**：版本号 v9.9 → v9.10。
 
-> 对应 commit：driver `31efd6d` / cli `无变更` / docs `待回填`
+> 对应 commit：driver `31efd6d` / cli `无变更` / docs `af34b5f`
 
 ## v9.9 — 2026-08-10
 
