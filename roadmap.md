@@ -335,7 +335,7 @@
 - 规范落点：`pipeline 4.22` + `config 6.16`（每步随版本号递增同步）
 - DoD：☑ 规范定稿 ☑ 实现（4/4） ☑ 测试 ☐ 听感验证（留手动）
 
-### P1-6  混合式 PEQ（200 Hz IIR + 最小相位 FIR，v9.11 目标）
+### P1-6  混合式 PEQ（200 Hz IIR + 最小相位 FIR，v9.11/v9.12）
 - 状态：已完成（v9.11：`peq_hybrid.rs` 混合引擎 + TOML `peq` 类型接入）
 - 优先级：P1 ｜ 关联 Phase：Phase 11
 - 目标：以现代语法 `PEQ:`（6–31 段 peaking，Fc/Gain/Q）取代 `GraphicEQ:`；
@@ -347,7 +347,8 @@
 - 规范落点：`PEQ 设计文档.md` → 定稿并入 `config 6.10/6.16` + `pipeline 4.18/4.22` +
   `Equalizer 行为文档 2.10`
 - 依赖：P0-2（解析链路）、GraphicEQ FIR/cepstrum 基础设施（v9.0/v9.7）
-- DoD：☑ 规范定稿 ☑ 实现 ☑ 测试 ☐ 真机听感验证
+- DoD：☑ 规范定稿 ☑ 实现 ☑ 测试 ☑ 真机稳定性验证（热重载/切歌/切设备，
+  v9.12） ☐ 听感精调（留手动）
 
 ### P1-7  config TOML 迁移（模型驱动，v9.11 目标）
 - 状态：已完成（v9.11：双模型 + 静态分派 + convert + watcher/指纹迁移；

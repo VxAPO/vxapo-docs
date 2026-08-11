@@ -109,15 +109,14 @@ N = next_pow2(round(sr × 0.0213))，夹在 [1024, 8192]
 
 ## 5. 延迟与补偿
 
-- `HybridPeqFilter::latency()` 返回 FIR 路径延迟（直接 FIR = `(N-1)/2`，
+- `HybridPeqFilter::latency()` 返回 FIR 路径延迟（直接 FIR = N-1 保守值，
   分块 FFT = 块大小 128）；
-- 激活引擎帧数补偿：`lock_for_process` 把 `chain.total_latency()` 写入
-  `latency_frames_atomic` / `latency_samples`（当前为忽略 + 恒写 0）；
-  `CalcInputFrames/CalcOutputFrames` 机制已存在，直接生效；
-- 校验 `MAX_APO_LATENCY_SAMPLES` 缓冲余量覆盖 8192 抽头 + 其他 FIR 滤波器
-  组合的最坏延迟；
-- `GetLatency` 保持无 child 返回 0（与现有对象层策略一致，引擎补偿走
-  `CalcInputFrames`）。
+- **不上报、不补偿（v9.12 定稿）**：`latency_frames_atomic` / `latency_samples`
+  恒为 0，`GetLatency` 无 child 返回 0——向引擎上报/补偿会导致帧协商错位、
+  热重载与切歌播放卡住（2026-08-10 实证；v9.11 尝试激活后 v9.12 回退）；
+  链延迟隐藏，音频整体滞后（直接 FIR ≤2047 采样 / 分块 128 采样）不可闻；
+- `MAX_APO_LATENCY_SAMPLES = 8192` 保留为引擎按 `CalcInputFrames` 可能多给帧
+  的缓冲安全余量。
 
 ## 6. 工厂与注册
 
