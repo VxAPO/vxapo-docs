@@ -70,17 +70,6 @@ q = 1.0
 
 **指纹与热重载**：spec 指纹 = `EffectConfig::spec()`（DSP 字段稳定序列化，
 `name`/`group`/`meta` 不参与）；watcher 监控 `config.toml`。
-    ├── cond.rs            # If:/ElseIf:/Else:/EndIf: → 条件分支系统
-    ├── device.rs          # Device: → 设备匹配 + AbortFile
-    ├── expr.rs            # Eval: → 变量赋值 + 表达式求值
-    ├── include.rs         # Include: → 递归加载子配置文件
-    ├── stage.rs           # Stage: → 处理阶段标志
-    ├── graphic.rs         # GraphicEQ: → 图形均衡器（通过注册表）
-    ├── preamp.rs          # Preamp: → 前级增益（通过注册表）
-    ├── copy.rs            # Copy: → 通道复制（通过注册表）
-    ├── delay.rs           # Delay: → 延迟（通过注册表）
-    ├── filter.rs          # Filter: ON HP/LP/PK/... → 参数滤波器（通过注册表）
-    └── rew.rs             # REW 导出格式 → 解析后通过注册表创建
 ```
 
 ---
@@ -90,16 +79,11 @@ q = 1.0
 | 模块 | 可依赖 | 不可依赖 |
 |------|--------|----------|
 | `config/error.rs` | `std` | 所有其他 |
-| `config/parser.rs` | `config/error`、`config/commands/*`、`pipeline/dsp/filter`、`pipeline/dsp/factory`、`sys/registry`、`utils/` | `install/`、`object/`、`pipeline/chain`、`pipeline/process`、`pipeline/context`、任何 `pipeline/dsp/*.rs` 具体实现、`sys/audio_defs` |
+| `config/model.rs` | `config/error`、`pipeline/dsp/model`、`pipeline/dsp/{aural,maximizer,reverb,wide}`（参数结构） | `install/`、`object/`、`pipeline/process/chain/context` |
+| `config/parser.rs` | `config/error`、`config/model`、`pipeline/dsp/model`、`pipeline/dsp/filter`、`pipeline/dsp/factory` | `install/`、`object/`、`pipeline/chain`、`pipeline/process`、`pipeline/context`、任何 `pipeline/dsp/*.rs` 具体实现、`sys/audio_defs` |
 | `config/watcher.rs` | `config/error`、`utils/` | 其他 |
-| `config/commands.rs` | `config/commands/*`、`pipeline/dsp/factory` | 其他 |
-| `config/commands/channel.rs` | `config/error`、`config/parser`(ParseContext)、`pipeline/dsp/filter`(Filter) | `pipeline/chain` |
-| `config/commands/cond.rs` | `config/error`、`config/parser`(ParseContext) | `pipeline/` |
-| `config/commands/device.rs` | `config/error`、`config/parser`(ParseContext) | `pipeline/` |
-| `config/commands/expr.rs` | `config/error` | `pipeline/` |
-| `config/commands/include.rs` | `config/error`、`config/parser`(read_config_file, parse_content)、`pipeline/dsp/filter`(ConfigLoader) | `pipeline/chain` |
-| `config/commands/stage.rs` | `config/error`、`config/parser`(ParseContext) | `pipeline/` |
-| `config/commands/*.rs`（DSP 命令） | `config/error`、`config/parser`(ParseContext)、`pipeline/dsp/filter`(Filter)、`pipeline/dsp/factory`(FilterRegistry) | `pipeline/chain`、具体 Filter 实现 |
+| `config/commands.rs` | —（v9.11 删除） | — |
+| `config/commands/*.rs` | —（v9.11 删除） | — |
 
 ---
 
@@ -120,6 +104,10 @@ pub enum ConfigError {
     IoError { path: String, message: String },
     /// 命令语法错误（含文件名和行号）。
     SyntaxError { file: String, line: usize, message: String },
+    /// TOML 反序列化失败（v9.11）。
+    TomlError { file: String, message: String },
+    /// FileModel → ChainModel 转换/校验失败（v9.11）。
+    ModelError { file: String, message: String },
     /// AbortFile 终止（Device: 命令设置）。
     AbortFile,
 }
@@ -134,74 +122,67 @@ impl std::error::Error for ConfigError {}
 
 ### 6.1 `config/parser.rs`
 
-**职责**：配置文件解析器。读取文件、逐行分发到命令处理器，返回 `Vec<Box<dyn Filter>>`，
-并产出配置指纹（filter_spec 序列，v7.9——供 object 层热重载判定配置是否实质变化）。
+**职责**：配置文件解析器（v9.11 TOML）。读取 `config.toml` → `toml::from_str::<FileModel>`
+→ `into_chain_model`（校验）→ `factory::create_from_model` 构造 Filter 链，并产出配置指纹
+（`EffectConfig::spec()` 序列——供 object 层热重载判定配置是否实质变化）。
 
 **引用来源**：
 - `crate::config::error::ConfigError`
-- `crate::config::commands::*`（所有命令处理器）
-- `crate::pipeline::dsp::filter::{Filter, DspContext, DeviceType, ProcessingStage as DspProcessingStage}`
-- `crate::pipeline::dsp::factory::{FilterFactory, FilterRegistry}`
+- `crate::config::model::FileModel`
+- `crate::pipeline::dsp::model::{ChainModel, EffectType}`
+- `crate::pipeline::dsp::filter::{Filter, DspContext}`
+- `crate::pipeline::dsp::factory::create_from_model`
 - （通道名由 `DspContext.channel_names` 注入，config 不直接依赖 `sys/audio_defs`）
 
-**导出给**：`object/apo.rs`、`config/commands/*`
+**导出给**：`object/apo.rs`（Lock/热重载）
 
 ---
 
 #### ConfigParser
 
 ```rust
-/// 一条成功解析命令的规范化指纹（v7.9，配置变更检测）。
-///
-/// **单一字符串**：命令名（小写）+ `\x1F` + token 级规范化参数。
-/// 仅用于 `==` 等值比较（有序 spec chain 逐项比较）；不可逆向还原 config 原文。
-/// 分隔符 `\x1F`（ASCII Unit Separator）——config.txt 文本中不可能出现，杜绝冲突。
+/// 配置指纹（v9.11）：`EffectConfig::spec()` 稳定序列化（DSP 字段，
+/// `name`/`group`/`meta` 不参与）。有序 spec chain 逐项比较用于热重载判定。
 pub type FilterSpec = String;
 
-/// 配置指纹（spec chain）：一次完整解析产出的 filter_spec 有序序列。
-/// 保持 config.txt 原始行顺序（滤波器串联顺序影响处理结果）。
+/// 配置指纹（spec chain）：一次完整解析产出的 filter_spec 有序序列
+/// （`[[effects]]` 数组表顺序即处理顺序）。
 pub type SpecChain = Vec<FilterSpec>;
 
 /// 配置文件解析器。
-///
-/// 持有 FilterRegistry，提供文件/字符串/行列表三种解析入口。
-/// 返回 `Vec<Box<dyn Filter>>`，由调用方（object/apo.rs）添加到 Chain。
-pub struct ConfigParser {
-    registry: FilterRegistry,
-}
+/// v9.11：无状态（模型校验在 config/model.rs），TOML → FileModel → ChainModel
+/// → `factory::create_from_model` 构造 Filter 链。
+pub struct ConfigParser;
 
 impl ConfigParser {
-    pub fn new(registry: FilterRegistry) -> Self;
+    pub fn new() -> Self;
 
-    /// 解析配置文件。UTF-8 优先，非 UTF-8 使用 ANSI 降级。
+    /// 解析配置文件（config.toml）。缺失 = passthrough（v9.12）；
+    /// 语法/模型校验失败 → 整文件失败（调用方按场景降级：Lock → passthrough，
+    /// 热重载 → 保留旧链）。
     /// 返回 Vec<Box<dyn Filter>>。
     pub fn parse_file(&self, path: &str, ctx: &DspContext) -> Result<Vec<Box<dyn Filter>>, ConfigError>;
 
     /// 解析配置文件，同时产出配置指纹（v7.9，P0-4 配置变更检测主入口）。
-    ///
-    /// - 返回 `(滤波器列表, SpecChain)` 双元组；
-    /// - 128KB **逐文件**上限：主文件与每个 Include 子文件分别判定
-    ///   （`MAX_CONFIG_FILE_SIZE = 128 * 1024`），任一超限 → 整体解析失败；
-    /// - Include 子文件在 parser 层递归展开，子文件命令的 filter_spec 内联到
-    ///   主 spec chain——子文件变更经「重读主 config → 递归展开」自然反映；
-    /// - Include 失败 = 整体解析失败（与语法错误同级，杜绝"残缺 spec 污染基线"）。
+    /// 返回 `(滤波器列表, SpecChain)` 双元组；128KB 上限 `MAX_CONFIG_FILE_SIZE`。
     pub fn parse_file_with_spec(&self, path: &str, ctx: &DspContext)
         -> Result<(Vec<Box<dyn Filter>>, SpecChain), ConfigError>;
 
-    /// 解析配置字符串。
+    /// 解析配置字符串（TOML）。
     pub fn parse_string(&self, content: &str, ctx: &DspContext) -> Result<Vec<Box<dyn Filter>>, ConfigError>;
 
-    /// 解析行列表。
+    /// 解析行列表（兼容入口：按换行拼接后走 TOML 解析）。
     pub fn parse_lines(&self, lines: &[String], ctx: &DspContext) -> Result<Vec<Box<dyn Filter>>, ConfigError>;
 }
 ```
 
 ---
 
-##### filter_spec 产出契约（v7.9，P0-4）
+##### filter_spec 产出契约（v7.9，P0-4；v9.11 起为 `EffectConfig::spec()`）
 
-**原则**：spec 是**文本指纹**，非 "DSP 语义等价"——由 parser 在 **分发层** 统一产出，
-不侵入各 handle 内部（各 handle 只保留原解析职责），零 DSP 知识（不剥离单位）。
+**原则**：spec 是**文本指纹**，非 "DSP 语义等价"——v9.11 起由模型层
+`EffectConfig::spec()` 统一产出（type/enabled/channels/全部参数，`{:.6}` 定精度），
+`name`/`group`/`meta` 不参与（APP 元数据变化不触发热重载）。
 
 ```rust
 /// 产出单条 filter_spec。**统一在分发层调用**（显式 handle 命令与裸注册表命令同走此路径）。
@@ -267,6 +248,9 @@ fn normalize_number(f: f64) -> String { ... }
 ---
 
 #### ParseContext（解析期间可变状态）
+
+> **v9.11 废弃**：以下 ParseContext / 逐行分发 / 命令处理器细节为 v9.11 前 txt
+> 命令体系实现，已删除；保留为历史参考，不代表现行实现。
 
 ```rust
 /// 配置解析上下文。
@@ -526,7 +510,7 @@ fn is_known_dsp_command(cmd_lower: &str, registry_command_names: &[&str]) -> boo
 pub enum WatchEvent {
     /// 监控目录内发生变更（**目录级通知**——`FindFirstChangeNotificationW`
     ///   不提供具体文件名（v7.9 澄清），无法逐文件过滤）。
-    /// 触发方（object/apo.rs hot_reload）重新解析 config.txt，经 spec 指纹
+    /// 触发方（object/apo.rs hot_reload）重新解析 config.toml，经 spec 指纹
     /// 比对决定是否真正切换（内容未变 → 幂等跳过，无听感副作用）。
     DirectoryChanged(PathBuf),    // watch_dir
     RegistryChanged,              // 保留：poll_registry 哈希兜底（低频）
@@ -548,7 +532,7 @@ pub struct ConfigWatcher { ... }
 impl ConfigWatcher {
     /// 创建监控器（**不启动线程**，v7.10 澄清）——句柄创建 + 状态初始化。
     ///
-    /// - watch_dir：**监控目录**（如 `Documents\VxAPO\{GUID}`），非 config.txt 文件本身
+    /// - watch_dir：**监控目录**（如 `C:\ProgramData\VxAPO\{GUID}`），非 config.toml 文件本身
     /// - shutdown_event：外部持有的退出事件句柄（由 APO 实例持有；UnlockForProcess 时
     ///   `SetEvent` → `wait_and_handle` 返回 false → 调用方 join 线程——v7.9 生命周期随锁定周期）
     /// - 去重窗口固定 10ms（v7.8，对齐 EAPO 实战；旧 500ms 过保守，延迟过高）
@@ -595,6 +579,11 @@ impl ConfigWatcher {
 ---
 
 ### 6.3 `config/commands.rs`
+
+> **v9.11 废弃**：以下 6.3–6.16 描述 v9.11 前的 EAPO 风格 txt 命令体系
+> （`config/commands/*`、`FilterRegistry`/`FilterFactory`、`GraphicEQ:` 等）。
+> v9.11 起全部移除，由 `config 6.0` TOML 模型 + `pipeline 4.10` 静态分派取代；
+> 本节保留为历史参考，**不代表现行实现**。
 
 **职责**：命令工厂入口。注册所有命令工厂到 FilterRegistry。
 

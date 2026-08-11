@@ -12,7 +12,8 @@
 
 - **内核**：以 DLL（vxapo.dll）形态注入 audiodg.exe，对每个音频端点提供实时 DSP 处理
   （均衡、增益、延迟、卷积、响度校正等），以 Filter 链 + 双链过渡 + 热重载为核心机制。
-- **配置**：每个设备一份 `Documents\VxAPO\{GUID}\config.txt`，经解析构建 Filter 链。
+- **配置**：每个设备一份 `C:\ProgramData\VxAPO\{GUID}\config.toml`（v9.11 起 TOML 模型），
+  经解析构建 Filter 链。
 - **管理**：CLI（开发者工具）/ GUI App（终端用户）负责设备安装卸载、配置导入选择、预设管理、实时调整。
 
 ### 产品信念
@@ -43,7 +44,7 @@ VxAPO 覆盖从**不具备音频知识的普通用户**到**已有 EAPO 使用�
 |---|---|---|
 | **入门用户** | 耳机打游戏听不清脚步；不想额外买解码器做 PEQ 的音箱用户 | 不需要懂频响概念，只需表达"我想要什么"，产品负责翻译成参数 |
 | **中级用户** | 想微调预设但不理解 DSP 参数含义 | 提供直觉化的感知维度控制，每个维度有口语化解释 |
-| **高级用户** | 已有 EAPO 经验，嫌 EAPO 的 GUI 过时、缺乏预设管理 | 能看到完整滤波器链、算法细节、频响曲线，保留 EAPO config.txt 互操作 |
+| **高级用户** | 已有 EAPO 经验，嫌 EAPO 的 GUI 过时、缺乏预设管理 | 能看到完整滤波器链、算法细节、频响曲线；旧 EAPO config.txt 可经 `config convert` 迁移 |
 
 ### 三层递进界面
 
@@ -51,7 +52,7 @@ VxAPO 覆盖从**不具备音频知识的普通用户**到**已有 EAPO 使用�
 
 - **TAB 1 = "我要什么效果"** → 选预设，拉强度，完事。面向所有用户，不需要任何音频知识。
 - **TAB 2 = "我想微调一下"** → 感知维度（如"低音厚度"而非"80Hz 增益"），有解释，不会迷路。
-- **TAB 3 = "我想看看里面"** → 完整滤波器链编辑、频响曲线、EAPO config.txt 导入导出。
+- **TAB 3 = "我想看看里面"** → 完整滤波器链编辑、频响曲线、旧 EAPO config.txt 导入（转换）。
 
 三层之间没有认知断崖。三层是同一套 Preset 数据的三种视图，任何一方的修改立即同步到另外两方。
 
@@ -66,30 +67,30 @@ VxAPO 覆盖从**不具备音频知识的普通用户**到**已有 EAPO 使用�
 ## 三、用户行为模型
 
 > 核心意图：**用户能做的只有通过应用界面管理配置。**
-> 直接操作 `Documents\VxAPO\{GUID}` 文件夹不是受支持的使用方式。
+> 直接操作 `C:\ProgramData\VxAPO\{GUID}` 文件夹不是受支持的使用方式。
 
 ### 正常路径（受支持）
 
 | 场景 | 用户动作 | 系统行为 |
 |------|---------|---------|
-| 安装设备 + 应用配置 | `vxapo-cli install -d <device>` 或 GUI 安装向导 → 导入/选择 config.txt | 写 FxProperties 绑定 + 写 config.txt → 下次音频引擎加载时生效 |
-| UI 实时调整 | GUI App：页面选择设备 → TAB 1 选预设 / TAB 2 调维度 / TAB 3 编辑滤波器 | GUI App 写 config.txt → watcher 热重载 → 双链过渡 → 实时生效（无爆音） |
-| 切换预设 | GUI App 选择预设并调整强度 / `vxapo-cli preset apply <name>` | 覆盖 config.txt → 热重载生效 |
-| 多预设叠加 | GUI App 同时激活多个预设，各自独立调节强度 | 多预设参数合并（**dB 域相加**＝增益乘性、频率点取包络、钳制 [-24,+24] dB、自动预增益防爆音）→ 写 config.txt → 热重载 |
+| 安装设备 + 应用配置 | `vxapo-cli install -d <device>` 或 GUI 安装向导 → 导入/选择 config.toml | 写 FxProperties 绑定 + 写 config.toml → 下次音频引擎加载时生效 |
+| UI 实时调整 | GUI App：页面选择设备 → TAB 1 选预设 / TAB 2 调维度 / TAB 3 编辑滤波器 | GUI App 写 config.toml → watcher 热重载 → 双链过渡 → 实时生效（无爆音） |
+| 切换预设 | GUI App 选择预设并调整强度 / `vxapo-cli preset apply <name>` | 覆盖 config.toml → 热重载生效 |
+| 多预设叠加 | GUI App 同时激活多个预设，各自独立调节强度 | 多预设参数合并（**dB 域相加**＝增益乘性、频率点取包络、钳制 [-24,+24] dB、自动预增益防爆音）→ 写 config.toml → 热重载 |
 | 解锁/重锁周期 | 引擎 UnlockForProcess / LockForProcess | Unlock 停 watcher + 清基线；重新 Lock 重读 config 建新基线 |
 | 单设备开关 | GUI/CLI 切换单设备的启用/禁用 | 该设备 config 中所有滤波器 passthrough，DLL 仍注入，FxProperties 保留。重新启用时即时恢复处理 |
 | 总开关 | GUI 关闭应用调音 | DLL 不注入，所有设备等效 passthrough，注册表保留。重新打开即时恢复 |
-| 单设备卸载 | GUI/CLI 卸载单设备配置 | 清除 config.txt + 清除 FxProperties，设备与 VxAPO 彻底解绑 |
+| 单设备卸载 | GUI/CLI 卸载单设备配置 | 清除 config.toml + 清除 FxProperties，设备与 VxAPO 彻底解绑 |
 | 全量卸载 | GUI/CLI 全量卸载 → 可选是否删除配置文件 | 注销 DLL，按用户选择决定是否删除配置文件夹 |
 
 ### 边缘情况（不支持，但系统需优雅降级）
 
 | 场景 | 系统行为 |
 |------|---------|
-| 用户**手动**修改文件夹内 config.txt | watcher 确实会触发 hot_reload——但这是**边缘情况**：配置实质变化时保留旧链并过渡，内容未变时幂等跳过；且下轮 UI/CLI 调整会覆盖此文件的任何手动修改 |
+| 用户**手动**修改文件夹内 config.toml | watcher 确实会触发 hot_reload——但这是**边缘情况**：配置实质变化时保留旧链并过渡，内容未变时幂等跳过；且下轮 UI/CLI 调整会覆盖此文件的任何手动修改 |
 | config 损坏 / 语法错误 | 解析失败 → **保留当前生效链**（EQ 不消失），日志告警 |
 | config 文件过大（>128KB） | 拒绝读取，保留旧链，日志告警（控制线程 IO 安全上限，逐文件判定） |
-| Documents 不可用 / 无设备 GUID | 二级兜底（`_default` / `C:\ProgramData\VxAPO\config.txt`），不阻断初始化 |
+| Documents 不可用 / 无设备 GUID | 二级兜底（`_default` / `C:\ProgramData\VxAPO\config.toml`），不阻断初始化 |
 
 > **原则**：边缘情况可以发生，但必须**无副作用地降级**——不崩溃、不出爆音、
 > 不静音、不残留错误状态，并留下日志供诊断。
@@ -131,16 +132,16 @@ DeviceProfile ──activates──► Preset ──contains──► Dimension 
 
 | 层面 | 职责 | 不做什么 |
 |------|------|---------|
-| **DLL (vxapo-driver)** | 读 config.txt → 解析 → 构建处理链 → 实时处理 → 监控变更 → 热重载 | 不知道预设、不知道维度、不知道继承、不知道设备切换 |
-| **CLI (vxapo-cli)** | 开发者工具：命令行操控 per-device config.txt、设备管理、调试自动化 | 不做实时音频处理、不面向终端用户 |
-| **App (vxapo-app)** | 预设选择 / 维度调节 / 高级编辑 / 设备切换 / 继承复制 / TOML↔config.txt 转换 | 不做实时音频处理——写完文件由 DLL 接管 |
+| **DLL (vxapo-driver)** | 读 config.toml → 解析 → 构建处理链 → 实时处理 → 监控变更 → 热重载 | 不知道预设、不知道维度、不知道继承、不知道设备切换 |
+| **CLI (vxapo-cli)** | 开发者工具：命令行操控 per-device config.toml、设备管理、调试自动化 | 不做实时音频处理、不面向终端用户 |
+| **App (vxapo-app)** | 预设选择 / 维度调节 / 高级编辑 / 设备切换 / 继承复制 / 预设展开写 config.toml | 不做实时音频处理——写完文件由 DLL 接管 |
 
 ### 边界规则
 
 - 驱动层**不做**预设管理、不做配置可视化、不主动写 config（仅兜底写默认 passthrough）。
-- 应用层**不触碰** RT / pipeline / Chain——只通过「写 config.txt」间接驱动内核。
-- 两者的接口是 **config.txt 文件 + 注册表 FxProperties**——应用层写文件，驱动层监听并生效。
-- **config.txt 是唯一通信通道，方向为单向（应用层 → 驱动层）**。应用层写什么，驱动层就执行什么，没有信息差，不需要额外的状态回传通道。
+- 应用层**不触碰** RT / pipeline / Chain——只通过「写 config.toml」间接驱动内核。
+- 两者的接口是 **config.toml 文件 + 注册表 FxProperties**——应用层写文件，驱动层监听并生效。
+- **config.toml 是唯一通信通道，方向为单向（应用层 → 驱动层）**。应用层写什么，驱动层就执行什么，没有信息差，不需要额外的状态回传通道。
 
 ---
 
@@ -235,8 +236,8 @@ APO DLL 注入 audiodg.exe 需要系统级信任，安装流程（regsvr32 + FxP
 
 | 粒度 | 操作 | 效果 |
 |------|------|------|
-| **全量卸载** | 注销 DLL（regsvr32 /u） | 可选是否删除配置文件夹（`Documents\VxAPO\`）。DLL 从系统移除，所有设备的 APO 链断开 |
-| **单设备卸载** | 清除 config.txt + 清除 FxProperties | 该设备与 DLL 解绑。其他设备不受影响。配置文件可保留以便日后恢复 |
+| **全量卸载** | 注销 DLL（regsvr32 /u） | 可选是否删除配置文件夹（`C:\ProgramData\VxAPO\`）。DLL 从系统移除，所有设备的 APO 链断开 |
+| **单设备卸载** | 清除 config.toml + 清除 FxProperties | 该设备与 DLL 解绑。其他设备不受影响。配置文件可保留以便日后恢复 |
 
 **卸载的意图是用户不再需要该设备经过 VxAPO**，执行单设备卸载或全量卸载，彻底解绑并清除相关配置。
 
@@ -244,9 +245,9 @@ APO DLL 注入 audiodg.exe 需要系统级信任，安装流程（regsvr32 + FxP
 
 用户要"暂停"某个设备的效果，切换该设备的启用/禁用开关即可——DLL 跳过该设备的处理，直通输出，config 原封不动，恢复时即时生效。
 
-> **单设备禁用的实现通道**：经 config.txt 特殊命令（如首行 `Disabled: true`）传达——符合「config.txt 是唯一通信通道」的边界（五节）。应用层写入该命令触发热重载，DLL 读到后整车链 passthrough（保留链结构、零析构，恢复即时）。config 原封不动指应用层保留禁用的全部效果参数，仅追加禁用标记。
+> **单设备禁用的实现通道**：经 config.toml 顶层字段（如 `[meta] disabled = true`）传达——符合「config.toml 是唯一通信通道」的边界（五节）。应用层写入该标记触发热重载，DLL 读到后整车链 passthrough（保留链结构、零析构，恢复即时）。config 原封不动指应用层保留禁用的全部效果参数，仅追加禁用标记。
 
-用户要"全局暂停"，通过软件内的总开关关闭应用调音，DLL 不注入，所有设备等效 passthrough，注册表保留。总开关属注册表级状态（DLL 注入与否），与 config.txt 通道无关。
+用户要"全局暂停"，通过软件内的总开关关闭应用调音，DLL 不注入，所有设备等效 passthrough，注册表保留。总开关属注册表级状态（DLL 注入与否），与 config.toml 通道无关。
 
 ---
 
@@ -256,7 +257,7 @@ APO DLL 注入 audiodg.exe 需要系统级信任，安装流程（regsvr32 + FxP
 |------|---------|
 | 用户觉得"声音不对但说不清哪里出了问题" | 软件内关闭应用调音（总开关）→ 等效 passthrough → 确认是 VxAPO 问题还是系统其他环节 |
 | 某个滤波器导致异常 | 单个滤波器开关 / 单个滤波模型关闭，无需旁路全部 |
-| 配置损坏 / 丢失 | config.txt 解析失败时自动保留当前生效链（不崩溃、不静音）；可从预设重新应用恢复 |
+| 配置损坏 / 丢失 | config.toml 解析失败/缺失时自动保留当前生效链（v9.13：Lock 降级 passthrough 保证有声）；可从预设重新应用恢复 |
 
 日志存放在软件目录的 log 文件夹，实现层面自行决定保留策略。
 
@@ -265,13 +266,13 @@ APO DLL 注入 audiodg.exe 需要系统级信任，安装流程（regsvr32 + FxP
 ## 十一、配置文件体系
 
 ```
-Documents\VxAPO\
+C:\ProgramData\VxAPO\
 ├── {设备GUID-A}\
-│   └── config.txt          ← DLL 直接读取，EAPO 语法兼容
+│   └── config.toml         ← DLL 直接读取（TOML 模型）
 ├── {设备GUID-B}\
-│   └── config.txt
+│   └── config.toml
 ├── {设备GUID-C}\
-│   └── config.txt
+│   └── config.toml
 │
 └── _global\
     ├── presets\             ← 预设库（TOML，带感知维度定义）
@@ -281,24 +282,24 @@ Documents\VxAPO\
     └── app.toml             ← 应用设置（主题、自启、继承关系记录等）
 ```
 
-- **config.txt**：给 DLL 的指令，纯 EAPO 兼容语法。行顺序即处理顺序。
+- **config.toml**：给 DLL 的指令，TOML `[[effects]]` 模型（v9.11）。数组表顺序即处理顺序。
 - **预设 TOML**：给人和 App 的语义化描述，包含感知维度定义、维度到滤波器的映射规则、预设元信息。
-- 应用层负责 TOML ↔ config.txt 的转换；DLL 只认 config.txt。
+- 应用层负责预设展开并写 config.toml；DLL 只认 config.toml（`name`/`group`/`meta` 为 APP 元数据，driver 忽略）。
 
-### config.txt 语法严格性（v1 共识）
+### config.toml 模型严格性（v9.11 共识）
 
-- **每行必须为 `命令关键字: 参数` 格式**——无冒号行**拒绝**（对齐 EAPO：同为严格关键字语法，
-  "冒号前决定解析目标"，无冒号 EAPO 亦不解析）。
-- **一行仅允许一个冒号**——多于一个冒号直接报错（参数内再含冒号拒绝）。
-- **命令关键字严格匹配**（`GraphicEQ:` / `Filter:` / `Preamp:` / `Convolution:` 等）——
-  不落入模糊兜底。**输入严格保证解析宽容**（与产品信念 3 一致）：写错必有反馈，不静默忽略。
-- 解析错误（语法/参数/文件超限）→ **保存当前生效链**（EQ 不消失，无爆音），错误摘要写入诊断日志。
+- **结构严格校验**：`version` + `[[effects]]`（`type` 必填）；未知 type / 未知键 / 不适用字段 /
+  缺必填键 / 超范围 / PEQ 段数不在 [6,31] / 声道名非法 → 整文件解析失败，保留旧链。
+- **效果器类型白名单**（v9.11 保留集）：`peq` / `preamp` / `aural` / `reverb` / `maximizer` /
+  `wide` / `loudness`——不再有模糊兜底（旧 `Convolution:` 宽容解析已移除）。
+- 解析错误（TOML 语法/模型校验/文件超限）→ **保存当前生效链**（EQ 不消失，无爆音），
+  v9.12+ 下 Lock 解析失败降级 passthrough（有声无 EQ），错误摘要写入诊断日志。
 
 ### 诊断日志归属
 
 - **诊断日志（含 config 解析错误摘要）写入软件安装根目录的 `log/` 文件夹**，由**应用层**负责读取和呈现给用户。
 - DLL 只负责**写**日志（纯落盘，非运行时状态回传通道）；config 流向保持单向（应用层 → DLL）。
-- `log/` 在安装根目录、不与 `Documents\VxAPO\{GUID}\config.txt` 共享目录——DLL 解析失败写日志的
+- `log/` 在安装根目录、不与 `C:\ProgramData\VxAPO\{GUID}\config.toml` 共享目录——DLL 解析失败写日志的
   动作**不触碰** watcher 监控目录（watcher 只监控设备 config 目录），天然无自触发重载死循环。
 - **错误报告意图**：任何解析过程的错误原因都应能反应给用户——用户在 App/CLI 查看日志即知
   哪行错、错在哪、为何错。
@@ -341,7 +342,7 @@ roadmap.md（路线清单——要做什么）
 | 备份语义：安装时全量备份回退基线；失守重装前槽位覆盖备份 childapo（最新前任） | 本文件「与其他 APO 软件的共存」备份语义区分（用户决策已固化于本文件） |
 | 全量判定：`VxAPO\Child APOs\{deviceGuid}` 存在 = 非全量、不存在 = 全量；卸载必删该键 | 本文件「与其他 APO 软件的共存」全量备份发生条件判定（用户决策已固化于本文件） |
 | v1 Filter 封闭枚举，不预留扩展点 | 本文件「Filter 类型边界」 |
-| config.txt 单向通道，无状态回传 | 本文件「三层分离」边界规则 |
+| config.toml 单向通道，无状态回传 | 本文件「三层分离」边界规则（v9.11 起 TOML） |
 | CLI 是开发者工具，不面向终端用户 | 本文件「用户画像与界面理念」 |
-| 单设备禁用经 config.txt 传达 | 本文件「安全与权限」启用/禁用（用户决策已固化于本文件） |
+| 单设备禁用经 config.toml 传达 | 本文件「安全与权限」启用/禁用（用户决策已固化于本文件） |
 | 多预设叠加：dB 域相加、频率点取包络、钳制 [-24,+24] dB、自动预增益 | 本文件「用户行为模型」正常路径多预设叠加（用户决策已固化于本文件） |

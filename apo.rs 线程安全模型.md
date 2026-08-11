@@ -17,7 +17,7 @@
 | `APOProcess` | Windows 音频引擎实时线程 | 每帧音频处理 |
 | `GetLatency` | 应用程序线程 | 延迟查询 |
 | `Reset` | 应用程序线程 | 状态重置 |
-| `hot_reload` | 配置监控后台线程 | config.txt 变更 |
+| `hot_reload` | 配置监控后台线程 | config.toml 变更 |
 
 ---
 
@@ -31,7 +31,7 @@
 | `ApoObjectState`（clsid、is_locked、sample_rate、channels、bits_per_sample） | `self.ap_state: Mutex<ApoObjectState>` | LockForProcess、UnlockForProcess、GetRegistrationProperties、GetInputChannelCount |
 | 状态机（Created / Initialized / Locked） | `self.state_cell: StateCell`（`AtomicU8` + CAS） | Initialize、LockForProcess、UnlockForProcess、APOProcess（只读检查） |
 | 延迟采样数 | `self.latency_samples: AtomicU32` | LockForProcess（写）、GetLatency（读）、Reset（写） |
-| 延迟帧数 | `self.latency_frames_atomic: AtomicU32` | LockForProcess（写）、CalcInputFrames（读）、CalcOutputFrames（读）、Reset（写） |
+| 延迟帧数 | `self.latency_frames_atomic: AtomicU32` | v9.12 起恒 0（不上报引擎：实证上报/补偿导致帧协商错位播放卡住）；Lock/Reset 写 0；CalcInputFrames/CalcOutputFrames 读 |
 
 ---
 
@@ -61,7 +61,7 @@
 
 - `latency_samples` 和 `latency_frames_atomic` 使用 `AtomicU32` 独立保护
 - 写入在 `self.mutex` 内完成（LockForProcess / UnlockForProcess / Reset）
-- 读取在锁外完成（GetLatency 读 `latency_samples`，CalcInputFrames / CalcOutputFrames 读 `latency_frames_atomic`）
+- 读取在锁外完成（CalcInputFrames / CalcOutputFrames 读 `latency_frames_atomic`，恒 0）
 
 ---
 
@@ -88,7 +88,7 @@
 - **具体约束**：
   - `CalcInputFrames`、`CalcOutputFrames` 与 `APOProcess` 由 Windows 音频引擎串行调用，不存在重入
   - `CalcInputFrames` / `CalcOutputFrames` 通过 `latency_frames_atomic` 免锁读取延迟值，不获取任何锁
-  - `LockForProcess` 内部不得调用 `CalcInputFrames` / `CalcOutputFrames`。需要延迟值时直接从 `chain.total_latency()` 读取，并写入 `latency_frames_atomic`
+  - `LockForProcess` 内部不得调用 `CalcInputFrames` / `CalcOutputFrames`。v9.12 起延迟不上报（`latency_frames_atomic` 恒 0）；v9.13 同 config/格式的 Relock 复用现有链（`last_lock_key` 指纹，保留滤波器状态）
   - `hot_reload` 内部不得调用需要 `self.mutex` 的方法——整个 `hot_reload` 已持有 `self.mutex`
   - `GetLatency` 在 `self.mutex` 内读取 `pipeline_context.sample_rate`，通过 `latency_samples` 原子加载延迟值，不获取 `self.ap_state`
   - `GetRegistrationProperties` 和 `GetInputChannelCount` 仅获取 `self.ap_state`，不获取 `self.mutex`

@@ -65,19 +65,19 @@ pipeline/
 │   └── contract.rs     # RT 上下文断言（RtGuard / assert_in_rt）
 ├── dsp.rs              # DSP 算法模块入口
 └── dsp/
-    ├── filter.rs       # Filter trait + FilterCreateResult + FilterFactory + DspContext + ConfigLoader
-    ├── factory.rs      # FilterRegistry + 工厂注册 + 工厂遍历匹配
+    ├── filter.rs       # Filter trait + DspContext + PassthroughFilter + ChannelScopedFilter（v9.11）
+    ├── factory.rs      # v9.11 静态分派 create_from_model（match EffectType）
     ├── transition.rs   # SmoothingProvider + raised_cosine + mix_buffers
     ├── biquad.rs       # 双二阶滤波器
-    ├── peq.rs          # 参量均衡器（级联 biquad）
-    ├── hp_lp.rs        # 高通/低通
+    ├── fir.rs          # SIMD dot / 分块 FFT（v9.11）
+    ├── model.rs        # ChainModel / EffectType（v9.11）
+    ├── peq_hybrid.rs   # 混合式 PEQ（200 Hz IIR + 最小相位 FIR，v9.11）
     ├── gain.rs         # 增益（含内部平滑插值）
-    ├── delay.rs        # 延迟线（环形缓冲实现）
-    ├── copy.rs         # 通道复制/混音
-    ├── graphic_eq.rs   # 图形均衡器（对数插值 + 最小相位 FIR 卷积）
-    ├── convolution.rs  # 卷积（FFT 骨架）
-    ├── vst.rs          # 已移除实现，仅注释（VstFactory 静默 NoMatch，保留注册入口）
-    └── loudness.rs     # ISO 226 等响曲线
+    ├── loudness.rs     # ISO 226 等响曲线
+    ├── aural.rs        # Aural Enhancer（谐波激励）
+    ├── maximizer.rs    # Maximizer
+    ├── reverb.rs       # Dattorro 板式混响
+    └── wide.rs         # 立体声加宽
 ```
 
 ---
@@ -95,7 +95,7 @@ pipeline/
 | `pipeline/realtime/contract.rs` | `core` | 其他 |
 | `pipeline/realtime/ring.rs` | `core` | 其他 |
 | `pipeline/dsp/filter.rs` | `utils/` | `install/`、`config/`、`object/` |
-| `pipeline/dsp/factory.rs` | `dsp/filter`、`dsp/*`（**仅为注册实例化具体类型的必要例外**）、`utils/` | `install/`、`config/`、`object/` |
+| `pipeline/dsp/factory.rs` | `dsp/filter`、`dsp/model`（EffectConfig/EffectType）、`dsp/*`（**仅为静态分派实例化具体类型的必要例外**，v9.11）、`utils/` | `install/`、`config/`、`object/` |
 | `pipeline/dsp/transition.rs` | 无 | `install/`、`config/`、`object/` |
 | `pipeline/dsp/*.rs`（具体 Filter） | `dsp/filter`、`dsp/biquad`（如需要）、`utils/` | `install/`、`config/`、`object/` |
 
@@ -784,11 +784,13 @@ impl<T: Copy> RingBuffer<T> {
 
 ### 4.9 `pipeline/dsp/filter.rs`
 
-**职责**：Filter trait 定义 + FilterCreateResult + FilterFactory + DspContext + ConfigLoader。纯 Rust 定义，不包含任何 Windows API 依赖。
+**职责**：Filter trait 定义 + DspContext + PassthroughFilter + ChannelScopedFilter
+（v9.11 删除 FilterCreateResult / FilterFactory / ConfigLoader——静态分派后不再需要）。
+纯 Rust 定义，不包含任何 Windows API 依赖。
 
 **引用来源**：`crate::utils::vx_error::VxApoError`
 
-**导出给**：`pipeline/dsp/*.rs`、`pipeline/dsp/factory.rs`、`config/commands/*.rs`
+**导出给**：`pipeline/dsp/*.rs`、`pipeline/dsp/factory.rs`、`config/parser.rs`、`pipeline/chain.rs`
 
 ---
 
@@ -997,6 +999,10 @@ DspContext) -> Box<dyn Filter>`，`match EffectType` 穷尽 7 个类型；已删
 ---
 
 #### 工厂注册表
+
+> **v9.11 废弃**：以下 FilterRegistry / FilterFactory / create_default_registry /
+> register_builtin_filters 为 v9.11 前动态注册表实现，已删除；现行为
+> `create_from_model` 静态 match 分派（见本节上方职责）。保留为历史参考。
 
 ```rust
 /// 过滤器工厂注册表。
@@ -1383,6 +1389,9 @@ pub fn parse_graphic_eq_params(spec: &str) -> Option<Vec<EqBand>>;
 
 ### 4.19 `pipeline/dsp/convolution.rs`
 
+> **v9.11 废弃**：`convolution.rs` 已删除（不做 IR 卷积；SIMD dot/分块 FFT 迁至
+> `fir.rs`）。本节保留为历史参考。
+
 **职责**：卷积（短 IR 直接时域 FIR + 长 IR 分区 FFT，支持调用方注入 IR）。
 
 **引用来源**：`crate::pipeline::dsp::filter::Filter`
@@ -1428,6 +1437,8 @@ pub fn parse_convolution_params(spec: &str) -> Result<(String, f32), ParseError>
 ---
 
 ### 4.20 `pipeline/dsp/vst.rs`（实现已移除，保留注册入口）
+
+> **v9.11 废弃**：`vst.rs` 已整体删除。本节保留为历史参考。
 
 **现状（v6.5 决策 + v7.11 严格化对齐）**：VST 功能**回退为 `NoMatch` 模式**——配置中出现 `VSTPlugin:` 时，`VstFactory` 恒定返回 `FilterCreateResult::NoMatch`。v7.11 起（config 6.1 Unmatched → SyntaxError），解析器**不再静默跳过**：`VSTPlugin:` → `SyntaxError「未知命令 'VSTPlugin'」`，整体解析失败（保留旧链）。
 > 语义说明：`VSTPlugin` 仍是**合法命令关键字**（工厂已注册），返回 NoMatch 表示"功能未启用"。v7.11 严格化后与未知关键字同样落 SyntaxError——对用户是**诚实反馈**（此命令当前无效），符合 intent.md「配置写错必有反馈」。
@@ -1509,28 +1520,27 @@ Chowdhury / FAUST 类电平独立软饱和）。
 
 **公开 API**：
 
+> v9.11 起各效果器 Filter 由 `pipeline/dsp/factory.rs::create_from_model`
+> 静态构造（`match EffectType`），`XxxFactory` 动态工厂已删除。
+
 ```rust
 pub struct AuralParams { pub tune_hz: f32, pub drive: f32, pub odd: f32,
     pub even: f32, pub wet: f32, pub dry: f32 }
 pub fn parse_aural_params(params: &str) -> Option<AuralParams>;
 pub struct AuralEnhancerFilter { ... }   // impl Filter
-pub struct AuralEnhancerFactory;         // impl FilterFactory, command_name() = "AuralEnhancer"
 
 pub struct ReverbParams { ... }
 pub fn parse_reverb_params(params: &str) -> Option<ReverbParams>;
 pub struct ReverbFilter { ... }          // impl Filter
-pub struct ReverbFactory;                // impl FilterFactory, command_name() = "Reverb"
 
 pub enum DitherType { None, Uniform, Triangular, Shaped }
 pub struct MaximizerParams { ... }
 pub fn parse_maximizer_params(params: &str) -> Option<MaximizerParams>;
 pub struct MaximizerFilter { ... }       // impl Filter
-pub struct MaximizerFactory;             // impl FilterFactory, command_name() = "Maximizer"
 
 pub struct WideParams { pub intensity: f32 }
 pub fn parse_wide_params(params: &str) -> Option<WideParams>;
 pub struct WideFilter { ... }            // impl Filter
-pub struct WideFactory;                  // impl FilterFactory, command_name() = "Wide"
 ```
 
 **默认值**（Aural/Maximizer 取原 Quick preset 1 精神；Reverb 数值与 v9.2 相同、

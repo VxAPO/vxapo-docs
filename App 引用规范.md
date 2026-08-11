@@ -2,7 +2,7 @@
 
 > **目的**：定义 VxAPO App（`vxapo-app`）的规范边界、架构草案、模块结构、数据流与修改路线。
 > **定位**：App 是**面向终端用户**的界面层（intent.md「三层分离」），只做决策与写文件，
-> 不做实时音频处理；与 DLL 的唯一通信通道是文件系统（config.txt / 预设 TOML）。
+> 不做实时音频处理；与 DLL 的唯一通信通道是文件系统（config.toml / 预设 TOML）。
 > **依据**：源码实读 `D:\APO_Project\VxAPO\vxapo-app`（Vite 7 + React 19 + TS + Tailwind 4 +
 > framer-motion + lucide-react + @tauri-apps/api 2，2026-08-06）+ 用户提供的架构草案（src/ 目录树）
 > + `CLI 引用规范.md` / `intent.md` / driver `config 模块规范.md`。
@@ -14,11 +14,11 @@
 | 层面 | App 可做 | App 不做 |
 |------|----------|----------|
 | **决策/呈现** | 预设选择、维度调节、高级参数编辑、EQ 频响预览、设备切换、继承复制、导入导出 | 不解释 DSP 内部实现 |
-| **文件系统** | 写 `C:\ProgramData\VxAPO\{GUID}\config.txt`（经后端命令）；读写 `_global/presets/*.toml`；写回时**主动限幅** | 不写注册表（安装/卸载经 CLI/driver） |
+| **文件系统** | 写 `C:\ProgramData\VxAPO\{GUID}\config.toml`（经后端命令）；读写 `_global/presets/*.toml`；写回时**主动限幅** | 不写注册表（安装/卸载经 CLI/driver） |
 | **driver/RT** | 依赖 driver 作为 library（或复用 CLI 逻辑）做设备枚举/安装/快照 | 不触碰 pipeline/RT，不做实时音频处理 |
 | **响度补偿** | 只提供开关（写 `Loudness: on\|off`，默认 on） | **不做可视化**（已定决策） |
 
-**核心原则（与项目方案一致）**：DLL 只认 config.txt；App 负责一切决策；配置**永不回写**——
+**核心原则（与项目方案一致）**：DLL 只认 config.toml；App 负责一切决策；配置**永不回写**——
 超范围参数由 App 写回时主动限幅，DLL 只在内存里 clamp。
 
 ---
@@ -139,7 +139,7 @@ UI 操作（滑条/开关/编辑）
       - 有效维度值 = dimension.value × intensity（钳制 [0,1]）
       - config 文本 = buildConfig(激活预设展开 + manualFilters + Preamp)
   → 写回（Tauri 命令 / CLI 逻辑）：
-      write_device_config(deviceId, configText)   # 写 C:\ProgramData\VxAPO\{GUID}\config.txt
+      write_device_config(deviceId, configText)   # 写 C:\ProgramData\VxAPO\{GUID}\config.toml
   → DLL watcher 检测变更 → 热重载（10ms 过渡）
   → Footer 状态：saved / error（写失败保留旧链）
 ```
@@ -149,7 +149,8 @@ UI 操作（滑条/开关/编辑）
 - `effectiveDimensionValue(dimension, intensity) = clamp(value × intensity, 0, 1)`
 - `expandPreset(preset, intensity) -> Filter[]`：按 DimensionMapping 插值（Linear/Log/Exp）
 - `mergeFilters(presets[])`：多预设同参数**加法合并** + 钳制到参数合理范围 + 自动预增益（intent 5.2）
-- `buildConfig(...) -> string`：输出 EAPO 兼容 config.txt 行（与 driver 语法一致）
+- `buildConfig(...) -> string`：输出 TOML `[[effects]]` 模型文本（v9.11 起与 driver 一致；
+  旧 EAPO txt 由 CLI `config convert` 一次性迁移，不再作为运行时格式）
 
 > 这些规则最终放在 Tauri Rust 后端（复用 CLI/driver 逻辑），前端先以纯函数实现，阶段 C 迁移。
 
@@ -224,7 +225,7 @@ export interface AppState { /* 见 §4.1 */ }
    `[-120, +48] dB`（滤波深切地板 `-60 dB`）、NaN/inf 拒绝；**DLL 不回写文件**。
 3. **调音组件开关、总开关**：后续再议（本规范预留 `enabled` 字段，不实现 UI）。
 4. **EQ 频响预览保留**（`FreqResponseCurve`）：属于高级参数可视化，与「响度补偿可视化不做」不冲突。
-5. **config 路径固定**：`C:\ProgramData\VxAPO\{GUID}\config.txt`（与 CLI/driver 对齐，不用 Documents）。
+5. **config 路径固定**：`C:\ProgramData\VxAPO\{GUID}\config.toml`（与 CLI/driver 对齐，不用 Documents）。
 6. **多预设叠加**：加法合并 + 钳制 + 自动预增益（intent 5.2）。
 
 ---
@@ -236,8 +237,8 @@ export interface AppState { /* 见 §4.1 */ }
 | 命令 | 输入 | 输出 | 底层 |
 |------|------|------|------|
 | `list_devices` | — | `Device[]` | driver `enumerate_devices` / CLI 逻辑 |
-| `get_device_config` | deviceId | `{ text, valid, filters }` | 读 config.txt + `ConfigParser::parse_file` 验证 |
-| `write_device_config` | deviceId, text | `{ ok, error? }` | 写 `C:\ProgramData\VxAPO\{GUID}\config.txt`（写前主动限幅） |
+| `get_device_config` | deviceId | `{ text, valid, filters }` | 读 config.toml（模型校验由 driver 承担） |
+| `write_device_config` | deviceId, text | `{ ok, error? }` | 写 `C:\ProgramData\VxAPO\{GUID}\config.toml`（写前主动限幅） |
 | `load_presets` | — | `Preset[]` | 读 `_global/presets/*.toml` |
 | `save_preset` | preset | `{ ok, error? }` | 写 TOML |
 | `install_device` / `uninstall_device` | deviceId | `{ ok, error? }` | CLI/driver install 层（管理员） |
@@ -282,8 +283,8 @@ export interface AppState { /* 见 §4.1 */ }
 
 1. **不触碰实时音频**：App 及其后端不做任何 pipeline/RT 处理；违反 intent 三层分离禁止。
 2. **不直接写注册表**：安装/卸载/快照一律经 CLI/driver 逻辑（管理员权限由后端命令处理）。
-3. **config 语法与 driver 一致**（EAPO 兼容子集 + VxAPO 扩展）；写文件固定
-   `C:\ProgramData\VxAPO\{GUID}\config.txt`。
+3. **config 语法与 driver 一致**（TOML `[[effects]]` 模型，v9.11）；写文件固定
+   `C:\ProgramData\VxAPO\{GUID}\config.toml`。
 4. **不实现响度补偿可视化**（已定决策）；只提供开关。
 5. **状态单一来源**：组件受控，业务状态只存 `App.tsx`；组件/面板不各自持有业务状态。
 6. **主动限幅规则与 driver 一致**：`[-120, +48]`（滤波深切地板 -60）、NaN/inf 拒绝；只写回时限幅，不做 DLL 回写。
@@ -294,6 +295,6 @@ export interface AppState { /* 见 §4.1 */ }
 
 - `intent.md`：三层分离、Preset→Dimension→Filter 概念模型、多预设叠加、逆向意图识别（导入）
 - `CLI 引用规范.md`：后端复用的命令/设备解析/快照逻辑与硬性约束
-- `config 模块规范.md`：config.txt 语法、spec 指纹、热重载语义
+- `config 模块规范.md`：config.toml 模型、spec 指纹、热重载语义
 - `pipeline 模块规范.md`：DSP 能力与数值边界（限幅规则依据）
 - `项目定位/VxAPO 项目完整方案.txt`：App 阶段路线（阶段 C/D）

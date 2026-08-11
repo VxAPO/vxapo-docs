@@ -175,6 +175,7 @@
 | 安装提权（manifest 声明式） | **VxAPO CLI 借鉴**：安装器 `RequestExecutionLevel admin` + 程序 `RequireAdministrator`，无运行时提权代码 | C38-C40 |
 | 安装槽位模式探测 + 互斥写 | 对齐（LfxGfx 独占/SfxMfx 蓝牙/SfxEfx 默认三档 + 按 mode 互斥写+删槽位） | C41-C50 |
 | GraphicEQ 实现 | **v9.0 + v9.7 对齐**：对数频率插值 + 最小相位 FIR + 1024 点直接时域卷积（AVX2/FMA 向量化，非 biquad 级联） | C51-C52 |
+| 混合式 PEQ（现状） | **v9.11+**：`graphic_eq.rs` 移除，TOML `peq` 混合架构（200 Hz IIR + 最小相位 FIR）；跨频点宽 Q 段进 IIR；静音恢复淡入；端点重协商复用链 | C56 |
 | CAPX「设备默认效果」 | **EAPO 不处理**；VxAPO v9.0 扩展：接管 `MSFX\N` 模板，替换微软 APO | C54 |
 | 延迟上报 | 对齐：GetLatency 无 child 返回 0；VxAPO 直接 FIR 无块延迟不上报 | C53 |
 

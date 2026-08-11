@@ -101,7 +101,7 @@ intensity = 0.354331
 | `maximizer` | `gain_boost_db`/`max_output_db`/`release_ms`/`target`/`lookahead_ms`/`dither`/`wet`/`dry` | 与现命令参数一致 |
 | `wide` | `intensity` | 与现命令参数一致 |
 | `loudness` | `phon`/`reference_phon` | 等响校正 |
-| `vst` | `path` | 保留（未纳入 v1 核心验证） |
+| `vst` | — | v9.11 移除（不做 IR/外部插件加载） |
 | `biquad` | `type`（PK/LP/HP/LS/HS/AP/NO）、`fc_hz`/`gain_db`/`q` | 基础滤波 |
 
 ### 3.2 移除与保留
@@ -207,8 +207,8 @@ pipeline/dsp/hp_lp.rs         ✗ 删除
 3. 解析层切换：`parser.rs` 重写（TOML → FileModel → ChainModel → 链），
    watcher 指纹改模型哈希，删 config/commands/* 与已移除 dsp 文件，
    测试迁移（TOML fixtures）；
-4. 分块 + 延迟：`fir.rs` 分块 FFT（输出驱动补块）接入 PEQ；
-   `object/apo/process.rs` 激活 `latency_frames_atomic = chain.total_latency()`；
+4. 分块 + 延迟：`fir.rs` 分块 FFT（块跨调用累积，对齐 EAPO libHybridConv）
+   接入 PEQ；延迟策略 v9.12 定稿为**不上报**（激活引擎帧数补偿实测卡住，回退）；
 5. 收尾：CLI/APP、`config convert`、文档定稿合并、v9.11 归档。
 
 ## 7. 测试计划

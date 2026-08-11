@@ -1,5 +1,23 @@
 # Changelog
 
+## v9.14 — 2026-08-11
+
+变更类型：`结构重构 + 文档同步`（删除 v9.11 遗留死代码 + 模块引用规范全面审阅修正）
+
+- **死代码清理**：删除 `FilterFactory` / `FilterCreateResult` / `ConfigLoader`
+  （filter.rs）与四个效果器模块的旧 `XxxFactory` 实现（v9.11 静态分派后
+  遗留未删）；dsp.rs 测试支撑同步精简——**对应章节**：`pipeline 4.9/4.10/4.22`
+- **文档全面审阅修正**：config / CLI / App / intent / apo 线程安全模型 / sys
+  模块规范与主文档中的 `config.txt` / EAPO 命令残留全部更新为 v9.11 TOML 模型
+  现状；`config 6.1` 旧逐行分发细节与 `6.3–6.16` 旧命令章节加废弃横幅；
+  pipeline 模块树 / 4.9 / 4.19 / 4.20 同步；Equalizer 汇总表加 PEQ 现状行；
+  `config convert`、Lock 降级 passthrough、复用链、延迟不上报等现状落档——
+  **对应章节**：各模块规范
+- **测试**：全量 441 passed（4 个既有管理员权限用例除外），release 零警告构建。
+- **模块引用规范（无详细模块版）.md**：版本号 v9.13 → v9.14。
+
+> 对应 commit：driver `778bcd4` / cli `无变更` / docs `待回填`
+
 ## v9.13 — 2026-08-11
 
 变更类型：`缺陷修复 + 模块规范更新`（PEQ 衔接/瞬态/端点重协商系列修复）
@@ -23,7 +41,7 @@
   全量 445 passed（4 个既有管理员权限用例除外），release 零警告构建。
 - **模块引用规范（无详细模块版）.md**：版本号 v9.12 → v9.13。
 
-> 对应 commit：driver `5009fb2` / cli `无变更` / docs `待回填`
+> 对应 commit：driver `5009fb2` / cli `无变更` / docs `2344f97`
 
 ## v9.12 — 2026-08-11
 

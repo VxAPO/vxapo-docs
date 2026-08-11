@@ -633,7 +633,7 @@ pub fn get_channel_names(mask: u32) -> Vec<String>;
 ### 3.6 `sys/known_folder.rs`
 
 **职责**：Windows 已知文件夹路径解析（`SHGetKnownFolderPath` 安全收窄）。供 per-device 配置路径
-（`Documents\VxAPO\{GUID}\config.txt`）定位文档目录（v7.2，P0-3）。
+（`C:\ProgramData\VxAPO\{GUID}\config.toml`）定位配置目录（v7.2，P0-3；v9.11 起扩展名/根路径随 driver 对齐）。
 
 **引用来源**：
 - `windows::Win32::UI::Shell::{SHGetKnownFolderPath, FOLDERID_Documents}`
@@ -642,7 +642,7 @@ pub fn get_channel_names(mask: u32) -> Vec<String>;
 
 **导出给**：`object/apo.rs`（Initialize 路径解析）
 
-**边界**：只做"已知文件夹 → 字符串路径"的 FFI 收窄。**不知道** VxAPO、config.txt、
+**边界**：只做"已知文件夹 → 字符串路径"的 FFI 收窄。**不知道** VxAPO、config.toml、
 设备 GUID 拼接——拼接规则属 `object` 层（`object 7.1.8`）。不引用任何其他模块。
 
 **公开 API**：
@@ -661,6 +661,6 @@ pub fn documents_folder() -> Result<String, windows::core::Error>;
 ```
 
 **禁止**：
-- 不拼接任何子路径（`\VxAPO\{GUID}\config.txt` 由 `object/apo.rs` 负责）
+- 不拼接任何子路径（`\VxAPO\{GUID}\config.toml` 由 `object/apo.rs` 负责）
 - 不创建目录 / 文件（I/O 属 object 层配置加载逻辑）
 - 不包含业务逻辑，不感知 VxAPO
