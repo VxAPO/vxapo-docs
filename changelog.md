@@ -14,7 +14,7 @@
   peq band 总数 ≤ 31 校验。
 - **模块引用规范（无详细模块版）.md**：版本号保持 v9.15（设计定稿不升 driver 版本）。
 
-> 对应 commit：driver `无变更` / cli `无变更` / docs `待回填`
+> 对应 commit：driver `无变更` / cli `无变更` / docs `d2cbee6`
 
 ## v9.15 — 2026-08-11
 
