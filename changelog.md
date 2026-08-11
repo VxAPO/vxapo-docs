@@ -1,5 +1,31 @@
 # Changelog
 
+## v9.15 — 2026-08-11
+
+变更类型：`缺陷修复 + 简化重构`（脏静音缓冲自我反馈爆音修复 + 热重载回归 EAPO 语义）
+
+- **脏静音缓冲自我反馈爆音修复（“浏览器音效菜单嗡声”根因闭环）**：引擎在流切换/
+  静音时会发 `BUFFER_SILENT` 标志但**复用上一帧缓冲**（内存残留本 APO 上一帧输出）；
+  旧实现把 SILENT 当有效数据处理 → 输出再作为下一帧输入 → 自我反馈放大（日志实证
+  输出峰值 17–95401 倍满刻度，PostMix 直通实例同样记录）。v9.15 起 SILENT 标志权威：
+  **去交织前按全零填充、绝不读取残留内容，输出强制清零 + BUFFER_SILENT**（对齐 EAPO
+  C11 `memset` 清零语义）；热重载过渡路径同规则。真机验证：浏览器音效菜单开关不再
+  嗡声/爆音——**对应章节**：`pipeline 4.2`、`object 7.1.11`、`Equalizer 行为文档 C11`
+- **RT 诊断增强**：APOProcess 每次调用记录输入/输出峰值 + 缓冲标志（环形 8 条），
+  UNLOCK 日志输出峰值高水位 `hot=(out,in,secs)` 与脏静音缓冲计数
+  `silent_dirty=(calls,max_in)`——用于区分输入侧 vs DSP 侧爆音源，定位本次根因
+- **热重载简化（回归 EAPO 语义）**：移除 v9.4 的 (mtime,size) 文件级预检/去重表与
+  实验性进程级 `RELOAD_LOCK` 串行锁/try 变体；恢复“每实例独立 watcher + 10ms 去重 +
+  spec 指纹短路 + transition/pending 协调”（EAPO `notificationThread` 同构）；保留
+  diag 写锁（防多线程日志花屏）。消除对象地址复用撞旧去重条目、Unlock join 被重载
+  队列拖住两类隐患——**对应章节**：`object 7.1.9/7.1.18`、`Equalizer 行为文档 C27/C32`
+- **测试**：全量 442 passed（4 个既有管理员权限用例除外），新增
+  `silent_buffer_with_garbage_outputs_silence` 回归用例（SILENT 标志 + 残留大数值 →
+  输出必须静音）
+- **模块引用规范（无详细模块版）.md**：版本号 v9.14 → v9.15。
+
+> 对应 commit：driver `0801d19` / cli `无变更` / docs `待回填`
+
 ## v9.14 — 2026-08-11
 
 变更类型：`结构重构 + 文档同步`（删除 v9.11 遗留死代码 + 模块引用规范全面审阅修正）
@@ -16,7 +42,7 @@
 - **测试**：全量 441 passed（4 个既有管理员权限用例除外），release 零警告构建。
 - **模块引用规范（无详细模块版）.md**：版本号 v9.13 → v9.14。
 
-> 对应 commit：driver `778bcd4` / cli `无变更` / docs `待回填`
+> 对应 commit：driver `778bcd4` / cli `无变更` / docs `7630073`
 
 ## v9.13 — 2026-08-11
 

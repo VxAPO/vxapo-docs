@@ -204,8 +204,14 @@ pub fn evaluate_buffer(flags: APO_BUFFER_FLAGS, allow_silent_buffer: bool) -> (B
 |-----------|--------------------|--------------|----|
 | Invalid | 任意 | Skip | 不处理 |
 | Silent | false | Silent | 强制静音输出 |
-| Silent | true | Process | 传递给 DSP（可能确实是静音） |
+| Silent | true | Process | **内容按全零处理，不读残留**（v9.15：SILENT 标志权威，对齐 EAPO C11） |
 | Valid | 任意 | Process | 正常处理 |
+
+> **v9.15 修订（脏静音缓冲）**：引擎在流切换/静音时可能发 `BUFFER_SILENT` 但复用
+> 上一帧缓冲——内存残留的是**本 APO 上一帧输出**。若把残留内容当真处理，输出会再
+> 作为下一帧输入形成自我反馈爆音（日志实证输出峰值 17–95401 倍满刻度）。因此
+> SILENT 输入在**去交织前按全零填充**（绝不读取内容），链状态照常衰减，输出强制
+> 清零 + `BUFFER_SILENT`；`is_silent` 内容判定仅对 VALID 输入生效。
 
 ---
 
@@ -633,11 +639,20 @@ pub fn process_audio(
         let output_slice = output_info.as_slice_mut();
 
         // ── Step 2: 交织 → 去交织 ───────────────────────────────────────
-        deinterleave_into(input_slice, &mut temp_buffers[..in_ch], in_ch, frames);
+        // v9.15：SILENT 输入按全零填充（内容无效，可能残留上一帧输出——
+        // 直接读取会形成自我反馈爆音）；VALID 输入正常去交织。
+        if input_prop.buffer_flags == APO_BUFFER_FLAGS::Silent {
+            for ch in temp_buffers[..in_ch].iter_mut() {
+                ch[..frames].fill(0.0);
+            }
+        } else {
+            deinterleave_into(input_slice, &mut temp_buffers[..in_ch], in_ch, frames);
+        }
 
         // ── Step 3: is_silent 优化检测（去交织空间） ─────────────────────
-        // allow_silent_buffer 场景下，如果实际数据确实静音，跳过 DSP 处理
-        if output_flags == APO_BUFFER_FLAGS::Silent {
+        // v9.15：仅对 VALID 输入做内容判定——SILENT 标志已由引擎声明，
+        // 残留大数值不得被误判为有效音频。
+        if output_flags == APO_BUFFER_FLAGS::Silent && input_prop.buffer_flags != APO_BUFFER_FLAGS::Silent {
             if is_silent(&temp_buffers[..out_ch], frames) {
                 output_info.zero();
                 output_prop.buffer_flags = APO_BUFFER_FLAGS::Silent;
@@ -691,7 +706,13 @@ pub fn process_audio(
 
         // ── Step 7: 去交织 → 交织 ───────────────────────────────────────
         interleave_from(&temp_buffers[..out_ch], output_slice, out_ch, frames);
-        output_prop.buffer_flags = APO_BUFFER_FLAGS::Valid;
+        if input_prop.buffer_flags == APO_BUFFER_FLAGS::Silent {
+            // 引擎声明静音：输出必须为静音（链状态已照常更新，但内容不落到输出）。
+            output_slice.fill(0.0);
+            output_prop.buffer_flags = APO_BUFFER_FLAGS::Silent;
+        } else {
+            output_prop.buffer_flags = APO_BUFFER_FLAGS::Valid;
+        }
     }
     Ok(())
 }
@@ -700,8 +721,8 @@ pub fn process_audio(
 **关键不变式**：
 - 输入 Invalid → **强制静音**（evaluate_buffer 返回 Skip），不经过任何恢复路径
 - 输入 Silent + !allow_silent_buffer → **强制静音**，不经过 DSP
-- 输入 Silent + allow_silent_buffer + 实际数据静音 → **跳过 DSP**（优化快速路径）
-- 输入 Silent + allow_silent_buffer + 实际数据非静音 → **正常处理**
+- 输入 Silent + allow_silent_buffer → **按全零处理**（不读残留），输出强制
+  SILENT；链状态照常更新（v9.15，对齐 EAPO C11）
 - 只有输入有效时，`ErrorPolicy::Bypass` 才被执行（确保 input_slice 有意义）
 - 边界转换使用 `deinterleave_into` / `interleave_from`（零分配）
 - `temp_buffers` 由调用方预分配，不在 RT 路径分配

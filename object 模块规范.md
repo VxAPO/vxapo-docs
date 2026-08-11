@@ -187,6 +187,12 @@ impl ApoObjectState {
 }
 ```
 
+> **v9.15 修订（SILENT 输入权威化 + 诊断）**：输入 `BUFFER_SILENT` 时**内容不可信**
+> （引擎可能复用上一帧缓冲，残留本 APO 上一帧输出）——正常路径与过渡路径均按全零
+> 处理，输出强制清零 + `BUFFER_SILENT`（对齐 EAPO C11）；UNLOCK 日志记录最近 8 次
+> 调用的输入/输出峰值与缓冲标志、锁定周期峰值高水位 `hot=(out,in,secs)` 及脏静音
+> 缓冲计数 `silent_dirty=(calls,max_in)`（v9.15 爆音定位实证）。
+
 ---
 
 #### 7.1.3 ApoObject 字段
@@ -525,9 +531,12 @@ fn Initialize(&self, cb_data_size: u32, pby_data: *mut u8) -> HRESULT {
 > - **退出**：APO 实例持有 `shutdown_event`，UnlockForProcess 时 `SetEvent` + join watcher 线程
 > - `ConfigWatcher` 由 `ApoObject.watcher` 字段持有（`Option<ConfigWatcher>`），生命周期与锁定周期一致
 > - **防自旋（v9.4）**：`FindNextChangeNotificationW` 重置失败 → 关闭句柄并标记无效，
->   循环干净退出（等效不监控），**绝不无限重载**；`hot_reload` 增加 config.txt
->   (mtime,size) 文件级预检——目录事件 ≠ 文件变化时直接跳过（避免无关文件触发
->   重复解析/重建链导致 audiodg CPU 高位、声音设置页卡顿）
+>   循环干净退出（等效不监控），**绝不无限重载**；`hot_reload` 内部 128KB 闸门 +
+>   spec 指纹比对决定是否真正切换
+> - **v9.15 简化（回归 EAPO 语义）**：移除 v9.4 的 (mtime,size) 文件级预检/去重表
+>   与实验性进程级 `RELOAD_LOCK` 串行锁/try 变体——每实例独立重载 + 10ms 去重 +
+>   spec 指纹短路（内容未变直接跳过，不重建链）；消除对象地址复用撞旧去重条目、
+>   Unlock join 被重载队列拖住两类隐患；`diag_append` 增加进程级写锁防多线程花屏
 
 **config_path 确定规则（v7.2，P0-3；v8.9 方案 A 修订——系统级 ProgramData）**：
 

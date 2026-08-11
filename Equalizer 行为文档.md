@@ -62,7 +62,7 @@
 | # | 行为（源码确认） | 源码位置 | VxAPO 对齐 |
 |---|------------------|----------|------------|
 | C10 | **APOProcess 委托时序**：**`childRT->APOProcess` 先跑**（作用于输入缓冲）→ `engine.process(outputFrames, outputFrames, ...)`（**输出缓冲就地处理**） | EqualizerAPO.cpp 472-477 | **完全对齐**：object 7.1.11 child 前置每帧一次 |
-| C11 | **BUFFER_SILENT 输入清零**：输入为 SILENT 时先 `memset` 输入缓冲（468-470）→ childRT 处理 → silent 输出判定（allowSilentBufferModification 时 486-499 / 否则输出清零 + BUFFER_SILENT 503-505） | EqualizerAPO.cpp 468-511 | **对齐**：VxAPO buffer_flags 语义（object 7.1.11） |
+| C11 | **BUFFER_SILENT 输入清零**：输入为 SILENT 时先 `memset` 输入缓冲（468-470）→ childRT 处理 → silent 输出判定（allowSilentBufferModification 时 486-499 / 否则输出清零 + BUFFER_SILENT 503-505） | EqualizerAPO.cpp 468-511 | **对齐 + v9.15 严格化**：VxAPO 对 SILENT 输入**不读残留、按全零处理、输出强制 SILENT**（pipeline 4.2 / object 7.1.11）——修复“引擎复用脏静音缓冲 → 自我反馈爆音” |
 | C12 | **child 输出通道语义**：`realChannelCount` = 有 child 时 **outFormat 通道数**；无 child 时 **inFormat 通道数** | EqualizerAPO.cpp 365-369 | **等价立场**：VxAPO 不引入 realChannelCount 机制（主规范 18.2 D2） |
 | C13 | **realChannelCount 含 child 输出**：字段注释「处理时输入通道数（含 child APO 输出）」 | FilterEngine.h 131-132 | **等价**：主规范 18.2 D2/D3 |
 
@@ -156,6 +156,7 @@
 | C54 | **EAPO 不处理 CAPX `MSFX\N` 模板**：通用 USB 设备由 `wdma_usb.inf` 在设备接口注册「Microsoft Audio Home Theater Effects」（WMALFXGFX 两个 APO）；Windows 重启/重新枚举端点可能从模板恢复微软 APO，EAPO 不接管 | wdma_usb.inf `USBAudio.SysFx.Render` | **VxAPO v9.0 + v9.4 扩展**：install `device/sysfx.rs` 定位并替换 `MSFX\N` 的 StreamEffect/ModeEffect（卸载时恢复）；v9.4 起 DLL `Initialize` 时**运行期自愈**——设备重新枚举后被 Windows 灌回的微软 CAPX 由本 DLL 自动再接管（仅动微软 CLSID、幂等、失败降级） |
 | C55 | **强制启用增强**：EAPO 安装时删除 `{1da5d803-d492-4edd-8c23-e0c0ffee7f0e},5`（PKEY_AudioEndpoint_Disable_SysFx）；`fxTitle` 仅在新建 FxProperties 时写入 | DeviceAPOInfo.cpp 642-645 / 527 | **对齐 + 扩展**：VxAPO 同步删除该值；fxTitle 不写（避免历史音量/格式问题） |
 | C56 | **v9.11 起 VxAPO 不再对齐 EAPO EQ 体系**：`GraphicEQ:` 命令与 `graphic_eq.rs` 移除，由 TOML `[[effects]] type="peq"` 混合式 PEQ 取代（200 Hz 分频：Fc<200 段 IIR 级联、Fc≥200 段采样率自适应最小相位 FIR，1024–8192 抽头）；命令解析/工厂注册不再 EAPO 对齐；延迟策略（v9.12 定稿）——`GetLatency` 恒 0、`latency_frames_atomic` 恒 0（隐藏延迟不上报；v9.11 曾尝试激活引擎帧数补偿，实测热重载/切歌播放卡住，回退） | —（独立设计） | **VxAPO v9.11 + v9.12**：`config TOML 设计文档.md` + `PEQ 设计文档.md` + `pipeline 4.10/4.18/4.22` + `config 6.0` |
+| C57 | **热重载监控无跨实例去重（v9.15 回归对齐）**：每实例独立通知线程 + 10ms 去重 + loadSemaphore 阻塞式重载（FilterEngine.cpp 556-624）；**无进程级全局锁、无 mtime 去重表** | FilterEngine.cpp 556-624 | **VxAPO v9.15 对齐**：移除 v9.4 (mtime,size) 预检与实验性全局锁，恢复“每实例独立重载 + spec 指纹短路 + transition/pending”（object 7.1.9/7.1.18）；保留 diag 写锁防日志花屏 |
 
 ---
 
@@ -170,6 +171,7 @@
 | 槽位安装/备份/autoAdjust/allowSilentBuffer | 完全对齐 | C14-C19 |
 | 过渡机制 | 差异有意（父内双链 vs EAPO 配置级单链） | C29 |
 | 配置解析/加载/失败语义/预分配/监控 | 对齐（无冒号行 VxAPO 更严格为有意差异） | C23-C25、C26-C32 |
+| 热重载监控（现状） | **v9.15 回归对齐**：每实例独立通知线程 + 10ms 去重 + spec 指纹短路；无跨实例去重/全局锁（移除 mtime 预检） | C27、C32、C57 |
 | 注册表监视 | **VxAPO 不需要**（无 readReg 命令） | C33 |
 | 安装自检 | **E3.4 描述需修订**（实际是 IAudioClient 管线自检） | C37 |
 | 安装提权（manifest 声明式） | **VxAPO CLI 借鉴**：安装器 `RequestExecutionLevel admin` + 程序 `RequireAdministrator`，无运行时提权代码 | C38-C40 |
