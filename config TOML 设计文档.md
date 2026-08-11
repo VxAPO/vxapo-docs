@@ -92,7 +92,7 @@ intensity = 0.354331
 
 | type | 参数 | 说明 |
 |------|------|------|
-| `peq` | `crossover_hz`（默认 200）、`bands`（数组表，6–31 段：`fc/gain_db/q`） | 混合式 PEQ，见 `PEQ 设计文档.md` |
+| `peq` | `crossover_hz`（默认 200）、`bands`（数组表，单块 1–31 段、全局合计 ≤ 31：`fc/gain_db/q`） | 混合式 PEQ，见 `PEQ 设计文档.md` |
 | `preamp` | `gain_db` [-120, +48] | 全局增益 |
 | `delay` | `ms`（上限 1000） | 延迟 |
 | `copy` | `source`/`dest` 或映射表 | 通道复制 |

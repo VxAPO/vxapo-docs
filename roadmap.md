@@ -341,7 +341,7 @@
   v9.15 脏静音缓冲防护（SILENT 权威化，修复浏览器音效菜单嗡声）
   + 热重载回归 EAPO 语义（移除 mtime 预检/全局锁））
 - 优先级：P1 ｜ 关联 Phase：Phase 11
-- 目标：以现代语法 `PEQ:`（6–31 段 peaking，Fc/Gain/Q）取代 `GraphicEQ:`；
+- 目标：以现代语法 `PEQ:`（单块 1–31 段、全局合计 ≤ 31 peaking，Fc/Gain/Q）取代 `GraphicEQ:`；
   200 Hz 分频——Fc<200 段走 IIR 级联、Fc≥200 段走采样率自适应最小相位 FIR
   （1024–8192 抽头，≤2048 直接 FIR / >2048 分块 FFT）；整体频响 = 总目标 −
   IIR 频响（级联精确拟合）；激活引擎帧数延迟补偿；不 EAPO 对齐、不做 IR 卷积

@@ -49,9 +49,8 @@
 
 ### 3.2 段数约束
 
-- 单块：1..31 段。当前 driver `MIN_PEQ_BANDS = 6`，见第九节契约调整；落地前
-  1~5 段的块无法生效。
-- 全局：所有 peq 块 band 总数 ≤ 31。当前 driver 无全局校验，见第九节。
+- 单块：1..31 段（v9.16 已落地，`MIN_PEQ_BANDS = 1`）。
+- 全局：所有 peq 块 band 总数 ≤ 31（v9.16 已落地，config 层跨块校验）。
 
 ---
 
@@ -103,10 +102,11 @@
 
 ---
 
-## 九、Driver 契约调整（待实现，独立任务）
+## 九、Driver 契约调整（v9.16 已落地）
 
 1. `MIN_PEQ_BANDS`：6 → 1（允许单段卡 / 无组单 band）。
-2. `config/model.rs`：新增跨效果块的全局 peq band 总数 ≤ 31 校验。
+2. `config/model.rs`：新增跨效果块的全局 peq band 总数 ≤ 31 校验
+   （错误信息：`total 'peq' bands count N exceeds max 31`）。
 3. 其余现状已满足：卡片级 `enabled`、`name` / `group` 忽略、保序级联。
 
 ---
@@ -143,7 +143,7 @@ fc = 900
 gain_db = 1.5
 q = 1.5
 
-# —— FPS 预设内第二张卡（name 小组，单段，待 MIN_PEQ_BANDS=1 落地后生效）——
+# —— FPS 预设内第二张卡（name 小组，单段）——
 [[effects]]
 type = "peq"
 group = "FPS 预设"
@@ -156,7 +156,7 @@ fc = 3200
 gain_db = 3.0
 q = 2.0
 
-# —— 高级视图下的无组裸 band（单段，待 MIN_PEQ_BANDS=1 落地后生效）——
+# —— 高级视图下的无组裸 band（单段）——
 [[effects]]
 type = "peq"
 enabled = true
@@ -168,8 +168,8 @@ gain_db = -2.0
 q = 1.0
 ```
 
-> 说明：示例中「枪声增强（1 段）」与「无组裸 band（1 段）」在 driver 单块 6 段
-> 下限落地前无法生效；本示例全局段数 = 3 + 1 + 1 = 5，符合全局 ≤ 31。
+> 说明：本示例全局段数 = 3 + 1 + 1 = 5，符合全局 ≤ 31；「枪声增强（1 段）」与
+> 「无组裸 band（1 段）」自 v9.16 起可直接被 driver 解析生效。
 
 ---
 
