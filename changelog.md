@@ -19,7 +19,7 @@
   Plus Jakarta Sans（本地打包 + 雅黑中文回退）；品牌青仍为唯一强调色。
 - **模块引用规范（无详细模块版）.md**：版本号保持 v9.16（设计定稿不升 driver 版本）。
 
-> 对应 commit：driver `无变更` / cli `无变更` / docs `30f35a6`
+> 对应 commit：driver `无变更` / cli `无变更` / docs `b909571`
 
 ## v9.17 — 2026-08-11
 
