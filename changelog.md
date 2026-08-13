@@ -12,12 +12,14 @@
   installed_version/install_mode/slots/eapo/lost_slot）；install/uninstall 输出
   ok/error JSON；错误约定 `{"ok":false,"error":"…"}` 退出码 1；交互菜单内部调用
   保持人类可读输出。
+- **CLI v0.3.1 增补**：list/status `--json` 增加 `sample_rate / channels / bit_depth`
+  （UI 曲线头 `2ch · 48000Hz · 16bit` 数据源）。
 - **02/03/04 引用同步**：05 = WinUI 集成定调，交互细则顺延至 06。
 - **v2 修订（2026-08-13）**：回迁 Tauri——05 改为「Tauri 与 driver 集成定调」
   （原子写 config.toml + CLI `--json` + `runas` 提权安装）；CLI `--json` 保留复用。
 - **模块引用规范（无详细模块版）.md**：版本号保持 v9.16（设计定稿不升 driver 版本）。
 
-> 对应 commit：driver `无变更` / cli `26a2ad9` / docs `8c18750`
+> 对应 commit：driver `无变更` / cli `89f0683`（v0.3.1 增补格式字段）/ docs `8c18750`
 
 ## UI 设计规范 04 — 2026-08-13
 

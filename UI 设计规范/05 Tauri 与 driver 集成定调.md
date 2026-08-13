@@ -24,17 +24,17 @@
 | 调音 | UI 内存模型 → TOML（`01` 契约）→ 写文件 → driver 热重载 |
 | 读回 | UI 自行解析 `config.toml`（TOML 模型按 `01`），driver 不回写 |
 | 安装 / 卸载 | UI 提权（`runas`）调 `vxapo-cli install/uninstall --json` |
-| 状态 | UI 调 `vxapo-cli list --json`（名称 / GUID / 版本 / 模式 / 槽位 / 失守） |
+| 状态 | UI 调 `vxapo-cli list --json`（名称 / GUID / 版本 / 模式 / 槽位 / 格式 / 失守） |
 
 ---
 
 ## 三、CLI 契约（v0.3.0，`--json`）
 
-> Driver 模式子命令本就是无色文本；`--json` 是为了稳定结构化输出，供 C# 反序列化。
+> Driver 模式子命令本就是无色文本；`--json` 是为了稳定结构化输出，供 UI（Tauri 前端）反序列化。
 
 | 命令 | 输出 |
 |---|---|
-| `vxapo-cli list --json` / `status --json` | JSON 数组：`index / name / guid / installed_version / install_mode / slots{LFX..EFX} / eapo? / lost_slot?` |
+| `vxapo-cli list --json` / `status --json` | JSON 数组：`index / name / guid / installed_version / install_mode / slots{LFX..EFX} / sample_rate / channels / bit_depth / eapo? / lost_slot?` |
 | `vxapo-cli install -d <device> [--mode …] [--no-child] --json` | `{"ok":true,"device":"…","mode":"…","message":"已安装"}` |
 | `vxapo-cli uninstall -d <device> --json` | `{"ok":true,"device":"…","message":"已卸载"}` |
 | 任一失败 | `{"ok":false,"error":"…"}`，退出码 1 |
@@ -65,5 +65,5 @@
 ## 六、后续
 
 - `06 交互细则`（原 `05` 交互细则顺延）：拖拽成组 / 拆组、命名弹窗、菜单、通道管理、安装页交互、on→off 合并确认。
-- CLI `--json` 已随本定调落地（v0.3.0）。
-- WinUI 工程脚手架另立任务。
+- CLI `--json` 已随本定调落地（v0.3.0）；`sample_rate / channels / bit_depth` 为 v0.3.1 增补（UI 曲线头格式信息数据源）。
+- Tauri App 脚手架：`vxapo-app` 已建（v0.1.0，进行中）。
