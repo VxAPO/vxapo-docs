@@ -31,6 +31,8 @@
   保持人类可读输出。
 - **CLI v0.3.1 增补**：list/status `--json` 增加 `sample_rate / channels / bit_depth`
   （UI 曲线头 `2ch · 48000Hz · 16bit` 数据源）。
+- **CLI v0.3.2 增补**：list `--json` 增加 `kind`（playback/capture，取自 probe
+  端点方向）与 `volume`（Core Audio 主音量 0.0–1.0）——设备属性卡数据源。
 - **02/03/04 引用同步**：05 = WinUI 集成定调，交互细则顺延至 06。
 - **v2 修订（2026-08-13）**：回迁 Tauri——05 改为「Tauri 与 driver 集成定调」
   （原子写 config.toml + CLI `--json` + `runas` 提权安装）；CLI `--json` 保留复用。

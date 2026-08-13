@@ -34,7 +34,7 @@
 
 | 命令 | 输出 |
 |---|---|
-| `vxapo-cli list --json` / `status --json` | JSON 数组：`index / name / guid / installed_version / install_mode / slots{LFX..EFX} / sample_rate / channels / bit_depth / eapo? / lost_slot?` |
+| `vxapo-cli list --json` / `status --json` | JSON 数组：`index / name / guid / installed_version / install_mode / slots{LFX..EFX} / sample_rate / channels / bit_depth / kind / volume / eapo? / lost_slot?`（`kind` = playback/capture；`volume` = 主音量 0.0–1.0，v0.3.2） |
 | `vxapo-cli install -d <device> [--mode …] [--no-child] --json` | `{"ok":true,"device":"…","mode":"…","message":"已安装"}` |
 | `vxapo-cli uninstall -d <device> --json` | `{"ok":true,"device":"…","message":"已卸载"}` |
 | 任一失败 | `{"ok":false,"error":"…"}`，退出码 1 |
