@@ -1,13 +1,13 @@
-# VxAPO UI 设计规范 — 05 WinUI 3 与 driver 集成定调
+# VxAPO UI 设计规范 — 05 Tauri 与 driver 集成定调
 
-> 状态：设计定稿（v1，2026-08-13）｜ 技术栈：Windows App SDK + C#（.NET 8）+ WinUI 3
+> 状态：设计定稿（v2，2026-08-13，由 WinUI 3 方案回迁）｜ 技术栈：Tauri 2 + React + TypeScript
 > 交互细则顺延至 `06`；UI 图形 / 布局 / 令牌见 `01–04`。
 
 ---
 
 ## 一、总纲：文件系统解耦
 
-- **UI（WinUI 3）唯一职责**：把用户调好的参数写入
+- **UI（Tauri / React）唯一职责**：把用户调好的参数写入
   `C:\ProgramData\VxAPO\{device-guid}\config.toml`。
 - **driver 唯一职责**：初始化或收到音频引擎重载事件时读取对应配置（热重载已具备）。
 - 除安装 / 卸载 / 状态查询外，UI 与 driver **无其他耦合**：
@@ -44,11 +44,12 @@
 
 ---
 
-## 四、WinUI 3 技术约定
+## 四、Tauri 2 技术约定
 
-- Windows App SDK + C#（.NET 8）；XAML 实现 `01–04` 的视图 / 布局 / 图形令牌（胶囊 = 决策元素、圆角 = 信息布局、品牌青 `#33CCCC / #009AA2` 点缀）。
-- config.toml 写入：`File.WriteAllText`（UTF-8 无 BOM）；保存后 UI 标记「已保存 / 已应用」——driver 热重载无需确认。
-- 设备列表：优先 `list --json`；如需插拔实时性，用 `Windows.Devices.Enumeration` 补端点枚举。
+- Tauri 2 + React + TypeScript + Tailwind；`01–04` 的视图 / 布局 / 图形令牌直接在 React 实现（胶囊 = 决策元素、圆角 = 信息布局、品牌青 `#33CCCC / #009AA2` 点缀）。
+- config.toml 写入：经 Rust command 做**原子写**（临时文件 + rename，UTF-8 无 BOM）；保存后 UI 标记「已保存 / 已应用」——driver 热重载无需确认；前端做 300ms 去抖。
+- 设备列表：Rust command 调用 `vxapo-cli list --json`（路径经 env `VXAPO_CLI` 或固定安装路径解析）。
+- 安装 / 卸载：Rust command 以 `runas` 启动 `vxapo-cli install/uninstall --json`（UAC 由系统弹窗）；前端异步等待并解析 JSON 收尾。
 - 状态刷新：关键操作后刷新即可，或低频轮询（≈5s）。
 
 ---

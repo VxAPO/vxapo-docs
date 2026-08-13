@@ -4,15 +4,17 @@
 
 变更类型：`文档新增（设计定稿）+ CLI 功能`——WinUI 3 与 driver 集成定调；driver 无变更。
 
-- **《05 WinUI 3 与 driver 集成定调.md》**：文件系统解耦总纲（UI 只写
+- **《05 Tauri 与 driver 集成定调.md》**：文件系统解耦总纲（UI 只写
   `config.toml`、driver 只读配置）；仅安装 / 卸载 / 状态查询走 CLI；CLI `--json`
-  契约（list/status/install/uninstall）；WinUI 3（C#/.NET 8）技术约定；非目标
+  契约（list/status/install/uninstall）；Tauri 2 + React 技术约定；非目标
   （不做 bridge / 管道 / 服务）。
 - **CLI v0.3.0 `--json`**：list/status 输出设备 JSON 数组（index/name/guid/
   installed_version/install_mode/slots/eapo/lost_slot）；install/uninstall 输出
   ok/error JSON；错误约定 `{"ok":false,"error":"…"}` 退出码 1；交互菜单内部调用
   保持人类可读输出。
 - **02/03/04 引用同步**：05 = WinUI 集成定调，交互细则顺延至 06。
+- **v2 修订（2026-08-13）**：回迁 Tauri——05 改为「Tauri 与 driver 集成定调」
+  （原子写 config.toml + CLI `--json` + `runas` 提权安装）；CLI `--json` 保留复用。
 - **模块引用规范（无详细模块版）.md**：版本号保持 v9.16（设计定稿不升 driver 版本）。
 
 > 对应 commit：driver `无变更` / cli `26a2ad9` / docs `7017e3b`
