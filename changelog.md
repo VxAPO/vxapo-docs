@@ -43,6 +43,9 @@
   跨浏览器做法）——活跃标签三边描线（`border` + `border-bottom: none`），
   底角两个与标签栏同色圆形伪元素做内凹切口；替代手绘 SVG；右移 18px、
   底边重合段无线。
+- **v9 修订（2026-08-13）**：标签页实现**直接复用 vxapo-app App.css 原套**——
+  `.tab-bar` / `.tab-group` / `.tab-item` / `.tab-btn` / `.tab-sep` 及
+  `.tab-item.active .tab-btn` 的 `shape()` 原样，不再自绘；预览同步该实现。
 - **模块引用规范（无详细模块版）.md**：版本号保持 v9.16（设计定稿不升 driver 版本）。
 
 > 对应 commit：driver `无变更` / cli `无变更` / docs `待回填`
