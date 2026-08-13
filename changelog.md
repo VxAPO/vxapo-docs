@@ -15,8 +15,7 @@
 - **测试**：driver 新增 `disabled_file_is_passthrough_chain`（parser 9 用例全过）
 - **模块引用规范（无详细模块版）.md**：版本号 v9.17 → v9.18。
 
-> 对应 commit：driver `e2d283a` / cli `无变更` / docs `待提交`（docs hash 按
-> changelog-rule v8.3 随下次自然变更本地回填）
+> 对应 commit：driver `e2d283a` / cli `无变更` / docs `e010e2e`
 
 ## UI 设计规范 05 — 2026-08-13
 
