@@ -48,7 +48,7 @@
   `.tab-item.active .tab-btn` 的 `shape()` 原样，不再自绘；预览同步该实现。
 - **模块引用规范（无详细模块版）.md**：版本号保持 v9.16（设计定稿不升 driver 版本）。
 
-> 对应 commit：driver `无变更` / cli `无变更` / docs `待回填`
+> 对应 commit：driver `无变更` / cli `无变更` / docs `54869d3`
 
 ## UI 设计规范 03 — 2026-08-13
 
