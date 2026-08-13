@@ -17,7 +17,7 @@
   （原子写 config.toml + CLI `--json` + `runas` 提权安装）；CLI `--json` 保留复用。
 - **模块引用规范（无详细模块版）.md**：版本号保持 v9.16（设计定稿不升 driver 版本）。
 
-> 对应 commit：driver `无变更` / cli `26a2ad9` / docs `7017e3b`
+> 对应 commit：driver `无变更` / cli `26a2ad9` / docs `8c18750`
 
 ## UI 设计规范 04 — 2026-08-13
 
