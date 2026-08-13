@@ -33,7 +33,7 @@
   栏位最右侧（仅 selector on 显示），栏位 UI 同侧边栏下划线分段切换器。
 - **模块引用规范（无详细模块版）.md**：版本号保持 v9.16（设计定稿不升 driver 版本）。
 
-> 对应 commit：driver `无变更` / cli `无变更` / docs `d13daee`
+> 对应 commit：driver `无变更` / cli `无变更` / docs `da063c5`
 
 ## UI 设计规范 03 — 2026-08-13
 
