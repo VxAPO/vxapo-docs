@@ -60,7 +60,7 @@
   `--tab-edge`），内层 `clip-path` 同形，阴影跟随反圆角。
 - **模块引用规范（无详细模块版）.md**：版本号保持 v9.16（设计定稿不升 driver 版本）。
 
-> 对应 commit：driver `无变更` / cli `无变更` / docs `de30556`
+> 对应 commit：driver `无变更` / cli `无变更` / docs `26ce1ab`
 
 ## UI 设计规范 03 — 2026-08-13
 
