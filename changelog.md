@@ -1,5 +1,23 @@
 # Changelog
 
+## v9.18 — 2026-08-13
+
+变更类型：`契约新增 + UI 落地`（config 顶层总开关 + app 调音开关语义）
+
+- **config 顶层 `enabled` 总开关**：`false` = 整链 passthrough（driver 直接
+  空链，文件内容保留、不参与校验），缺省 `true`；APP 关闭调音时写
+  `enabled = false`，**不替换/清空效果内容**——**对应章节**：
+  `config TOML 设计文档 3`、`config 模块规范`、`UI 设计规范 01 三`
+- **APP 调音开关**：标签页圆点改为独立按钮，写入顶层 `enabled`；预设/高级卡片
+  拆分（一个 band 一张卡）、无组独立卡、卡片网格等宽随窗口自适应、滑块统一
+  横排、config 目录 2s 热更新监控（编辑中跳过）——**对应章节**：
+  `UI 设计规范 01/03/04`
+- **测试**：driver 新增 `disabled_file_is_passthrough_chain`（parser 9 用例全过）
+- **模块引用规范（无详细模块版）.md**：版本号 v9.17 → v9.18。
+
+> 对应 commit：driver `e2d283a` / cli `无变更` / docs `待提交`（docs hash 按
+> changelog-rule v8.3 随下次自然变更本地回填）
+
 ## UI 设计规范 05 — 2026-08-13
 
 变更类型：`文档新增（设计定稿）+ CLI 功能`——WinUI 3 与 driver 集成定调；driver 无变更。

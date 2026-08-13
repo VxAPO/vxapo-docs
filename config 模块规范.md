@@ -35,7 +35,8 @@ config/
 
 **双模型分层（定稿）**：
 - `FileModel`（`config/model.rs`）：TOML 反序列化目标，含 `version` /
-  `[meta]` / `[[effects]]`（`name`/`group` 为 APP 元数据）；
+  顶层 `enabled`（v9.18 总开关，false = 整链 passthrough）/ `[meta]` /
+  `[[effects]]`（`name`/`group` 为 APP 元数据）；
 - `ChainModel`（`pipeline/dsp/model.rs`）：纯 DSP 语义模型（类型、参数、
   `enabled`、`channels`），无 APP 元数据；
 - 转换（`FileModel → ChainModel`，含范围/段数/声道名校验）是 **config 层

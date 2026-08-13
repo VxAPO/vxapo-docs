@@ -27,6 +27,7 @@
 ```toml
 # VxAPO 配置 v1
 version = 1
+enabled = true             # 总开关（v9.18）：false = 整链 passthrough，内容保留
 
 [meta]
 app = "vxapo"          # APP 元数据，driver 忽略
@@ -57,6 +58,8 @@ intensity = 0.354331
 ```
 
 - `effects`：效果器数组，**顺序即处理顺序**（数组表保序）；
+- 顶层 `enabled`（v9.18）：**总开关**——`false` 时 driver 直接产出空链
+  （passthrough），文件内容保留、不参与字段校验；缺省 `true`；
 - 每个效果器 `type` 必填，参数键类型化（f32/整数/字符串/布尔）；
 - 每效果器可用 `enabled = false` 显式旁路（缺省 true）；
 - `name` / `group`：可选，**APP 元数据**——`name` 用于 APP 展示与预设映射，
