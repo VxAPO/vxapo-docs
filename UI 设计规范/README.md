@@ -1,0 +1,21 @@
+# VxAPO App UI Design（落地版）
+
+本目录描述 VxAPO App（`vxapo-app`）实际落地的 UI 结构与交互逻辑。以代码为基准：类名、CSS 变量、动画时长均与 `src/new.css`、`src/App.css`、`src/components/*` 保持一致。
+
+## 文件划分
+
+| 文件 | 内容 |
+|---|---|
+| `01-design-foundations.md` | 主题变量、颜色、字体、圆角、间距、阴影、层级 |
+| `02-shell-and-navigation.md` | 窗口骨架、TopBar、视图切换、侧边栏、设备标签页 |
+| `03-views-and-cards.md` | 预设/高级视图、组卡、滤波器卡、效果器卡、声道胶囊 |
+| `04-curve-and-device-panel.md` | 频响曲线、悬浮窗、设备属性卡、底部区 |
+| `05-dialogs-and-selection.md` | 弹窗、安装/卸载/保存预设、框选工具栏、Toast |
+| `06-drag-and-motion.md` | 拖拽引擎、框选、动画曲线、亚像素对齐 |
+
+## 设计总原则
+
+1. **浅色/深色共用同一套结构**：结构不变，只切换 CSS 变量。深色模式有独立的基础色与 hover 色映射表（见 `01-design-foundations.md`）。
+2. **所有定位与动画按设备像素取整**：`snapPx()` 统一处理，避免 1px 偏移和文字发虚。
+3. **交互先稳定再动效**：动效不得改变交互结果，动画中途输入可被打断。
+4. **悬浮、拖拽、框选均为指针级交互**：桌面优先，鼠标/触控板可用，不依赖触屏手势。
