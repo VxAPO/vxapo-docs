@@ -64,7 +64,14 @@ pub struct InstallConfig {
 }
 // default_config(): SfxEfx, 双向安装, use_original 均 false, allow_silent=true, auto_adjust=false
 
-// Note 47 完整 7 步安装（Transaction 保护，失败自动回滚）+ v8.5 全量/非全量判定
+// Note 47 完整 7 步注册表写入（Transaction 保护，失败自动回滚）+ v8.5 全量/非全量判定
+pub fn write_install_config(device_guid: &str, device_name: &str, connection_name: &str,
+                            config: &InstallConfig) -> Result<()>;
+// 纯注册表写入（不含尾部端点重启 / AudioSrv 确保 / CoCreateInstance 自检）——
+// `install --verify` 只调本函数，随后自行整服重启 + 管道验证。
+
+// install_endpoint = write_install_config + 尾部（pnputil 端点重启 + ensure AudioSrv
+// 运行）+ 可选 CoCreateInstance 自检（verify=true，非 --verify 调用方保留）
 pub fn install_endpoint(device_guid: &str, device_name: &str, connection_name: &str,
                         config: &InstallConfig, verify: bool) -> Result<()>;
 pub fn uninstall_endpoint(device_guid: &str) -> Result<()>;
@@ -101,6 +108,12 @@ pub fn get_original_post_mix(slots: &[SlotValue; 5], mode: InstallMode) -> Strin
 
 ```rust
 pub fn ensure_can_load() -> Result<()>;   // DisableProtectedAudioDG 检查
+pub fn stop_audio_service_with_dependents(stop_timeout_secs: u32) -> Result<()>;
+// 先停 AudioSrv 活动依赖服务（如 AudioEndpointBuilder）再停 AudioSrv，轮询 STOPPED
+pub fn start_audio_service_with_dependents(start_timeout_secs: u32) -> Result<()>;
+// 启动 AudioSrv 并轮询 RUNNING（5s 无进展重试一次），再启动依赖服务
+pub fn restart_audio_service_wait(stop_timeout_secs: u32, start_timeout_secs: u32) -> Result<()>;
+// 依赖服务感知整服重启（uninstall 收尾 / 普通 install 收尾复用）
 ```
 
 ### 2.4 config 层（config/parser.rs —— 仅供读回验证，不修改）
@@ -115,7 +128,7 @@ pub struct ConfigParser;   // parse_file / parse_string（spec + filter 链）
 
 | 层面 | CLI 可做 | CLI 不做 |
 |------|----------|----------|
-| install 层 API | 依赖 vxapo-driver 调用 `install_endpoint`/`uninstall_endpoint`/`enumerate_devices` | 不自行写注册表（经 driver 事务） |
+| install 层 API | 依赖 vxapo-driver 调用 `write_install_config`/`install_endpoint`/`uninstall_endpoint`/`enumerate_devices`/`audiodg::*_with_dependents` | 不自行写注册表（经 driver 事务）；SCM 服务操作经 driver audiodg 模块 |
 | 槽位失守检测 | 经 `enumerate_devices` + `read_all_slots` 检测**安装模式槽位**（v8.5） | 提示重装 + 触发 `install_endpoint` 覆盖备份 childapo；不直接写 childApoPath |
 | config 管理 | `config set` 写 `C:\ProgramData\VxAPO\{GUID}\config.toml`（v8.9 系统级根，v9.11 起 TOML）；`config show` 读回验证；`config convert` 旧 txt → TOML 一次性迁移 | 不解析 DSP 语义（读回一致性仅文件级） |
 | pipeline/RT | **不触碰** | 不做实时音频处理 |
@@ -170,7 +183,7 @@ resolve_device(device_ref) -> (device_guid, device_name, connection_name)
 
 | 命令 | 行为 | driver API |
 |------|------|-----------|
-| `install -d <device> [--mode LfxGfx\|SfxMfx\|SfxEfx] [--no-child]` | 安装（默认 SfxEfx + use_original=true 保留前任为子 APO + verify=true 管线自检；`--no-child` 关子 APO 保留） | `install_endpoint` |
+| `install -d <device> [--mode LfxGfx\|SfxMfx\|SfxEfx] [--no-child] [--verify] [--timeout=<sec>] [--progress-file=<path>]` | 安装（默认 SfxEfx + use_original=true 保留前任为子 APO；`--verify` 走验证闭环：写入→整服重启→管道验证→计分重试，见 5.1b） | `write_install_config`（--verify）/ `install_endpoint`（普通） |
 | `uninstall -d <device>` | 卸载（含删除 childApoPath 键，v8.5） | `uninstall_endpoint` |
 | `config set -d <device> -f <file>` | 写 `C:\ProgramData\VxAPO\{GUID}\config.toml`（v8.9/v9.11） | 文件写（driver 不提供 config 写——CLI 直接写文件） |
 | `config show -d <device>` | 读回 config.toml 内容（文件级验证） | 文件读回 |
@@ -283,6 +296,50 @@ main
      ├─ 7. 成功 → 打印「已安装 <guid>（模式 <mode>，子 APO 保留=...）」；失败 → 打印 driver Err + 建议 snapshot 恢复
      └─ 8. （可选）config set / config show 验证安装后配置（见 5.2 后续步骤）
 ```
+
+> **`--verify` 分支**：`--verify` 不走 `install_endpoint` 尾部重启/自检，改走 5.1b 验证闭环
+> （写入 → 整服重启 → 命名管道验证 → 计分重试）；App 提权路径以 `--progress-file`
+> 增量读取事件，stdout 直连路径逐行读 JSON。
+
+### 5.1b 验证安装流（`install --verify`，2026-08-19 新增）
+
+**签名**：`install -d <device> [--mode ...] [--no-child] [--verify] [--timeout=<sec>] [--progress-file=<path>]`
+
+**事件协议**：每行一条 JSON，同时输出到 stdout 与 `--progress-file`（追加 + flush）：
+
+| 事件 | 字段 | 语义 |
+|------|------|------|
+| `{"event":"install_write","mode":"sfx_mfx"}` | mode | 已写入注册表（`write_install_config`，覆盖安装） |
+| `{"event":"service","action":"stopping\|stopped\|starting\|running"}` | action | 整服重启阶段（依赖服务感知，poll STOPPED/RUNNING） |
+| `{"event":"test","pipe":"VxAPODeviceTest","mode":"..."}` | pipe | 管道已建 + `DeviceTestPipeName` 已写，开始触发 |
+| `{"event":"test","mode":"...","score":33,"max":33,"premix":true,...}` | score/max/premix/postmix/child_* | 当前模式计分结果 |
+| `{"event":"retry","from":"...","to":"...","reason":"..."}` | from/to | 未满分 → 覆写下一模式重试 |
+| `{"event":"complete","success":true,"mode":"...","score":33,"attempts":1}` | success | 成功，退出码 0 |
+| `{"event":"complete","success":false,"best_mode":"...","best_score":30,"attempts":3}` | best_* | 全部失败，保留最高分配置，退出码 1 |
+
+**流程**：
+
+```
+install_verify(dev, config, timeout, progress_file)
+ ├─ 模式序 = [preferred] + [sfx_efx, sfx_mfx, lfx_gfx] 去掉 preferred（EAPO 回退序）
+ ├─ 每模式：
+ │    ├─ write_install_config（纯注册表写入，事务保护）
+ │    ├─ stop_audio_service_with_dependents(10) → start_audio_service_with_dependents(15)
+ │    ├─ 建命名管道 VxAPODeviceTest（DACL: SYSTEM + Administrators）
+ │    │   + 写 HKLM\SOFTWARE\VxAPO\DeviceTestPipeName
+ │    ├─ trigger_apo_load：IMMDevice→IAudioClient→GetMixFormat→Initialize(shared, 100ms)
+ │    │   （E_PENDING / AUDCLNT_E_DEVICE_INVALIDATED 重试 5×500ms）
+ │    ├─ 管道收集 ≤5s：driver DLL Initialize 上报阶段 JSON
+ │    ├─ 计分：premix_init 20 / postmix_init 10 / child_premix 2 / child_postmix 1
+ │    │   满分 render=33、capture=22；子 APO 判据 = 注册表期望存在且收到 child_apo
+ │    │   （或期望为空视为通过——无原始 APO 的干净安装也拿满分）
+ │    └─ 清理：删 DeviceTestPipeName + 关管道（finally 恒清理）
+ ├─ score == max → complete success:true，退出 0
+ └─ 全部失败 → 保留最高分配置（不回滚）+ start_audio_service_with_dependents 确保服务运行
+      → complete success:false，退出 1
+```
+
+**超时**：`--timeout` 默认 180s（整次安装上限）；阶段预算：停服 10s、启动 15s、管道 5s、触发 5×500ms。
 
 ### 5.2 验证流（`install` 后 → `config set` + `config show` + `status`）
 

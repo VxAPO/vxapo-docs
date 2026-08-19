@@ -22,6 +22,24 @@
 - hover：背景 `rgba(71,195,209,0.2)`。
 - disabled：`opacity:0.6; cursor:wait`。
 
+### 3.1 安装验证进度面板（`install --verify` 闭环，2026-08-19）
+
+- 点击安装后切换为进度视图 `.install-progress`（单设备一次只装一个）。
+- 状态机：`installing → restarting ↔ verifying → done | failed`；重试对用户透明
+  （restarting/verifying 随事件循环推进，retry 仅换文案）。
+- 数据源：App 后端 `install_device` 异步执行 CLI `install --verify`，逐行解析 JSON
+  事件并 `emit("install-progress")`；前端 `onInstallProgress` 订阅。
+- 展示：
+  - `.install-progress-head`：设备名 + 旋转 spinner（运行中）。
+  - `.install-progress-track` / `.install-progress-bar`：轨道透明，仅显示进度条；
+    installing/verifying 脉冲、restarting 定宽 45%、done/failed 100%。
+  - `.install-progress-text`：阶段文案（写配置 / 停服务 / 启服务 / 验证 / 重试 / 成功 / 失败）。
+  - `.install-attempts`：已尝试模式列表（模式名 + score/max），失败时保留供排查。
+- 终态：done →「完成」按钮关闭并刷新设备列表；failed →「重试 / 完成」，
+  重试重新走 `handleInstall`，完成关闭；两种终态都触发设备列表刷新
+  （失败时 best 配置已写入，设备按已安装态出现）。
+- 返回契约：`InstallResult { success, mode, score, attempts, best_mode, best_score }`。
+
 ## 4. 卸载弹窗
 
 - 危险操作确认。

@@ -31,7 +31,7 @@ vxapo-cli/
 |---------|----------|--------|
 | no-argument launch | interactive menu: 1 viewer mode / 2 driver mode / q quit | implemented |
 | `list` / `status` | enumerate devices, show GUID/version/mode/5 slots/EAPO/lost status; supports `--json` | implemented |
-| `install -d <device> [--mode ...] [--no-child]` | install/reinstall (auto mode detection, snapshot baseline, auto-register driver, auto-import config) | implemented |
+| `install -d <device> [--mode ...] [--no-child] [--verify] [--timeout=<sec>] [--progress-file=<path>]` | install/reinstall; `--verify` runs the verification loop (write → full service restart → named-pipe APO load verification → score/retry), see 5.1b | implemented |
 | `uninstall -d <device>` | uninstall (stop audio service, clear slots, verify, snapshot diff) | implemented |
 | `config set/show` | write/read `C:\ProgramData\VxAPO\{GUID}\config.toml` | implemented |
 | `snapshot diff/restore/create` | registry baseline snapshot, diff, restore | implemented |
@@ -45,9 +45,9 @@ The CLI is no longer a pure interactive diagnostic tool. It depends on `vxapo-dr
 
 ## 2. Reusable driver APIs
 
-- `InstallConfig` / `install_endpoint` / `uninstall_endpoint` in `install/selector/operation.rs`.
+- `InstallConfig` / `write_install_config` / `install_endpoint` / `uninstall_endpoint` in `install/selector/operation.rs` (write-only registry install + full install with tail restart).
 - `DeviceInfo` / `enumerate_devices` / slot helpers in `install/device/info.rs` and `install/device/slots.rs`.
-- `ensure_can_load` in `install/audiodg.rs`.
+- `ensure_can_load` / `stop_audio_service_with_dependents` / `start_audio_service_with_dependents` / `restart_audio_service_wait` in `install/audiodg.rs`.
 - `ConfigParser` in `config/parser.rs` for read-back verification.
 
 ---
@@ -56,7 +56,7 @@ The CLI is no longer a pure interactive diagnostic tool. It depends on `vxapo-dr
 
 | Layer | CLI can do | CLI does not do |
 |-------|------------|-----------------|
-| install-layer API | call `install_endpoint` / `uninstall_endpoint` / `enumerate_devices` | write registry by itself (driver transaction) |
+| install-layer API | call `write_install_config` / `install_endpoint` / `uninstall_endpoint` / `enumerate_devices` / `audiodg::*_with_dependents` | write registry by itself (driver transaction) |
 | slot-loss detection | detect via `enumerate_devices` + slot helpers | directly write childApoPath |
 | config management | `config set` / `config show` / `config convert` | parse DSP semantics |
 | pipeline/RT | — | never touches real-time audio |
@@ -88,14 +88,32 @@ Accepted forms are resolved by `resolve_device` into `(device_guid, device_name,
 ### 5.1 Install
 
 ```text
-vxapo-cli install -d <device> [--mode ...] [--no-child]
+vxapo-cli install -d <device> [--mode ...] [--no-child] [--verify] [--timeout=<sec>]
   -> resolve_device
   -> InstallConfig::default_config()
   -> snapshot_device(guid, replace=true)      # baseline before install (registry only)
   -> auto_register_driver()                    # refresh CLSID -> DLL binding
-  -> install_endpoint(&guid, &name, &conn, &config, true)
+  -> if --verify: install_verify()            # see 5.1b
+  -> else: install_endpoint(&guid, &name, &conn, &config, true)
   -> if no config exists, auto-import exe-dir config.toml
 ```
+
+### 5.1b Verified install (`install --verify`, added 2026-08-19)
+
+- Mode order = `[preferred] + [sfx_efx, sfx_mfx, lfx_gfx]` minus preferred (EAPO fallback order).
+- Per mode: `write_install_config` → `stop_audio_service_with_dependents(10)` →
+  `start_audio_service_with_dependents(15)` → create named pipe `VxAPODeviceTest`
+  (DACL SYSTEM + Administrators) + write `HKLM\SOFTWARE\VxAPO\DeviceTestPipeName` →
+  `trigger_apo_load` (IMMDevice → IAudioClient → GetMixFormat → Initialize,
+  E_PENDING/DEVICE_INVALIDATED retry 5×500ms) → collect pipe messages ≤5s → score.
+- Scoring: premix_init 20 / postmix_init 10 / child_premix 2 / child_postmix 1;
+  full score render=33, capture=22; child judged against registry expectation
+  (absent expected child counts as passed, so clean installs reach full score).
+- Full score → `complete success:true`, exit 0; otherwise retry next mode; after all
+  modes fail, keep the best config, ensure the audio service is running, emit
+  `complete success:false`, exit 1.
+- Events are one JSON object per line on stdout and (when given) appended to
+  `--progress-file`; `--timeout` default 180s (overall install budget).
 
 ### 5.2 Config set/show
 
