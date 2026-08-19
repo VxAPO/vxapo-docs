@@ -335,8 +335,8 @@ install_verify(dev, config, timeout, progress_file)
  │    │   满分 render=33、capture=22；子 APO 判据 = 注册表期望存在且收到 child_apo
  │    │   （或期望为空视为通过——无原始 APO 的干净安装也拿满分）
  │    └─ 清理：删 DeviceTestPipeName + 关管道（finally 恒清理）
- ├─ score == max → restart_endpoint_device 定向重启端点（新配置立即生效）→
- │    complete success:true，退出 0
+ ├─ score == max → complete success:true，退出 0
+ │    （不额外重启端点——服务重启已重建端点图，避免安装期间二次打断音频）
  └─ 全部失败 → uninstall_endpoint 回滚注册表 + start_audio_service_with_dependents 确保服务运行
       → complete success:false，退出 1
 ```

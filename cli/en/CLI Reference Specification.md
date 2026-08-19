@@ -111,10 +111,12 @@ vxapo-cli install -d <device> [--mode ...] [--no-child] [--verify] [--timeout=<s
 - Scoring: premix_init 20 / postmix_init 10 / child_premix 2 / child_postmix 1;
   full score render=33, capture=22; child judged against registry expectation
   (absent expected child counts as passed, so clean installs reach full score).
-- Full score → `restart_endpoint_device` (pnputil, new config takes effect
-  immediately) → `complete success:true`, exit 0; otherwise retry next mode;
-  after all modes fail, roll back with `uninstall_endpoint`, ensure the audio
-  service is running, emit `complete success:false`, exit 1.
+- Full score → `complete success:true`, exit 0 (no extra endpoint restart —
+  the service restart already rebuilds the endpoint graph, avoiding a second
+  audio interruption during install); otherwise retry next mode; after all
+  modes fail, roll back with `uninstall_endpoint` (which restarts the endpoint
+  device targeted), ensure the audio service is running, emit
+  `complete success:false`, exit 1.
 - Events are one JSON object per line on stdout and (when given) appended to
   `--progress-file`; the `test` event carries only `mode` (no scoring fields for
   the user). Global watchdog: 20s hard abort; `--timeout` default 180s (overall
