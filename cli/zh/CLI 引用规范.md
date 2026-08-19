@@ -312,7 +312,7 @@ main
 | `{"event":"install_write","mode":"sfx_mfx"}` | mode | 已写入注册表（`write_install_config`，覆盖安装） |
 | `{"event":"service","action":"stopping\|stopped\|starting\|running"}` | action | 整服重启阶段（依赖服务感知，poll STOPPED/RUNNING） |
 | `{"event":"test","pipe":"VxAPODeviceTest","mode":"..."}` | pipe | 管道已建 + `DeviceTestPipeName` 已写，开始触发 |
-| `{"event":"test","mode":"...","score":33,"max":33,"premix":true,...}` | score/max/premix/postmix/child_* | 当前模式计分结果 |
+| `{"event":"test","mode":"..."}` | mode | 进入验证阶段（用户端不含计分字段；计分仅 CLI 内部用于重试与 complete） |
 | `{"event":"retry","from":"...","to":"...","reason":"..."}` | from/to | 未满分 → 覆写下一模式重试 |
 | `{"event":"complete","success":true,"mode":"...","score":33,"attempts":1}` | success | 成功，退出码 0 |
 | `{"event":"complete","success":false,"best_mode":"...","best_score":30,"attempts":3}` | best_* | 全部失败，保留最高分配置，退出码 1 |
@@ -324,22 +324,24 @@ install_verify(dev, config, timeout, progress_file)
  ├─ 模式序 = [preferred] + [sfx_efx, sfx_mfx, lfx_gfx] 去掉 preferred（EAPO 回退序）
  ├─ 每模式：
  │    ├─ write_install_config（纯注册表写入，事务保护）
- │    ├─ stop_audio_service_with_dependents(10) → start_audio_service_with_dependents(15)
- │    ├─ 建命名管道 VxAPODeviceTest（DACL: SYSTEM + Administrators）
- │    │   + 写 HKLM\SOFTWARE\VxAPO\DeviceTestPipeName
+ │    ├─ stop_audio_service_with_dependents(3) → start_audio_service_with_dependents(5)
+ │    ├─ 建命名管道 VxAPODeviceTest（DACL: SYSTEM + Administrators + Everyone）
+│    │   + 写 HKLM\SOFTWARE\VxAPO\DeviceTestPipeName
  │    ├─ trigger_apo_load：IMMDevice→IAudioClient→GetMixFormat→Initialize(shared, 100ms)
- │    │   （E_PENDING / AUDCLNT_E_DEVICE_INVALIDATED 重试 5×500ms）
- │    ├─ 管道收集 ≤5s：driver DLL Initialize 上报阶段 JSON
+ │    │   （仅 Initialize 不启动流，对齐 EAPO；E_PENDING/DEVICE_INVALIDATED 重试 5×500ms；
+ │    │   无触发级超时，慢设备不受限——20s 全局看门狗兜底）
+ │    ├─ 管道收集 ≤2s（固定迭代 200ms×10）：driver DLL Initialize 上报阶段 JSON
  │    ├─ 计分：premix_init 20 / postmix_init 10 / child_premix 2 / child_postmix 1
  │    │   满分 render=33、capture=22；子 APO 判据 = 注册表期望存在且收到 child_apo
  │    │   （或期望为空视为通过——无原始 APO 的干净安装也拿满分）
  │    └─ 清理：删 DeviceTestPipeName + 关管道（finally 恒清理）
  ├─ score == max → complete success:true，退出 0
- └─ 全部失败 → 保留最高分配置（不回滚）+ start_audio_service_with_dependents 确保服务运行
+ └─ 全部失败 → uninstall_endpoint 回滚注册表 + start_audio_service_with_dependents 确保服务运行
       → complete success:false，退出 1
 ```
 
-**超时**：`--timeout` 默认 180s（整次安装上限）；阶段预算：停服 10s、启动 15s、管道 5s、触发 5×500ms。
+**超时**：全局看门狗 20s（任何卡死强制终止）；阶段预算：停服 3s、启动 5s、管道收集 2s、
+触发仅 E_PENDING/DEVICE_INVALIDATED 重试 5×500ms（无外层超时，避免慢设备误杀）。
 
 ### 5.2 验证流（`install` 后 → `config set` + `config show` + `status`）
 

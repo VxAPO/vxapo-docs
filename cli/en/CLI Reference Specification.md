@@ -101,19 +101,23 @@ vxapo-cli install -d <device> [--mode ...] [--no-child] [--verify] [--timeout=<s
 ### 5.1b Verified install (`install --verify`, added 2026-08-19)
 
 - Mode order = `[preferred] + [sfx_efx, sfx_mfx, lfx_gfx]` minus preferred (EAPO fallback order).
-- Per mode: `write_install_config` → `stop_audio_service_with_dependents(10)` →
-  `start_audio_service_with_dependents(15)` → create named pipe `VxAPODeviceTest`
-  (DACL SYSTEM + Administrators) + write `HKLM\SOFTWARE\VxAPO\DeviceTestPipeName` →
-  `trigger_apo_load` (IMMDevice → IAudioClient → GetMixFormat → Initialize,
-  E_PENDING/DEVICE_INVALIDATED retry 5×500ms) → collect pipe messages ≤5s → score.
+- Per mode: `write_install_config` → `stop_audio_service_with_dependents(3)` →
+  `start_audio_service_with_dependents(5)` → create named pipe `VxAPODeviceTest`
+  (DACL SYSTEM + Administrators + Everyone) + write
+  `HKLM\SOFTWARE\VxAPO\DeviceTestPipeName` → `trigger_apo_load`
+  (IMMDevice → IAudioClient → GetMixFormat → Initialize only, aligned with EAPO;
+  E_PENDING/DEVICE_INVALIDATED retry 5×500ms; no trigger-level timeout) →
+  collect pipe messages ≤2s (fixed 200ms×10 iterations) → score.
 - Scoring: premix_init 20 / postmix_init 10 / child_premix 2 / child_postmix 1;
   full score render=33, capture=22; child judged against registry expectation
   (absent expected child counts as passed, so clean installs reach full score).
 - Full score → `complete success:true`, exit 0; otherwise retry next mode; after all
-  modes fail, keep the best config, ensure the audio service is running, emit
-  `complete success:false`, exit 1.
+  modes fail, roll back with `uninstall_endpoint`, ensure the audio service is
+  running, emit `complete success:false`, exit 1.
 - Events are one JSON object per line on stdout and (when given) appended to
-  `--progress-file`; `--timeout` default 180s (overall install budget).
+  `--progress-file`; the `test` event carries only `mode` (no scoring fields for
+  the user). Global watchdog: 20s hard abort; `--timeout` default 180s (overall
+  install budget).
 
 ### 5.2 Config set/show
 

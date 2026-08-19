@@ -34,7 +34,6 @@
   - `.install-progress-track` / `.install-progress-bar`：轨道透明，仅显示进度条；
     installing/verifying 脉冲、restarting 定宽 45%、done/failed 100%。
   - `.install-progress-text`：阶段文案（写配置 / 停服务 / 启服务 / 验证 / 重试 / 成功 / 失败）。
-  - `.install-attempts`：已尝试模式列表（模式名 + score/max），失败时保留供排查。
 - 终态：done →「完成」按钮关闭并刷新设备列表；failed →「重试 / 完成」，
   重试重新走 `handleInstall`，完成关闭；两种终态都触发设备列表刷新
   （失败时 best 配置已写入，设备按已安装态出现）。
