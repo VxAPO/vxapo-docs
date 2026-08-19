@@ -309,7 +309,7 @@ main
 
 | 事件 | 字段 | 语义 |
 |------|------|------|
-| `{"event":"install_write","mode":"sfx_mfx"}` | mode | 已写入注册表（`write_install_config`，覆盖安装） |
+| `{"event":"install_write","mode":"SFX_MFX"}` | mode | 已写入注册表（`write_install_config`，覆盖安装；mode 输出为大写） |
 | `{"event":"service","action":"stopping\|stopped\|starting\|running"}` | action | 整服重启阶段（依赖服务感知，poll STOPPED/RUNNING） |
 | `{"event":"test","pipe":"VxAPODeviceTest","mode":"..."}` | pipe | 管道已建 + `DeviceTestPipeName` 已写，开始触发 |
 | `{"event":"test","mode":"..."}` | mode | 进入验证阶段（用户端不含计分字段；计分仅 CLI 内部用于重试与 complete） |
@@ -335,7 +335,8 @@ install_verify(dev, config, timeout, progress_file)
  │    │   满分 render=33、capture=22；子 APO 判据 = 注册表期望存在且收到 child_apo
  │    │   （或期望为空视为通过——无原始 APO 的干净安装也拿满分）
  │    └─ 清理：删 DeviceTestPipeName + 关管道（finally 恒清理）
- ├─ score == max → complete success:true，退出 0
+ ├─ score == max → restart_endpoint_device 定向重启端点（新配置立即生效）→
+ │    complete success:true，退出 0
  └─ 全部失败 → uninstall_endpoint 回滚注册表 + start_audio_service_with_dependents 确保服务运行
       → complete success:false，退出 1
 ```
