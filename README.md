@@ -21,7 +21,7 @@ App（决策与写配置）→ CLI（安装/卸载/注册表唯一入口）→ D
 参数键、数值边界（增益 `[-120,+48]`、31 段上限）、旧类型兼容映射
 （maximizer/leveler → compressor 等）、热重载 spec 指纹语义完全一致。
 
-## 致谢 Equalizer APO
+## 设计参考与致谢
 
 VxAPO 的安装模型、配置文件驱动 DSP 与热重载思路参考了
 [Equalizer APO](https://sourceforge.net/projects/equalizerapo/)（© Jonas Thedering，
@@ -62,7 +62,7 @@ parameter keys, numerical bounds (gain `[-120,+48]`, 31-band limit), legacy type
 mapping (`maximizer`/`leveler` → `compressor`, etc.), and hot-reload spec-fingerprint
 semantics are identical across layers.
 
-## Acknowledgments: Equalizer APO
+## Design references & acknowledgments
 
 VxAPO's install model, config-file-driven DSP, and hot-reload approach are inspired by
 [Equalizer APO](https://sourceforge.net/projects/equalizerapo/) (© Jonas Thedering,
