@@ -148,6 +148,7 @@
 
 - 22×22px 圆，`color: var(--text-secondary)`。
 - hover：`color: var(--brand-deep)`（浅色）/ `var(--brand)`（深色），背景 `var(--brand-soft)`。
+- 过渡：`background-color / color 0.18s ease`。
 
 ## 5. 空态
 
@@ -155,4 +156,7 @@
 - `.no-device-logo`：256×256，`opacity:0.16; filter:grayscale(1) invert(1)`。
 - `.no-device-row`：安装入口按钮。
 - `.no-device-plus`：26px 圆，背景 `var(--brand)`，文字 `var(--on-accent)`；
-  hover 背景 `rgba(88,205,219,0.75)`。
+  hover 背景 `rgba(88,205,219,0.75)`；过渡 `background-color / color 0.18s ease`。
+- `.no-device-tip`：提示文字颜色由 `--text-primary` 派生
+  （`color-mix(in srgb, var(--text-primary) 50%, transparent)`，深色 `--text-weak`）；
+  主题切换时加入 `.theme-transition` 豁免列表，跟随根变量插值不慢拍。

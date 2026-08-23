@@ -57,6 +57,7 @@
 | 主题三段 thumb | `0.2s cubic-bezier(0.4,0,0.2,1)` |
 | 标签 hover/active | `0.15s ease` |
 | 卡片 hover 阴影 | `0.18s ease` |
+| 加号（无设备页/标签页）/ 安装按钮 hover | `0.18s ease` |
 | 弹窗进入 | `0.18s cubic-bezier(0.2,0.8,0.3,1)` |
 | Toast 进入 | `0.2s ease` |
 | 拖拽阴影抬升 | `0.18s ease-out` |

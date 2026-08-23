@@ -21,7 +21,8 @@
 - 每项 `.install-item`：设备名、格式信息、安装按钮。
 - 安装按钮 `.install-btn`：圆角胶囊，背景 `var(--brand-soft)`，
   文字 `var(--brand-deep)`（浅色）/ `var(--brand)`（深色），
-  边框 `1px solid rgba(71,195,209,0.45)`（深色为 `var(--brand)`）。
+  边框 `1px solid rgba(71,195,209,0.45)`（深色为 `var(--brand)`）；
+  过渡 `background-color / color / border-color 0.18s ease`。
 - hover：背景 `rgba(71,195,209,0.2)`。
 - disabled：`opacity:0.6; cursor:wait`。
 

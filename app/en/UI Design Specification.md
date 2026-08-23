@@ -34,7 +34,7 @@
 - View switch `.view-seg`: centered segment with sliding thumb (`--brand-bg` + `--brand` border), 0.25 s slide; disabled rules per view.
 - Sidebar: segmented switcher (Preset | Custom | Advanced); preset/custom entries are compact pills with an 8 px accent dot, bold group name, and 12 px weak subtitle (`flex + gap` layout); advanced section uses category + pill rows.
 - Device tabs: `tab-btn` (13 px, 16 px radius), tuning dot switch (`.tab-dot`), close button, add button; per-device tuning state initialized from disk.
-- Empty state: centered logo + install row when no devices.
+- Empty state: centered logo + install row when no devices; the plus and install button use 0.18 s hover transitions, and the tip color follows theme variables (no lag on theme switches).
 
 ## 03 Views and cards
 
