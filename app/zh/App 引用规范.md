@@ -1,10 +1,10 @@
 # App 引用规范
 
-> **目的**：定义 VxAPO App（`vxapo-app`）的规范边界、架构草案、模块结构、数据流与修改路线。
+> **目的**：定义 VxAPO App（`vxapo-app`）的规范边界、架构、模块结构、数据流与修改路线。
 > **定位**：App 是**面向终端用户**的界面层（overview「三层分离」），只做决策与写文件，
 > 不做实时音频处理；与 DLL 的唯一通信通道是文件系统（config.toml / 预设 TOML）。
-> **依据**：源码实读 `D:\APO_Project\VxAPO\vxapo-app`（Vite 7 + React 19 + TS + Tailwind 4 +
-> framer-motion + lucide-react + @tauri-apps/api 2，2026-08-13）+ 架构草案（src/ 目录树）
+> **依据**：源码实读 `D:\APO_Project\VxAPO\vxapo-app`（Vite 7 + React 19 + TS 5.8 +
+> framer-motion 13 + lucide-react + @radix-ui + @dnd-kit + @tauri-apps/api 2，2026-08-23）
 > + `CLI 引用规范.md` / `overview/项目概览.md` / driver `配置与DSP设计.md`。
 
 ---
@@ -13,75 +13,88 @@
 
 | 层面 | App 可做 | App 不做 |
 |------|----------|----------|
-| **决策/呈现** | 预设选择、维度调节、高级参数编辑、EQ 频响预览、设备切换、继承复制、导入导出 | 不解释 DSP 内部实现 |
+| **决策/呈现** | 预设选择、语义/参数视图、效果器编辑、EQ 频响预览、设备切换、导入导出、框选批量操作 | 不解释 DSP 内部实现 |
 | **文件系统** | 写 `C:\ProgramData\VxAPO\{GUID}\config.toml`（经后端命令）；读写 `_global/presets/*.toml`；写回时**主动限幅** | 不写注册表（安装/卸载经 CLI/driver） |
-| **driver/RT** | 依赖 driver 作为 library（或复用 CLI 逻辑）做设备枚举/安装/快照 | 不触碰 pipeline/RT，不做实时音频处理 |
-| **响度补偿** | 只提供开关（写 `Loudness: on\|off`，默认 on） | **不做可视化**（已定决策） |
+| **driver/RT** | 依赖 CLI/driver 做设备枚举/安装/快照 | 不触碰 pipeline/RT，不做实时音频处理 |
 
 **核心原则（与项目方案一致）**：DLL 只认 config.toml；App 负责一切决策；配置**永不回写**——
 超范围参数由 App 写回时主动限幅，DLL 只在内存里 clamp。
 
 ---
 
-## 二、现状（源码实读，2026-08-13）
+## 二、现状（源码实读，2026-08-23）
 
 ### 2.1 工程骨架
 
 ```text
 vxapo-app/
-├── package.json            # Vite 7 + React 19 + TS 5.8 + Tailwind 4 + framer-motion 13 + lucide-react
-│                           # + @dnd-kit + @radix-ui + @tauri-apps/api 2 + @tauri-apps/cli 2
+├── package.json            # Vite 7 + React 19 + TS 5.8 + framer-motion 13 + lucide-react 1.x
+│                           # + @dnd-kit + @radix-ui（react-dialog/select/slider/switch）
+│                           # + @tauri-apps/api 2 + plugin-dialog + plugin-opener
+│                           # + sharp/@resvg/resvg-js（图标管线）
+│                           # scripts: dev / build / build:win / icon:fix
 ├── index.html / vite.config.ts / tsconfig*.json
-├── src-tauri/              # Tauri 2 Rust 后端（已初始化）
-│   ├── Cargo.toml
-│   ├── tauri.conf.json
+├── src-tauri/              # Tauri 2 Rust 后端
+│   ├── Cargo.toml / tauri.conf.json / icons/（多尺寸 ico + png）
 │   └── src/
 │       ├── main.rs
-│       └── lib.rs          # Tauri commands：config 读写、设备列表、安装/卸载、导入导出等
+│       └── lib.rs          # 11 个 Tauri commands + 提权 CLI 封装（见第八章）
 └── src/
     ├── main.tsx            # 入口（挂载 App + I18nProvider）
-    ├── App.tsx             # 主应用：设备/配置/效果器/预设/高级视图
-    ├── App.css / new.css   # 样式
-    ├── assets/             # 图标
-    ├── components/         # 25+ UI 组件（TopBar/Sidebar/CurvePlot/AdvancedView/...）
+    ├── App.tsx             # 主应用：设备/配置/效果器/预设/语义与参数视图编排
+    ├── App.css / new.css   # new.css 只做 @import 汇总，样式按分区在 styles/
+    ├── styles/             # theme/topbar/sidebar/cards/tabs/device/curve/dialogs/
+    │                       # toast/drag/overlay-scroll/dark（dark 最后级联）
+    ├── assets/             # VxAPO_icon_v4.svg 等图标
+    ├── components/         # 27 个 UI 组件（见 3.3）
     ├── data/library.ts     # 预设库数据
-    ├── hooks/              # useConfig/useDevices/useDragSort/useTheme/useToast/...
-    └── lib/                # api/model/toml/effects/blocks/channels/storage/i18n/...
+    ├── hooks/              # 13 个 hooks（见 3.4）
+    └── lib/                # api/model/toml/effects/blocks/channels/curve/rbj/...
 ```
 
 **现状结论**：
 
-- Tauri **Rust 后端已初始化**，提供 `write_config`、`read_config`、`list_devices`、
-  `install_device`、`uninstall_device`、`read_progress`、`export_config` 等命令。
-- `App.tsx` 已拆分：`src/components/*`、`src/hooks/*`、`src/lib/*`、`src/data/*` 均已落地。
-- 已接入设备枚举（CLI `list --json`）、config.toml 读写、自动保存（300ms 去抖）、
-  安装/卸载（提权 CLI）、拖拽导入导出、i18n 中英文界面。
-- 当前数据模型以 `Block`/`Band`/`EffectItem` 为主（PEQ 块 + 非 PEQ 效果器），
-  不再是草案中的 `DimensionMapping/Dimension/Filter/Preset` 静态示例。
+- Tauri **Rust 后端**提供 11 个命令：config 读写、设备列表、安装/卸载（含失败回滚）、
+  进度读取、导入导出、资源管理器定位、窗口显示；并启用 `opener` / `dialog` 插件。
+- 前端按 `components / hooks / lib / data / styles` 拆分；业务状态集中在 `App.tsx` 与 hooks，
+  组件受控。
+- 已实现：设备枚举、config 读写与自动保存（300ms 去抖）、外部热更新轮询（2s）、
+  安装/卸载（`--verify` 闭环 + 进度事件）、拖拽导入导出、框选批量操作、i18n 中英文、
+  自绘 overlay 滚动条、语义/参数双视图与效果器语义强度映射。
+- 数据模型以 `Block` / `Band` / `EffectItem` 为主（PEQ 块 + 非 PEQ 效果器）。
 
-### 2.2 实际源码结构（2026-08-13）
+### 2.2 实际源码结构（2026-08-23）
 
 ```text
 src/
-├── App.tsx                    # 主布局 + 设备/视图/配置状态编排
-├── App.css / new.css          # 样式
+├── App.tsx                    # 主布局 + 设备/视图/配置/框选状态编排
+├── App.css / new.css          # 样式入口（new.css @import styles/*）
 ├── main.tsx                   # 入口
-├── components/                # TopBar, Sidebar, PresetView, AdvancedView, CurvePanel,
-│                              # DeviceTabs, InstallDialog, UninstallDialog, ImportDialog, ...
+├── components/                # TopBar, Sidebar, PresetDeck, PresetView, AdvancedView,
+│                              # CurvePanel, CurvePlot, CurveGrid, DeviceTabs, DevicePropsCard,
+│                              # EffectCard, EffectSemanticCard, SemanticUnitCard, BandParamCard,
+│                              # GainSlider, SelectionToolbar, DragCard, DragLayer,
+│                              # InstallDialog, UninstallDialog, ImportDialog, SavePresetDialog,
+│                              # SettingsDialog, ConfirmDialog, OverlayScrollbar, Toast, VxSelect
 ├── data/library.ts            # 预设库（含中英文字段）
-├── hooks/                     # useConfig, useDevices, useDragSort, useTheme, useToast, ...
-└── lib/
-    ├── api.ts                 # Tauri 命令封装
-    ├── model.ts               # Device/Block/Band/EffectItem/PresetLibraryEntry 类型
-    ├── toml.ts                # buildToml / parseConfigWithTail
-    ├── effects.ts             # 效果器参数默认值/合法性
-    ├── blocks.ts              # 块工具/语义单元
-    ├── channels.ts            # 声道标签
-    ├── storage.ts             # 本地存储（自定义预设/主题等）
-    ├── snap.ts                # 吸附/数值规整
-    └── i18n.tsx               # 中英文国际化
-
-src-tauri/src/lib.rs           # Tauri commands + 提权 CLI 封装
+├── hooks/                     # useConfig, useDevices, useDragSort, useViewAnimation,
+│                              # useMarqueeSelection, useChannelState, usePresetActions,
+│                              # useCurveHover, useThrottledCompute, useTheme, useToast,
+│                              # useInterval, useWindowControls
+├── lib/
+│   ├── api.ts                 # Tauri 命令封装
+│   ├── model.ts               # 共享类型 + 类型守卫
+│   ├── toml.ts                # buildToml / parseConfigWithTail
+│   ├── effects.ts             # 效果器定义/参数/语义强度往返
+│   ├── blocks.ts / accent.ts  # 块工具/组色推导与 OKLCH 配色
+│   ├── channels.ts            # 声道标签
+│   ├── curve.ts / rbj.ts      # 频响评估点 / RBJ 双线性变换
+│   ├── normalize.ts           # 基准电平归一化规划
+│   ├── dragSortTypes.ts       # 拖拽排序类型
+│   ├── storage.ts             # 本地存储（自定义预设/主题/语言等）
+│   ├── snap.ts                # 亚像素吸附
+│   └── i18n.tsx + i18n/{core,zh,en}.ts   # 中英文国际化
+└── styles/                    # 分区样式（dark.css 最后）
 ```
 
 ---
@@ -93,17 +106,19 @@ src-tauri/src/lib.rs           # Tauri commands + 提权 CLI 封装
 | 文件 | 职责 | 约束 |
 |------|------|------|
 | `main.tsx` | React 挂载入口，引入 `I18nProvider` 与全局样式 | 不含业务逻辑 |
-| `App.tsx` | 主布局 + 状态编排：设备选择、视图切换、配置加载/自动保存、安装/卸载流程 | 只做组合与状态，组件实现下沉到 components/hooks |
-| `App.css` / `new.css` | 全局样式 | — |
-| `lib/model.ts` | 共享类型：`Device`、`Block`、`Band`、`EffectItem`、`PresetLibraryEntry`、`ViewMode` 等 | 组件/面板不得各自定义业务类型 |
-| `lib/api.ts` | Tauri 命令封装：`readConfig` / `writeConfig` / `listDevices` / `installDevice` / `uninstallDevice` / `exportConfig` 等 | 不直接操作文件系统 |
+| `App.tsx` | 主布局 + 状态编排：设备选择、视图切换、配置加载/自动保存、安装/卸载流程、框选 | 只做组合与状态，组件实现下沉到 components/hooks |
+| `App.css` / `new.css` | 样式入口；new.css 按固定顺序 `@import styles/*` | dark.css 最后级联 |
+| `lib/model.ts` | 共享类型：`Device`、`Block`、`Band`、`EffectItem`、`PresetLibraryEntry`、`ViewMode`、`ThemeMode` 等 + 类型守卫 | 组件/面板不得各自定义业务类型 |
+| `lib/api.ts` | Tauri 命令封装：`readConfig` / `writeConfig` / `listDevices` / `installDevice` / `uninstallDevice` / `rollbackInstall` / `exportConfig` 等 | 不直接操作文件系统 |
 | `lib/toml.ts` | `buildToml` / `parseConfigWithTail`：生成与解析 config.toml（PEQ 块 + 非 PEQ 效果器 + tail 保留） | 与 driver `[[effects]]` 模型一致 |
-| `lib/effects.ts` | 效果器类型/默认参数/合法性 | — |
-| `lib/blocks.ts` | Block 工具：稳定 id、语义单元、预设展开 | — |
+| `lib/effects.ts` | 效果器定义、参数合法性、默认值、`semanticStrength` / `applySemanticStrength` | 与 driver 参数键一致 |
+| `lib/blocks.ts` / `accent.ts` | Block 工具、语义单元、预设展开、组色/预设色推导（OKLCH 配色） | — |
 | `lib/channels.ts` | 声道标签/名称 | — |
-| `lib/storage.ts` | 本地存储：自定义预设、主题、元数据 | — |
-| `lib/snap.ts` | 数值吸附/规整 | — |
-| `lib/i18n.tsx` | 中英文国际化 | — |
+| `lib/curve.ts` / `rbj.ts` | 频响评估点生成 / RBJ 系数（供 CurvePlot 实时算曲线） | — |
+| `lib/normalize.ts` | 归一化规划（基准电平 + 峰值补偿） | — |
+| `lib/storage.ts` | 本地存储：自定义预设、主题、语言、元数据 | 带类型守卫 |
+| `lib/snap.ts` | 数值吸附/亚像素取整 | — |
+| `lib/i18n.tsx` + `lib/i18n/*` | 中英文国际化（`core.ts` 提供 `t()` / `setLang`） | 键统一维护在 zh/en 字典 |
 
 ### 3.2 data/
 
@@ -115,31 +130,39 @@ src-tauri/src/lib.rs           # Tauri commands + 提权 CLI 封装
 
 | 组件 | 职责 |
 |------|------|
-| `TopBar.tsx` | 顶栏：窗口控制、主题、设置入口 |
-| `Sidebar.tsx` | 侧边导航：预设 / 自定义 / 高级 |
-| `PresetView.tsx` | 预设选择视图：预设卡片、分组、应用 |
-| `AdvancedView.tsx` | 高级视图：PEQ 块/频段编辑、效果器、曲线 |
-| `CurvePanel.tsx` / `CurvePlot.tsx` | 频响曲线计算与绘制 |
-| `DeviceTabs.tsx` / `DevicePropsCard.tsx` | 设备列表/属性展示 |
-| `EffectCard.tsx` / `EffectSemanticCard.tsx` / `SemanticUnitCard.tsx` | 效果器卡片与语义单元 |
-| `BandParamCard.tsx` / `GainSlider.tsx` | 频段参数与增益滑条 |
-| `SelectionToolbar.tsx` | 批量选择工具栏 |
-| `DragCard.tsx` / `DragLayer.tsx` | 拖拽排序/拖拽层 |
-| `InstallDialog.tsx` / `UninstallDialog.tsx` | 安装/卸载确认与进度 |
-| `ImportDialog.tsx` / `SavePresetDialog.tsx` / `SettingsDialog.tsx` / `ConfirmDialog.tsx` | 导入/保存/设置/确认 |
+| `TopBar.tsx` | 顶栏：Logo、设置/导入/导出、视图切换（语义/参数）、窗口控制 |
+| `Sidebar.tsx` | 侧边导航：预设 / 自定义 / 高级 三段 + 可拖拽分栏 |
+| `PresetDeck.tsx` | 预设列表（紧凑 pill：圆点 + 组名 + 组副标题 + 已添加态） |
+| `PresetView.tsx` | 语义视图：组卡/滤波器卡/效果器卡 + 强度滑块 |
+| `AdvancedView.tsx` | 参数视图：PEQ 块/频段编辑、效果器参数、声道胶囊 |
+| `CurvePanel.tsx` / `CurvePlot.tsx` / `CurveGrid.tsx` | 频响曲线计算、绘制与网格 |
+| `DeviceTabs.tsx` / `DevicePropsCard.tsx` | 设备标签页（含调音开关）/ 设备属性卡 |
+| `EffectCard.tsx` / `EffectSemanticCard.tsx` / `SemanticUnitCard.tsx` | 效果器参数卡 / 语义强度卡 / 语义单元卡 |
+| `BandParamCard.tsx` / `GainSlider.tsx` | 频段参数卡与增益滑条 |
+| `SelectionToolbar.tsx` | 框选批量工具栏（保存/删除/复制到声道） |
+| `DragCard.tsx` / `DragLayer.tsx` | 拖拽排序卡 / 飞行副本层 |
+| `OverlayScrollbar.tsx` | 自绘 overlay 滚动条（不占布局宽度、淡入淡出、跨设备存活） |
+| `InstallDialog.tsx` / `UninstallDialog.tsx` | 安装（`--verify` 进度闭环）/ 卸载进度 |
+| `ImportDialog.tsx` / `SavePresetDialog.tsx` / `SettingsDialog.tsx` / `ConfirmDialog.tsx` | 导入 / 保存自定义预设 / 设置 / 确认 |
 | `Toast.tsx` | 轻提示 |
-| `VxSelect.tsx` | 统一下拉选择 |
+| `VxSelect.tsx` | 统一下拉选择（Radix Select 封装） |
 
 ### 3.4 hooks/
 
 | Hook | 职责 |
 |------|------|
-| `useConfig.ts` | 读取/解析/自动保存 config.toml（300ms 去抖），轮询外部热更新 |
+| `useConfig.ts` | 读取/解析/自动保存 config.toml（300ms 去抖），2s 轮询外部热更新；31 段上限；按设备初始化调音开关状态 |
 | `useDevices.ts` | 设备列表、选中设备、安装/卸载状态 |
-| `useDragSort.tsx` | 拖拽排序 |
+| `useDragSort.tsx` | 自定义指针级槽位拖拽引擎（避让/布局动画/飞行落位） |
+| `useViewAnimation.tsx` | 视图切换动画编排（0.32s 平移 + 800ms 高度收窄 + 滚动位置恢复） |
+| `useMarqueeSelection.ts` | 框选矩形与卡片命中（含视图切换残留处理） |
+| `useChannelState.ts` | 通道选择状态（逐设备记忆开关与活动声道） |
+| `usePresetActions.ts` | 预设应用/自定义预设读写（基于 blocks） |
+| `useCurveHover.ts` | 曲线悬浮窗跟随与避让 |
+| `useThrottledCompute.ts` | 重计算节流（42ms ≈ 24fps，拖动滑块时固定间隔重算 + 停止补算） |
 | `useTheme.ts` | 亮/暗/跟随系统 |
 | `useToast.ts` | 通知 |
-| `useInterval.ts` / `useWindowControls.ts` | 定时器 / 窗口控制 |
+| `useInterval.ts` / `useWindowControls.ts` | 固定间隔轮询 / 窗口控制 |
 
 ### 3.5 src-tauri（Rust 后端命令）
 
@@ -147,37 +170,50 @@ src-tauri/src/lib.rs           # Tauri commands + 提权 CLI 封装
 |------|------|
 | `write_config` / `read_config` | 原子写 / 读 `C:\ProgramData\VxAPO\{guid}\config.toml` |
 | `list_devices` | 调 `vxapo-cli list --json` 并反序列化为强类型 `Device[]` |
-| `install_device` / `uninstall_device` | 提权运行 CLI 安装/卸载，返回进度 |
+| `install_device` | 后台线程流式执行 `vxapo-cli install --verify --progress-file`，逐行 emit `install-progress`，返回 `InstallResult` |
+| `uninstall_device` / `rollback_install` | 提权运行 CLI 卸载 / 安装失败兜底回滚 |
 | `read_progress` | 读取提权 CLI 的进度文件 |
 | `read_import_file` / `export_config` / `open_in_explorer` | 导入导出与资源管理器定位 |
-| `show_main_window` | 页面渲染完成后显示主窗口 |
+| `show_main_window` | 按系统明暗设置背景色后显示主窗口（消除白屏） |
+
+---
 
 ## 四、状态管理与数据流
 
 ### 4.1 状态来源
 
 - **设备状态**：`useDevices` 维护 `devices`、`selectedGuid`、`installedDevices`、安装/卸载目标与进度。
-- **配置状态**：`useConfig` 维护 `blocks`（PEQ 块）、`effects`（非 PEQ 效果器）、`tuningMap`（顶层 enabled）、
-  `loaded`、`dirtyRef` 与 `tailRef`（未知第三方效果器原文保留）。
-- **UI 状态**：`App.tsx` 持有视图模式、通道模式、拖拽排序、对话框等 UI 状态；组件受控。
+- **配置状态**：`useConfig` 维护 `blocks`（PEQ 块）、`effects`（非 PEQ 效果器）、`tuningMap`
+  （逐设备顶层 enabled）、`loaded`、`dirtyRef` 与 `tailRef`（未知第三方效果器原文保留）。
+- **通道状态**：`useChannelState` 逐设备记忆通道选择器开关与活动声道。
+- **UI 状态**：`App.tsx` / `useViewAnimation` / `useMarqueeSelection` 持有视图模式、框选、
+  拖拽排序、对话框等 UI 状态；组件受控。
 
 ### 4.2 数据流
 
 ```text
-UI 操作（增删频段/改参数/切换 enabled/应用预设）
+UI 操作（增删频段/改参数/切换 enabled/应用预设/语义强度）
   → markDirty()
   → 300ms 去抖后 buildToml(blocks, enabled, effects, channelCtx) + tail
-  → Tauri write_config(guid, content)  # Rust 原子写 C:\ProgramData\VxAPO\{guid}\config.toml
+  → Tauri write_config(guid, content)   # Rust 原子写 C:\ProgramData\VxAPO\{guid}\config.toml
   → driver watcher 检测变更 → 热重载
   → useConfig 每 2s 轮询 read_config，外部变更自动刷新 UI（编辑中跳过）
+
+曲线预览（独立链路）：
+  → useThrottledCompute(42ms) 固定间隔重算 buildEvalFreqs + curveRange（RBJ 系数缓存）
+  → CurvePlot 渲染 SVG；滑块 move 只重渲染被拖卡片，保证拖动帧数
 ```
 
 ### 4.3 派生规则（实际实现）
 
-- `buildToml`：输出 `version = 1` / `enabled` / `[meta]` / `[[effects]]`（type="peq" 或非 PEQ 效果器）。
-- `parseConfigWithTail`：解析 PEQ 块与非 PEQ 效果器；首个未知效果器起保留为 `tail`，保存时原样拼回。
+- `buildToml`：输出 `version = 1` / `enabled` / `[meta]` / `[[effects]]`（type="peq" 或非 PEQ
+  效果器）；PEQ 块额外写 `crossover_hz = 200` 与通道模式下的 `channels`。
+- `parseConfigWithTail`：解析 PEQ 块与非 PEQ 效果器；首个未知效果器起保留为 `tail`，
+  保存时原样拼回。
 - `applyPreset`：检查 31 频段上限后按当前语言/声道插入预设频段。
-- 通道模式：`ChannelCtx { mode, first, active }` 决定写入 `channels` 与过滤块。
+- 通道模式：`ChannelCtx { mode, first, active }` 决定写入 `channels` 与过滤块；
+  非通道模式下只写第一声道的块。
+- 效果器默认参数在写 TOML 时补齐（`defaultEffectParams` + 已有 params 合并）。
 
 ---
 
@@ -194,14 +230,14 @@ export interface Band {
   fc: number;
   gain_db: number;
   q: number;
-  kind?: PeqBandKind;
+  kind?: PeqBandKind;          // 缺省 peaking；TOML 写为 [[effects.bands]].type
 }
 
 export interface Block {
-  id?: string;
+  id?: string;                 // 客户端稳定 id，不写 TOML
   group?: string;
   name?: string;
-  channel?: string;
+  channel?: string;            // 通道模式下 channels 的第一个声道短名
   enabled: boolean;
   bands: Band[];
 }
@@ -222,14 +258,6 @@ export interface Device {
   lost_slot?: string;
 }
 
-export interface EffectItem {
-  id?: string;
-  type: string;
-  enabled: boolean;
-  params?: Record<string, number | string>;
-  channels?: string[];
-}
-
 export interface PresetLibraryEntry {
   id: string;
   group: string;
@@ -241,24 +269,73 @@ export interface PresetLibraryEntry {
   color?: string;
   bands: (Band & { name?: string; name_en?: string })[];
 }
+
+export interface PresetMetaEntry { presetId: string; accent: string; }
+export type PresetMeta = Record<string, PresetMetaEntry>;
+
+/** 非 peq 效果器（写入 config.toml 的 [[effects]]，driver 原生支持） */
+export interface EffectItem {
+  id?: string;                 // 客户端稳定 id，同类型多声道（如 preamp）用 id 区分
+  type: string;
+  enabled: boolean;
+  params?: Record<string, number | string>;
+  channels?: string[];         // 缺省 = 所有声道
+}
+
+export type ThemeMode = "light" | "dark" | "system";
 ```
 
-> 类型定义统一收敛在 `lib/model.ts`，组件不自行声明业务实体。
+> 类型定义统一收敛在 `lib/model.ts`，并带 `isPresetLibraryEntry` / `isPresetMeta` 类型守卫；
+> 组件不自行声明业务实体。
 
-## 六、已定决策（硬性）
+## 六、效果器模型（lib/effects.ts，与 driver 参数键一致）
+
+当前内置效果器：`preamp`、`wide`、`aural`、`reverb`、`compressor`、`loudness`。
+
+| 效果器 | 中文名 | 参数 | 默认值 |
+|--------|--------|------|--------|
+| `preamp` | 基准电平 | `gain_db` | `0` |
+| `wide` | 声场处理 | `gain`(高频补偿) / `air`(中置空气) / `air_side`(侧向空气) / `mix`(干湿) / `crossover_hz`(分频点 200–1000) | `0.05 / 0.3543 / 0 / 0.6 / 200` |
+| `aural` | 谐波激励器 | `tune_hz` / `drive` / `odd` / `even` / `wet` / `dry` | `1760 / 1.7699 / 1.5 / 0.25 / 0.5 / 0.5` |
+| `reverb` | 板式混响 | `room_size` / `decay` / `damping` / `pre_delay_ms` / `low_cut_hz` / `wet` / `dry` | `1 / 0.41 / 0.4083 / 0 / 100 / 0.27 / 0.73` |
+| `compressor` | 压缩器 | `threshold_db` / `ratio` / `knee_db` / `attack_ms` / `release_ms` / `makeup_gain_db` / `wet` / `dry` | `-18 / 4 / 3 / 10 / 100 / 6 / 1 / 0` |
+| `loudness` | 等响补偿 | `phon`(目标响度) / `reference_phon`(参考响度) | `80 / 80` |
+
+语义强度往返（`semanticStrength` / `applySemanticStrength`）：
+
+| 效果器 | 语义强度 = | 写回 |
+|--------|-----------|------|
+| `wide` | `air`（中置距离 = 空气吸收深度） | `air = s`（高频补偿由参数视图手动调） |
+| `aural` | `wet / 0.9` | 干湿交叉淡化：`wet = 0.9s`、`dry = 1 - wet`（和 ≤ 1） |
+| `reverb` | `wet / 0.9` | `wet = 0.9s`、`dry = 1 - wet`、`decay = 0.2 + 0.7s`、`damping = 0.15 + 0.63·decay`、`pre_delay_ms = clamp(s-0.3,0,0.7)·50`、`room_size = 0.85 + 0.5s` |
+| `compressor` | `(ratio - 1) / 19` | `ratio = 1 + 19s`（1:1 → 20:1） |
+| `loudness` | `(ref - phon) / 40` | `phon = ref - 40s` |
+| `preamp` | `(gain_db + 24) / 48` | `gain_db = 48s - 24` |
+
+> 干湿交叉淡化规则：有干湿的效果器（aural/reverb）语义写回时 `wet` 上限 0.9、
+> `dry = 1 - wet`，保证干湿和 ≤ 1，避免削波。
+
+---
+
+## 七、已定决策（硬性）
 
 1. **App 不触碰实时音频**：只做配置生成与设备管理，DSP 由 driver pipeline 处理。
 2. **config 路径固定**：`C:\ProgramData\VxAPO\{GUID}\config.toml`（与 CLI/driver 对齐）。
 3. **config 写回由 App/Rust 原子写**：临时文件 + rename；未知第三方效果器保留 `tail` 不破坏。
 4. **自动保存**：300ms 去抖；外部热更新通过 2s 轮询同步 UI。
-5. **安装/卸载走 CLI 提权**：Rust 侧隐藏提权调用 `vxapo-cli install/uninstall`，不直接写注册表。
-6. **顶层总开关已实现**：`enabled` 字段控制整链 passthrough（driver v9.17+）。
-7. **EQ 频响预览已实现**：`CurvePlot` 实时计算 PEQ 曲线。
+5. **安装/卸载走 CLI 提权**：Rust 侧隐藏提权调用 `vxapo-cli install/uninstall`，
+   安装走 `--verify` 闭环，失败有 `rollback_install` 兜底；不直接写注册表。
+6. **顶层总开关已实现**：`enabled` 字段控制整链 passthrough；标签页调音开关逐设备记忆，
+   初次打开即按磁盘状态显示。
+7. **EQ 频响预览已实现**：`CurvePlot` + `CurveGrid`，拖动时 42ms 节流重算保帧数。
 8. **多语言已实现**：`i18n` 中英文界面；预设库含中英文字段。
+9. **滚动条自绘**：原生滚动条隐藏（`os-scroll`），overlay 滚动条不占布局宽度；
+   只在真实用户滚动（滚轮/触摸/拖圆头）时出现，停止 1.2s 自动淡出（0.25s 过渡）；
+   设备切换先淡出不硬消失。
 
 ---
 
-## 七、后端命令接口（Tauri，已实现）
+## 八、后端命令接口（Tauri，已实现）
 
 > Rust 后端（`src-tauri/src/lib.rs`）已实现以下命令，前端经 `@tauri-apps/api` invoke 调用。
 
@@ -266,42 +343,49 @@ export interface PresetLibraryEntry {
 |------|------|------|------|
 | `list_devices` | — | `Device[]` | CLI `list --json` + serde 反序列化 |
 | `read_config` | guid | `String` | 读 `C:\ProgramData\VxAPO\{guid}\config.toml` |
-| `write_config` | guid, content | `()` | 原子写 config.toml |
-| `install_device` / `uninstall_device` | guid | `String`（进度/结果） | 提权运行 CLI install/uninstall |
+| `write_config` | guid, content | `()` | 原子写 config.toml（tmp + rename） |
+| `install_device` | guid | `InstallResult` | 后台线程 `install --verify --progress-file`，emit `install-progress` |
+| `uninstall_device` | guid | `String` | 提权 `uninstall -d <guid> --json` |
+| `rollback_install` | guid | `String` | 安装失败后提权回滚卸载 |
 | `read_progress` | tag | `String` | 读取提权 CLI 进度文件 |
 | `read_import_file` | path | `String` | 拖拽导入文件内容 |
 | `export_config` / `open_in_explorer` | guid/path | `()` | 导出并在资源管理器选中 |
-| `show_main_window` | — | `()` | 前端渲染完成后显示主窗口 |
+| `show_main_window` | — | `()` | 按系统明暗设置背景色后显示并最大化主窗口 |
+
+另启用 Tauri 插件：`tauri-plugin-opener`、`tauri-plugin-dialog`。
 
 ---
 
-## 八、当前状态与后续路线
+## 九、当前状态与后续路线
 
 ### 已落地
 
-- Tauri 2 后端、设备列表、config 读写、自动保存、安装/卸载提权、导入导出、i18n。
-- 预设库、PEQ 块编辑、频响曲线、通道模式、拖拽排序、自定义预设存储。
+- Tauri 2 后端、设备列表、config 读写、自动保存、安装/卸载提权与验证闭环、失败回滚、
+  导入导出、i18n。
+- 预设库、PEQ 块编辑、频响曲线（节流重算）、通道模式、拖拽排序、框选批量操作、
+  自定义预设存储、语义/参数双视图、效果器语义强度映射、自绘 overlay 滚动条。
 
 ### 后续可扩展
 
-- 更多非 PEQ 效果器可视化编辑（目前保留未知效果器 tail）。
+- 更多非 PEQ 效果器可视化编辑（目前未知效果器保留 tail）。
 - 预设强度/多预设叠加（如需要可基于 `Block` 重新引入）。
 - 快照 diff/restore 的 GUI 化（当前 CLI 已支持，App 可复用）。
 - 安装包/签名/自动更新等发布工程。
 
-## 九、硬性约束
+## 十、硬性约束
 
 1. **不触碰实时音频**：App 及其后端不做任何 pipeline/RT 处理；违反 intent 三层分离禁止。
 2. **不直接写注册表**：安装/卸载/快照一律经 CLI/driver 逻辑（管理员权限由后端命令处理）。
-3. **config 语法与 driver 一致**（TOML `[[effects]]` 模型，v9.11）；写文件固定
+3. **config 语法与 driver 一致**（TOML `[[effects]]` 模型）；写文件固定
    `C:\ProgramData\VxAPO\{GUID}\config.toml`。
-4. **不实现响度补偿可视化**（已定决策）；只提供开关。
-5. **状态单一来源**：组件受控，业务状态只存 `App.tsx`；组件/面板不各自持有业务状态。
-6. **主动限幅规则与 driver 一致**：`[-120, +48]`（滤波深切地板 -60）、NaN/inf 拒绝；只写回时限幅，不做 DLL 回写。
+4. **状态单一来源**：组件受控，业务状态只存 `App.tsx` 与 hooks；组件/面板不各自持有业务状态。
+5. **主动限幅规则与 driver 一致**：`[-120, +48]`（滤波深切地板 -60）、NaN/inf 拒绝；
+   只写回时限幅，不做 DLL 回写。
+6. **31 段上限**：`applyPreset` / `addBand` 均检查总段数，超限拒绝。
 
 ---
 
-## 十、关联
+## 十一、关联
 
 - `overview/项目概览.md`：三层分离、产品定位与系统组成
 - `CLI 引用规范.md`：后端复用的命令/设备解析/快照逻辑与硬性约束

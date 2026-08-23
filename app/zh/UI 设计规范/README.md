@@ -1,6 +1,8 @@
 # VxAPO App UI Design（落地版）
 
-本目录描述 VxAPO App（`vxapo-app`）实际落地的 UI 结构与交互逻辑。以代码为基准：类名、CSS 变量、动画时长均与 `src/new.css`、`src/App.css`、`src/components/*` 保持一致。
+本目录描述 VxAPO App（`vxapo-app`）实际落地的 UI 结构与交互逻辑。以代码为基准：类名、CSS 变量、动画时长均与 `src/new.css`、`src/styles/*`、`src/components/*` 保持一致。
+
+> 修订日期：2026-08-23（样式源已由 `new.css` 单文件拆分为 `src/styles/` 分区，`new.css` 仅做 @import 汇总）。
 
 ## 文件划分
 
@@ -10,7 +12,7 @@
 | `02-shell-and-navigation.md` | 窗口骨架、TopBar、视图切换、侧边栏、设备标签页 |
 | `03-views-and-cards.md` | 预设/高级视图、组卡、滤波器卡、效果器卡、声道胶囊 |
 | `04-curve-and-device-panel.md` | 频响曲线、悬浮窗、设备属性卡、底部区 |
-| `05-dialogs-and-selection.md` | 弹窗、安装/卸载/保存预设、框选工具栏、Toast |
+| `05-dialogs-and-selection.md` | 弹窗、安装/卸载/保存预设、框选工具栏、Toast、自绘滚动条 |
 | `06-drag-and-motion.md` | 拖拽引擎、框选、动画曲线、亚像素对齐 |
 
 ## 设计总原则
@@ -19,3 +21,5 @@
 2. **所有定位与动画按设备像素取整**：`snapPx()` 统一处理，避免 1px 偏移和文字发虚。
 3. **交互先稳定再动效**：动效不得改变交互结果，动画中途输入可被打断。
 4. **悬浮、拖拽、框选均为指针级交互**：桌面优先，鼠标/触控板可用，不依赖触屏手势。
+5. **滚动条自绘**：不占布局宽度；只在真实用户滚动时出现，停止滚动自动淡出；
+   程序性滚动（视图切换/高度收窄）不激活滚动条，淡出中的滚动条不会被切视图“重入”。
