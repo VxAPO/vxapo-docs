@@ -499,7 +499,7 @@ fn Initialize(&self, cb_data_size: u32, pby_data: *mut u8) -> HRESULT {
     // 5. 确定 per-device 配置路径（load_device_config，v8.9 方案 A——系统级 CONFIG_ROOT）：
     //    a. CONFIG_ROOT = `C:\ProgramData\VxAPO`（全用户共享，SYSTEM + 当前用户都可读写；
     //       **不用用户级 Documents**——APO 真实运行在 audiodg（SYSTEM 服务），它调
-    //       documents_folder() 拿到的是 SYSTEM 的 Documents，读不到 CLI（用户进程）写入
+    //       documents_folder()（v8.9 前实现，已移除）拿到的是 SYSTEM 的 Documents，读不到 CLI（用户进程）写入
     //       的文件，导致「改 Documents 的 config 没效果」；ProgramData 与快照目录同根）
     //    b. 设备 GUID → 大写格式字符串（guid_to_string：{XXXXXXXX-...}）
     //    c. 拼接：{CONFIG_ROOT}\{GUID}\  → config_path
@@ -525,7 +525,7 @@ fn Initialize(&self, cb_data_size: u32, pby_data: *mut u8) -> HRESULT {
 >   配置更新无意义，重新 Lock 必然重读 config 建立新基线——unlocked 期间的变更在重新 Lock 时自然生效
 > - **退出**：APO 实例持有 `shutdown_event`，UnlockForProcess 时 `SetEvent` + join watcher 线程
 > - `ConfigWatcher` 由 `ApoObject.watcher` 字段持有（`Option<ConfigWatcher>`），生命周期与锁定周期一致
-> - **防自旋（v9.4）**：`FindNextChangeNotificationW` 重置失败 → 关闭句柄并标记无效，
+> - **防自旋（v9.4）**：`FindNextChangeNotification` 重置失败 → 关闭句柄并标记无效，
 >   循环干净退出（等效不监控），**绝不无限重载**；`hot_reload` 内部 128KB 闸门 +
 >   spec 指纹比对决定是否真正切换
 > - **v9.15 简化（回归 EAPO 语义）**：移除 v9.4 的 (mtime,size) 文件级预检/去重表
@@ -540,7 +540,7 @@ C:\ProgramData\VxAPO\{GUID}\config.toml
 ```
 
 - **为什么系统级（v8.9，2026-08-04 确认）**：`{Documents}\VxAPO\{GUID}` 是**用户级路径**——
-  APO 真实运行在 **audiodg（SYSTEM 服务）**，它调 `documents_folder()` 拿到的是 **SYSTEM 的
+  APO 真实运行在 **audiodg（SYSTEM 服务）**，它调 `documents_folder()`（v8.9 前实现，已移除）拿到的是 **SYSTEM 的
   Documents**，读不到 CLI（用户进程）写入的文件，导致「改 Documents 的 config 没效果」。
   `C:\ProgramData\VxAPO` **全用户共享**（SYSTEM + 当前用户都可读写），与快照目录同根。
 - `{GUID}`：从 `APOInitSystemEffects.pAPOSystemEffectsProperties`（`IPropertyStore`）取
@@ -787,7 +787,7 @@ fn UnlockForProcess(&self) -> HRESULT {
 > 2. **debug 测试态 `catch_unwind`（第二道，`panic="unwind"`）**：捕获 → 安全降级输出，验证「即便 panic 也不跨 FFI 传播」的防御路径（DoD 测试即此态）；
 > 3. **release 兜底（第三道，`panic="abort"`，主规范十五 O3）**：任何漏网 panic → **确定性进程终止**——将「跨 FFI unwind = UB（静默内存损坏）」变为「可恢复的进程重启」，绝无 UB 传播；`telemetry/panic.rs` panic hook 在 abort 前记录栈——**它是诊断工具，不是防线**。
 > 捕获行为（仅 debug 态生效，release 空操作）：输出缓冲清零 +
-> `output_props[0].buffer_flags = BUFFER_SILENT` + `stats.error_count++` + 日志（RT 零分配：
+> `output_props[0].u32BufferFlags = BUFFER_SILENT` + `stats.error_count++` + 日志（RT 零分配：
 > telemetry 定长环形缓冲，不可用 `format!`/`Box`）。
 
 **完整伪代码**：
@@ -802,7 +802,7 @@ fn APOProcess(&self, input_props, output_props, params: &ProcessParams) {
         // panic 捕获：安全降级输出（RT 零分配）
         if !output_props.is_empty() {
             let out = &mut output_props[0];
-            out.buffer_flags = APO_BUFFER_FLAGS::Silent;
+            out.u32BufferFlags = APO_BUFFER_FLAGS::Silent;
             // 输出区清零（不分配）
         }
         self.process_stats.error_count.fetch_add(1, Ordering::Relaxed);
@@ -865,7 +865,7 @@ fn apo_process_inner(&self, input_props, output_props, params: &ProcessParams) {
                 frames * channels, factor,
             );
         }
-        output_props[0].buffer_flags = APO_BUFFER_FLAGS::Valid;
+        output_props[0].u32BufferFlags = APO_BUFFER_FLAGS::Valid;
 
         // 过渡完成（v7.6 修订，P0-3 实现对齐①）：
         // - 旧链移入退役槽（R1，仅移动所有权零析构，控制线程锁内统一 drop）
@@ -931,7 +931,7 @@ fn apply_error_policy(
 
 > **catch_unwind 保守返回值（v8.2，P0-5；v8.3 语义澄清）**：两入口同为 `extern "system"` RT 调用（引擎每帧请求帧数），
 > debug（`panic="unwind"`）下 catch_unwind 包裹，panic 时返回**保守值**（宁可多算不 panic、可丢帧不可越界）：
-> - `CalcInputFrames` panic → 返回 `output_frames + last_known_latency`（多请求输入帧，安全）；
+> - `CalcInputFrames` panic → 返回 `output_frames`（保守值；panic 分支不二次读延迟，避免二次 panic）；正常路径为 `output_frames + latency_frames_atomic`（`object/apo/process.rs::calc_input_frames`）；
 > - `CalcOutputFrames` panic → 返回 `0`（不越界写输出缓冲区）。
 > release（`panic="abort"`）`catch_unwind` 空操作（主规范十五 O3）——任何漏网 panic 直接 abort 终止进程
 > （确定性进程重启，非 UB 传播）；panic hook 仅负责 abort 前记录现场（诊断工具，非防线）。
@@ -1218,7 +1218,7 @@ const _: () = {
 
 ---
 
-### 7.2 `object/child.rs` — 子 APO COM 生命周期管理
+### 7.2 `object/apo/child.rs` — 子 APO COM 生命周期管理
 
 **职责**：管理子 APO 的 COM 接口持有和方法委托。
 

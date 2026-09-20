@@ -2,7 +2,7 @@
 
 **Boundary**: Does not depend on any other module.
 
-**Allowed dependencies**: `windows-core` (`check_hresult` in `vx_error.rs`, `GUID` in `guid.rs`).
+**Allowed dependencies**: `windows-core` (`HRESULT` conversions in `vx_error.rs`; the old `check_hresult` helper no longer exists), `windows` (`windows::core::GUID` in `guid.rs`).
 
 **Forbidden dependencies**: `sys/`, `pipeline/`, `install/`, `config/`, `object/`, `telemetry/`.
 

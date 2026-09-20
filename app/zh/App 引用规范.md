@@ -170,7 +170,7 @@ src/
 | `useCurveHover.ts` | 曲线悬浮窗跟随与避让 |
 | `useThrottledCompute.ts` | 重计算节流（42ms ≈ 24fps，拖动滑块时固定间隔重算 + 停止补算） |
 | `useTheme.ts` | 亮/暗/跟随系统 |
-| `useToast.ts` | 通知 |
+| ~~`useToast.ts`~~ | 通知——**已并入 `stores/uiStore.ts`**（Toast 状态与 2.5s 自动消失沿原实现） |
 | `useInterval.ts` / `useWindowControls.ts` | 可暂停固定间隔轮询 / 窗口控制 |
 
 ### 3.5 src-tauri（Rust 后端命令）

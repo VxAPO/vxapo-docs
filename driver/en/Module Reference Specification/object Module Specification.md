@@ -12,7 +12,7 @@
 object/
 ├── apo.rs               # ApoObject COM object definition (entry)
 ├── dll_exports.rs       # DllGetClassObject / DllRegisterServer / DllUnregisterServer
-├── factory.rs           # ApoFactory (IClassFactory)
+├── factory.rs           # ClassFactory (IClassFactory)
 ├── ref_count.rs         # reference-counting helper
 ├── vx_reg_props.rs      # VxAPO CLSIDs and registration property helpers
 └── apo/
@@ -23,7 +23,7 @@ object/
     ├── inner.rs         # ApoObjectInner state
     ├── negotiate.rs     # format negotiation
     ├── process.rs       # APOProcess
-    └── state.rs         # ApoObjectState
+    └── state.rs         # StateCell / TransitionError / ApoState (ApoObjectState removed)
 ```
 
 ## 7.1 `object/apo.rs` — ApoObject
@@ -44,20 +44,22 @@ Key responsibilities:
 - `hot_reload` on config change
 
 State is protected by:
-- `self.mutex: Mutex<ApoObjectInner>`
-- `self.ap_state: Mutex<ApoObjectState>`
+- `self.mutex: Arc<Mutex<ApoObjectInner>>` — chain, transition state, pipeline context, temp buffers, `pending_reload`, `active_spec`, and format/channel state
 - `StateCell` (AtomicU8 + CAS)
 - latency atomics
 
+> `self.ap_state: Mutex<ApoObjectState>` and the `ApoObjectState` type were removed (0 hits
+> repo-wide); format and channel state now lives inside `ApoObjectInner`.
+
 See `apo.rs Thread Safety Model.md` for details.
 
-## 7.2 `object/child.rs`
+## 7.2 `object/apo/child.rs`
 
 Manages child APO COM lifetime (PreMixChild/PostMixChild). It creates and releases the original APO that VxAPO preserves as a child, and delegates processing when needed.
 
 ## 7.3 `object/factory.rs`
 
-`ApoFactory` implements `IClassFactory` for `CLSID_VXAPO_PRE_MIX` and `CLSID_VXAPO_POST_MIX`. It creates `ApoObject` instances with proper ref counting.
+`ClassFactory` implements `IClassFactory` for `CLSID_VXAPO_PRE_MIX` and `CLSID_VXAPO_POST_MIX`. It creates `ApoObject` instances with proper ref counting.
 
 ## 7.4 `object/ref_count.rs`
 

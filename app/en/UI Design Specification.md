@@ -38,7 +38,7 @@
 
 ## 03 Views and cards
 
-- Semantic view (`PresetView`) and parameter view (`AdvancedView`) share `.view-stage`; switch animation is a 0.32 s slide (`popLayout`) followed by an 800 ms height collapse with scroll restoration.
+- Semantic view (`PresetView`) and parameter view (`AdvancedView`) share `.view-stage`; switch animation is a 0.32 s x-slide. Both views stay in the DOM (no `AnimatePresence` mount/unmount): the outgoing view gets `.is-exiting` (absolute positioning) for the slide, then is hidden with `display:none` — this avoids rebuilding the 31 parameter-card subtrees. A height collapse with scroll restoration follows.
 - Card grid: 2–5 columns by width (900/1200/1700 px breakpoints), 12 px gap; group cards span all columns.
 - Group cards (`.group-card` / `.sem-group`): accent edge, enable dot, group name (editable via `.sem-select`), chips; filter cards (`.band-card`): enable dot, type, params (slider + gain input); effect cards (`.effect-card`): dot, name, description, param rows, semantic strength row.
 - Built-in effects: preamp, wide (Stereo Field), aural, reverb (Plate), compressor, loudness (Loudness EQ); semantic strength maps to core params (see App Reference Specification §6).

@@ -178,7 +178,7 @@ resolve_device(device_ref) -> (device_guid, device_name, connection_name)
 - 接受**绝对路径**或**相对路径**（相对当前工作目录）；含空格的路径用引号包裹（shell 层处理）
 - 文件必须存在且可读；CLI 读取内容后**原样写入** `C:\ProgramData\VxAPO\{GUID}\config.toml`
 - 目标路径拼装：固定 `C:\ProgramData\VxAPO\{GUID}\config.toml`（v8.9 系统级 CONFIG_ROOT——**不用用户级
-  Documents**：audiodg 是 SYSTEM 服务，它调 `documents_folder()` 拿到 SYSTEM 的 Documents，读不到
+  Documents**：audiodg 是 SYSTEM 服务，它调 `documents_folder()`（v8.9 前实现，已移除）拿到 SYSTEM 的 Documents，读不到
   CLI（用户进程）写入的文件，导致「改 Documents 的 config 没效果」；ProgramData 全用户共享，
   与快照目录同根）；`{GUID}` 为设备 GUID（大写花括号格式）；目录不存在则创建
 - **CLI 不修改文件内容**（纯复制）；语法合法性由 driver（Lock/热重载解析）承担，CLI 只做文件级读回

@@ -77,7 +77,10 @@ display:flex; gap:12px; padding:10px 12px 12px; pointer-events:none`。
 
 ### 6.3 跟随动画
 
-- 指数趋近：每帧补足剩余距离的 8%（`FOLLOW_FACTOR = 0.08`）。
+- **临界阻尼弹簧**（`hooks/useCurveHover.ts`）：`FOLLOW_SETTLE_MS = 240` 视为"基本停稳"的时间，
+  角频率取 `omega = 6.6 / (FOLLOW_SETTLE_MS / 1000)`，每帧按弹簧积分推进（非固定比例趋近）。
+- **吸附即停**：位置 `FOLLOW_SNAP_PX = 0.5` 与速度 `FOLLOW_SNAP_V = 40`（px/s）同时满足才判定
+  停稳，避免浮点残留造成的微抖。
 - 基准侧切换时播放 280ms 满速 ease-out 平移动画。
 
 ### 6.4 内容

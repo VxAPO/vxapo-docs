@@ -24,7 +24,7 @@
 | Protected state | Mechanism | Access paths |
 |-----------------|-----------|--------------|
 | `ApoObjectInner` (chain, transition, pipeline_context, temp_buffers, pending_reload) | `self.mutex: Mutex<ApoObjectInner>` | APOProcess, LockForProcess, UnlockForProcess, Reset, hot_reload |
-| `ApoObjectState` (clsid, is_locked, sample_rate, channels, bits_per_sample) | `self.ap_state: Mutex<ApoObjectState>` | LockForProcess, UnlockForProcess, GetRegistrationProperties, GetInputChannelCount |
+| Format / channel state (clsid, is_locked, sample_rate, channels, bits_per_sample) | **Merged into `ApoObjectInner` (`self.mutex`)** — `self.ap_state: Mutex<ApoObjectState>` and the `ApoObjectState` type were removed | Same paths as `ApoObjectInner` |
 | State machine (Created / Initialized / Locked) | `self.state_cell: StateCell` (`AtomicU8` + CAS) | Initialize, LockForProcess, UnlockForProcess, APOProcess (read-only check) |
 | Latency samples | `self.latency_samples: AtomicU32` | LockForProcess (write), GetLatency (read), Reset (write) |
 | Latency frames | `self.latency_frames_atomic: AtomicU32` | always 0 since v9.12; Lock/Reset write 0; CalcInputFrames/CalcOutputFrames read |
@@ -39,12 +39,12 @@
 - `Reset` holds the lock very briefly.
 - `APOProcess` and `hot_reload` are mutually exclusive: if `hot_reload` triggers during `APOProcess`, it waits until `APOProcess` releases the lock.
 
-## `self.ap_state` guarantees
+## Format / channel state guarantees (inside `self.mutex`)
 
-- Protects format and channel state.
+- Format and channel state lives in `ApoObjectInner`, guarded by the single `self.mutex`.
 - Lock hold time is extremely short (field read/write level, sub-microsecond).
-- In `LockForProcess` / `UnlockForProcess`, `self.ap_state` is acquired after `self.mutex`, but the two locks are never held at the same time.
-- `GetRegistrationProperties` and `GetInputChannelCount` acquire only `self.ap_state`.
+- There is no second state lock: `LockForProcess` / `UnlockForProcess` touch format and channel state only inside `self.mutex`.
+- `GetRegistrationProperties` and `GetInputChannelCount` read that state through the same `self.mutex`.
 
 ## Atomic state cell
 
@@ -61,17 +61,17 @@
 
 - `self.mutex` blocking sources are not during playback: `LockForProcess`, `Reset`, and `hot_reload` lock sections are explicit or sub-microsecond.
 - `APOProcess` has no competing `APOProcess` because the Windows audio engine calls serially.
-- `self.ap_state` is only accessed before playback or during format negotiation.
+- Format and channel state is only accessed before playback or during format negotiation (inside `self.mutex`).
 - Atomics are non-blocking.
 - For system APO at 48 kHz / 128 frames (~2.67 ms period), occasional sub-microsecond mutex waits are inaudible.
 
 ## Non-reentrancy invariants
 
 - `self.mutex` is not reentrant.
-- `self.ap_state` is not reentrant.
+- The former second state lock (`self.ap_state`) no longer exists, so no lock-order rule applies between it and `self.mutex`.
 - The two locks are never held simultaneously on any execution path.
 - `CalcInputFrames` / `CalcOutputFrames` do not acquire any lock; they read `latency_frames_atomic` lock-free.
 - `LockForProcess` must not call `CalcInputFrames` / `CalcOutputFrames`; since v9.12 latency is not reported (`latency_frames_atomic` is always 0); v9.13 reuses the existing chain on same config/format Relock (`last_lock_key` fingerprint).
 - `hot_reload` must not call methods that require `self.mutex`; the whole `hot_reload` already holds `self.mutex`.
-- `GetLatency` reads `pipeline_context.sample_rate` inside `self.mutex` and loads the latency value via `latency_samples`; it does not acquire `self.ap_state`.
+- `GetLatency` reads `pipeline_context.sample_rate` inside `self.mutex` and loads the latency value via `latency_samples`; it acquires no other lock.
 - Violating these invariants triggers `std::sync::Mutex` panic in debug builds (lock reentry).

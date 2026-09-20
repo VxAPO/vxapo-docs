@@ -28,7 +28,7 @@
 | 保护对象 | 机制 | 访问路径 |
 |----------|------|----------|
 | `ApoObjectInner`（chain、transition、pipeline_context、temp_buffers、pending_reload） | `self.mutex: Mutex<ApoObjectInner>` | APOProcess、LockForProcess、UnlockForProcess、Reset、hot_reload |
-| `ApoObjectState`（clsid、is_locked、sample_rate、channels、bits_per_sample） | `self.ap_state: Mutex<ApoObjectState>` | LockForProcess、UnlockForProcess、GetRegistrationProperties、GetInputChannelCount |
+| 格式与通道状态（clsid、is_locked、sample_rate、channels、bits_per_sample） | **已并入 `ApoObjectInner`（`self.mutex`）**——原 `self.ap_state: Mutex<ApoObjectState>` 与 `ApoObjectState` 类型已移除（全仓搜索为 0 处） | 同 `ApoObjectInner` 的访问路径 |
 | 状态机（Created / Initialized / Locked） | `self.state_cell: StateCell`（`AtomicU8` + CAS） | Initialize、LockForProcess、UnlockForProcess、APOProcess（只读检查） |
 | 延迟采样数 | `self.latency_samples: AtomicU32` | LockForProcess（写）、GetLatency（读）、Reset（写） |
 | 延迟帧数 | `self.latency_frames_atomic: AtomicU32` | v9.12 起恒 0（不上报引擎：实证上报/补偿导致帧协商错位播放卡住）；Lock/Reset 写 0；CalcInputFrames/CalcOutputFrames 读 |

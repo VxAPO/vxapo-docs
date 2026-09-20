@@ -100,7 +100,7 @@ pub fn is_endpoint_active(endpoint_key: &RegKey) -> Result<bool, VxApoError>;
 
 **通道掩码兜底链**（Note 27）：
 1. WAVEFORMATEXTENSIBLE 的 `dwChannelMask`（bytes[20..24]）
-2. 注册表 `channelMaskValueName`（DWORD）
+2. 注册表 `PKEY_AudioEndpoint_PhysicalSpeakers`（DWORD，`install/device/info.rs:27` 读取）
 3. `sys::audio_defs::default_channel_mask`（标准布局映射，1/2/4/6/8 通道）
 
 **公开 API**：

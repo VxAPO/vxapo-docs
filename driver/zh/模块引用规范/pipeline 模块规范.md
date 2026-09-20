@@ -716,7 +716,7 @@ pub fn process_audio(
 - 边界转换使用 `deinterleave_into` / `interleave_from`（零分配）
 - `temp_buffers` 由调用方预分配，不在 RT 路径分配
 - RT 路径错误使用原子计数器，不使用 `format!()` 或任何堆分配
-- 每个输出通道的 `buffer_flags` 由 `process_audio` 独立设置
+- 每个输出通道的引脚标志 `u32BufferFlags`（windows-rs 字段名，取值 `BUFFER_VALID` / `BUFFER_SILENT` / `BUFFER_INVALID`）由 `process_audio` 独立设置
 
 **禁止**：不知道 `object/`、`config/`、`install/`
 
@@ -764,7 +764,7 @@ pub unsafe fn rt_index_mut<T>(slice: &mut [T], index: usize) -> &mut T;
 
 ---
 
-### 4.8 `pipeline/realtime/ring.rs`
+### 4.8 `utils/ring.rs`
 
 **职责**：SPSC 无锁环形缓冲区。存储固定大小、实现 `Copy` 的类型。
 
@@ -1210,7 +1210,7 @@ pub unsafe fn mix_buffers(
 
 **引用来源**：`crate::pipeline::dsp::filter::Filter`、`crate::utils::vx_error::VxApoError`
 
-**导出给**：`pipeline/dsp/peq.rs`、`pipeline/dsp/hp_lp.rs`（不导出给 `config/`）
+**导出给**：`pipeline/dsp/peq_hybrid.rs`、`pipeline/dsp/loudness.rs`、`pipeline/dsp/wide.rs`（原 `peq.rs` / `hp_lp.rs` 已删除；不导出给 `config/`）
 
 **公开 API**：
 

@@ -116,7 +116,7 @@ GUID 未实现 `Display` 的必要安全操作扩展，属系统层职责；其�
 - `windows::Win32::Media::Audio::Apo::{IAudioProcessingObjectNotifications, IAudioSystemEffects, IAudioSystemEffects2}`（3 个系统接口结构体 re-export，仅取 IID）
 - `windows::core::{Interface, IUnknown}`（取 `::IID`、作为接口根基）
 
-**导出给**：`object/apo.rs`、`object/child.rs`、`object/factory.rs`
+**导出给**：`object/apo.rs`、`object/apo/child.rs`、`object/factory.rs`
 
 ---
 
@@ -322,19 +322,17 @@ pub enum AUDIO_FLOW_TYPE {
 }
 ```
 
-**`APO_CONNECTION_BUFFER_TYPE`**：
+**`APO_CONNECTION_BUFFER_TYPE`（已移除）**：
 
-```rust
-#[repr(i32)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum APO_CONNECTION_BUFFER_TYPE {
-    ALLOCATED = 0,
-    EXTERNAL = 1,
-    DEPENDANT = 2,
-}
-```
-
-> **注意**：此枚举使用 `#[repr(i32)]`（有符号），与 C 的 `int` 底层语义一致。需编译期断言验证。
+> **现状**：`sys/com/apo_types.rs` **不再定义该枚举**（全仓搜索为 0 处）。模块头（1-7 行）注明：
+> windows-rs 0.62.2 已提供 `APO_REG_PROPERTIES` / `APO_CONNECTION_DESCRIPTOR` /
+> `APO_CONNECTION_PROPERTY` / `APO_FLAG` / `APO_BUFFER_FLAGS`，本模块全部 re-export，**只保留
+> windows-rs 缺失的自定义项**：`UNCOMPRESSED_AUDIO_FORMAT`、`AUDIO_FLOW_TYPE`、`REFERENCE_TIME`、
+> 三个连接签名常量（`ACDS`/`ACPS`/`ACP2`）、三个比较标志与 APOERR 错误码。
+>
+> 连接属性里的引脚标志字段名为 **`u32BufferFlags`**（类型 `APO_BUFFER_FLAGS`），取值为
+> `BUFFER_VALID` / `BUFFER_SILENT` / `BUFFER_INVALID`——由 `pipeline/buffer.rs` 导入使用。
+> 旧文档若写 `buffer_flags`，属过时字段名。
 
 ---
 
@@ -416,15 +414,15 @@ pub use crate::sys::com::prelude::{
 | 断言 | 预期值 |
 |------|--------|
 | `size_of::<AUDIO_FLOW_TYPE>()` | 4 |
-| `size_of::<APO_CONNECTION_BUFFER_TYPE>()` | 4 |
 
 **自定义枚举 repr 语义**：
 
 | 断言 | 预期值 |
 |------|--------|
-| `APO_CONNECTION_BUFFER_TYPE::ALLOCATED as i32` | 0 |
-| `APO_CONNECTION_BUFFER_TYPE::EXTERNAL as i32` | 1 |
-| `APO_CONNECTION_BUFFER_TYPE::DEPENDANT as i32` | 2 |
+| `AUDIO_FLOW_TYPE::PULL as i32` | 0 |
+| `AUDIO_FLOW_TYPE::PUSH as i32` | 1 |
+
+> **已移除的断言**：`APO_CONNECTION_BUFFER_TYPE` 的尺寸与 repr 断言随该枚举一并删除（全仓无此类型）。
 
 **自定义无指针结构体（跨平台一致）**：
 
@@ -452,14 +450,15 @@ pub use crate::sys::com::prelude::{
 
 | 函数 | 说明 |
 |------|------|
-| `win32_ok(err: WIN32_ERROR) -> Result<()>` | Win32 错误码转 `windows::core::Error`（HRESULT 格式：`0x8007_0000 | (code & 0xFFFF)`） |
-| `close_key(handle: HKEY)` | RAII Drop 用，null/已关闭时静默返回 |
-| `utf16_bytes_to_string(buf: &[u8]) -> String` | LE UTF-16 字节流 → String，遇 null 停止 |
-| `parse_multi_sz(buf: &[u8]) -> Vec<String>` | LE UTF-16 字节流 → `Vec<String>`，双 null 结束 |
-| `is_not_found(err: WIN32_ERROR) -> bool` | 判断错误码是否为 2（FILE_NOT_FOUND）或 3（PATH_NOT_FOUND） |
-| `to_registry_bytes(s: &str) -> Vec<u8>` | `&str` → UTF-16 字节（含 null），用于 `RegSetValueExW` |
-| `hkey_to_name(hkey: HKEY) -> Result<&'static str>` | 根键 → 名称字符串（`save_to_file` 用） |
-| `dump_key_recursive(root, sub_key, display_path, content)` | 递归导出键及子键（`save_to_file` 内部） |
+| `win32_err(err: WIN32_ERROR) -> VxApoError` | Win32 错误码 → `VxApoError`（reg 层 18 行） |
+| `err_from_hr(hr: windows::core::HRESULT) -> VxApoError` | HRESULT → `VxApoError`（25 行） |
+| `win32_ok(err: WIN32_ERROR) -> Result<()>` | Win32 错误码转 `windows::core::Error`（HRESULT 格式：`0x8007_0000 | (code & 0xFFFF)`）（36 行） |
+| `utf16_bytes_to_string(buf: &[u8]) -> String` | LE UTF-16 字节流 → String，遇 null 停止（166 行） |
+| `parse_multi_sz(buf: &[u8]) -> Vec<String>` | LE UTF-16 字节流 → `Vec<String>`，双 null 结束（190 行） |
+| `is_not_found(err: WIN32_ERROR) -> bool` | 判断错误码是否为 2（FILE_NOT_FOUND）或 3（PATH_NOT_FOUND）（251 行） |
+| `dump_key_recursive(root, sub_key, display_path, content)` | 递归导出键及子键（`save_to_file` 内部，606 行） |
+
+> **已移除的辅助函数（勿再引用）**：`close_key`、`to_registry_bytes`、`hkey_to_name` 在全仓搜索为 0 处——句柄关闭由 `RegKey::drop` 的 RAII 承担，写值统一走 `RegKey::write_*` 系列（内部自行完成 `&str → UTF-16` 转换，无独立转换函数）。
 
 ---
 

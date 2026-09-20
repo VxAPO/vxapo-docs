@@ -9,7 +9,7 @@ install/      -> depends on sys/ + utils/ + object/vx_reg_props.rs; does not kno
 config/       -> depends on sys/ + utils/ + pipeline/dsp/filter.rs + pipeline/dsp/model.rs + pipeline/dsp/factory.rs; does not know concrete Filter implementations or install/object
 object/       -> depends on all modules (glue layer, called directly by Windows)
 utils/        -> depends on no other module
-telemetry/    -> depends on pipeline/realtime/ring.rs
+telemetry/    -> depends on utils/ring.rs
 ```
 
 > **No api/interface layer**: the driver's external surface is the crate root `lib.rs` and the
@@ -146,7 +146,7 @@ App and CLI reference specifications are under `app/` and `cli/` respectively.
 | `pipeline/chain.rs` | dsp/filter, utils | install/config/object, dsp/transition |
 | `pipeline/process.rs` | context, chain, buffer, interleave, dsp/filter, dsp/transition, realtime/contract, sys/com/apo_types, utils | install/config/object |
 | `pipeline/realtime/contract.rs` | core | others |
-| `pipeline/realtime/ring.rs` | core | others |
+| `utils/ring.rs` | core | others |
 | `pipeline/dsp/filter.rs` | utils | config/install/object |
 | `pipeline/dsp/factory.rs` | dsp/filter, dsp/model, dsp/* (static match), utils | config/install/object |
 | `pipeline/dsp/transition.rs` | none | config/install/object |
@@ -284,7 +284,7 @@ Windows audio engine
 - Chain does not own buffers. Buffers are preallocated by `ApoObjectInner` in `LockForProcess`.
 - Dual-chain transition is managed in the object layer; `SmoothingProvider` only provides the raised-cosine mix factor.
 - `DspContext` is constructed by the caller; `config/` does not directly operate Chain.
-- Thread-safety model: `self.mutex`, `self.ap_state`, `StateCell` (AtomicU8 + CAS), and latency atomics; no nested locks.
+- Thread-safety model: a single `self.mutex` (`Arc<Mutex<ApoObjectInner>>`, which now also holds format/channel state), `StateCell` (AtomicU8 + CAS), and latency atomics; no nested locks. The former `self.ap_state` lock was removed.
 
 ---
 

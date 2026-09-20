@@ -3,8 +3,10 @@
 ## 1. 视图切换（语义 / 参数）
 
 - 语义视图（`PresetView`）与参数视图（`AdvancedView`）使用 `motion.div`，类名 `.view-stage`。
-- 切换动画：`x: ±100%`，duration `0.32s`，ease `easeInOut`，`AnimatePresence mode="popLayout"`；
-  退场元素被弹出布局（absolute），进场元素占流，保证滚动条高度切换即时正确。
+- 切换动画：`x: ±100%`，duration `0.32s`，ease `easeInOut`。
+- **两套视图常驻 DOM**（`components/ViewStage.tsx`）：非当前视图 `display:none`；切换时退场视图加
+  `.is-exiting`（绝对定位让出文档流）演完平移，再以 `display:none` 收起。不再使用
+  `AnimatePresence` 的挂载/卸载——避免反复重建 31 张参数卡 DOM 造成的首帧尖峰。
 - `.view-stage`：`display:flex; flex-direction:column; gap:22px`。
 - 切换编排由 `useViewAnimation` 负责：记录旧滚动位置 → 锁 `.view-stack` 高度 →
   平移结束（`VIEW_SLIDE_MS = 320ms`，按定时器对齐，不等动画回调）的那一刻立即开始

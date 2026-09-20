@@ -147,8 +147,8 @@ impl std::error::Error for ConfigError {}
 
 #### ConfigParser
 
-> **本节以下 API 列表为 v9.11 前的文本命令实现**（`normalize_tokens`、`normalize_number`、
-> `split_command_value`、`produce_spec`、`is_known_dsp_command` 以及 `XxxFactory` 动态注册表）——
+> **本节以下 API 列表为 v9.11 前的文本命令实现（已全部移除）**：`normalize_tokens`、`normalize_number`、
+> `split_command_value`、`produce_spec`、`is_known_dsp_command` 以及 `XxxFactory` 动态注册表——
 > **这些符号现均不存在**（全仓搜索为 0 处）。现行解析器 API 见 `config/parser.rs`：
 > `ConfigParser::parse_file_with_spec(path, ctx) -> (Vec<Box<dyn Filter>>, SpecChain)`，流程为
 > `toml::from_str::<FileModel>` → `FileModel::into_chain_model` → `factory::create_from_model`。

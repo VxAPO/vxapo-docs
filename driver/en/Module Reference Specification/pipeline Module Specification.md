@@ -76,7 +76,7 @@ Implements `process_audio` (normal path) and `process_chain_interleaved` (transi
 
 `RealtimeContext` is a zero-sized marker used at compile time to enforce RT safety.
 
-## 4.8 `pipeline/realtime/ring.rs`
+## 4.8 `utils/ring.rs`
 
 Lock-free ring buffer used by telemetry and real-time logging.
 

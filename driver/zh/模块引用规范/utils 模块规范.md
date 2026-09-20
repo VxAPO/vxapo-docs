@@ -2,7 +2,7 @@
 
 **边界**：不依赖任何其他模块
 
-**允许依赖**：`windows-core`（`vx_error.rs` 中的 `check_hresult`、`guid.rs` 中的 `GUID`）
+**允许依赖**：`windows-core`（`vx_error.rs` 中的 `HRESULT` 转换与 `E_FAIL` / `E_UNEXPECTED` 常量）、`windows`（`guid.rs` 中的 `windows::core::GUID`）
 
 **禁止依赖**：`sys/`、`pipeline/`、`install/`、`config/`、`object/`、`telemetry/`
 
@@ -41,6 +41,8 @@ pub enum VxApoError {
 
 pub type Result<T> = core::result::Result<T, VxApoError>;
 
+// ⚠ 以下三个函数已全部移除（全仓搜索 0 处）：succeeded / failed / check_hresult
+// 现行：HRESULT 判定直接使用 windows-rs 方法；错误反向映射见下方 `impl From<VxApoError> for HRESULT`
 pub fn succeeded(hr: HRESULT) -> bool {
     hr.0 >= 0
 }

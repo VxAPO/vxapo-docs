@@ -166,7 +166,7 @@ Windows audio engine
 ## 5. Thread safety model
 
 - `self.mutex`: protects `ApoObjectInner` (chain, transition, temp buffers).
-- `self.ap_state`: protects format/channel/lock state.
+- Format/channel/lock state: merged into `ApoObjectInner` (`self.mutex`) — the former `self.ap_state` field and the `ApoObjectState` type were removed (0 hits repo-wide).
 - `StateCell`: `AtomicU8` + CAS lock-free state machine.
 - Latency values use `AtomicU32`; RT path reads without locks.
 - The two mutexes are never held simultaneously.
