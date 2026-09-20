@@ -1243,7 +1243,13 @@ pub fn compute_coeffs(filter_type: BiquadType, fc: f32, gain_db: f32, q: f32, sa
 
 ---
 
-### 4.13 `pipeline/dsp/peq.rs`
+> **v9.11 起以下各节已作废**：4.13 / 4.14 / 4.16 / 4.17 / 4.18 / 4.19 / 4.20 所描述的文件与实现
+> **均已从代码中删除**——PEQ 现为 `pipeline/dsp/peq_hybrid.rs`，双二阶与滤波在 `biquad.rs` /
+> `filter.rs`，卷积与延迟已移除。各节标题已加删除线并保留为历史参考；**现行实现见本文件 4.22**。
+> 现状文件清单（2026-09）：`aural` `biquad` `compressor` `factory` `filter` `fir` `gain` `loudness`
+> `math` `model` `peq_hybrid` `reverb` `specs` `transition` `wide`（共 15 个 `.rs`）。
+
+### 4.13 ~~`pipeline/dsp/peq.rs`~~（已删除）
 
 **职责**：参量均衡器（级联 biquad）。
 
@@ -1264,7 +1270,7 @@ impl Filter for PeqFilter { ... }
 
 ---
 
-### 4.14 `pipeline/dsp/hp_lp.rs`
+### 4.14 ~~`pipeline/dsp/hp_lp.rs`~~（已删除）
 
 **职责**：高通/低通滤波器。
 
@@ -1306,7 +1312,7 @@ impl Filter for GainFilter { ... }
 
 ---
 
-### 4.16 `pipeline/dsp/delay.rs`
+### 4.16 ~~`pipeline/dsp/delay.rs`~~（已删除）
 
 **职责**：延迟线（环形缓冲实现）。
 
@@ -1328,7 +1334,7 @@ impl Filter for DelayFilter { ... }
 
 ---
 
-### 4.17 `pipeline/dsp/copy.rs`
+### 4.17 ~~`pipeline/dsp/copy.rs`~~（已删除）
 
 **职责**：通道复制/混音。
 
@@ -1356,7 +1362,7 @@ pub fn parse_copy_ops(spec: &str, channel_names: &[String]) -> Option<Vec<Channe
 
 ---
 
-### 4.18 `pipeline/dsp/graphic_eq.rs`
+### 4.18 ~~`pipeline/dsp/graphic_eq.rs`~~（已删除）
 
 > **v9.11 废弃**：`GraphicEQ:` 命令与 `graphic_eq.rs` 已移除，由
 > `pipeline/dsp/peq_hybrid.rs`（混合式 PEQ，TOML `[[effects]] type = "peq"`）
@@ -1400,7 +1406,7 @@ pub fn parse_graphic_eq_params(spec: &str) -> Option<Vec<EqBand>>;
 
 ---
 
-### 4.19 `pipeline/dsp/convolution.rs`
+### 4.19 ~~`pipeline/dsp/convolution.rs`~~（已删除）
 
 > **v9.11 废弃**：`convolution.rs` 已删除（不做 IR 卷积；SIMD dot/分块 FFT 迁至
 > `fir.rs`）。本节保留为历史参考。
@@ -1449,25 +1455,23 @@ pub fn parse_convolution_params(spec: &str) -> Result<(String, f32), ParseError>
 
 ---
 
-### 4.20 `pipeline/dsp/vst.rs`（实现已移除，保留注册入口）
+### 4.20 ~~`pipeline/dsp/vst.rs`~~（已整体删除）
+
+> **v9.11 起 `vst.rs` 与 VST 宿主整体移除**：本节以下文字提到的 `FACTORY_COUNT`、
+> `index::VST_PLUGIN`、`register_builtin_filters`、`VstFactory`、`FilterCreateResult::NoMatch`
+> **现均已不存在**（全仓搜索 `vst` 为 0 处）。现行未知 `type` 的处理见 `config 模块规范.md`
+> 校验条：模型校验失败 → 整文件拒绝并保留旧链。
 
 > **v9.11 废弃**：`vst.rs` 已整体删除。本节保留为历史参考。
 
-**现状（v6.5 决策 + v7.11 严格化对齐）**：VST 功能**回退为 `NoMatch` 模式**——配置中出现 `VSTPlugin:` 时，`VstFactory` 恒定返回 `FilterCreateResult::NoMatch`。v7.11 起（config 6.1 Unmatched → SyntaxError），解析器**不再静默跳过**：`VSTPlugin:` → `SyntaxError「未知命令 'VSTPlugin'」`，整体解析失败（保留旧链）。
+**v9.11 前状态（v6.5 决策 + v7.11 严格化对齐；相关符号现均已删除）**：VST 功能曾回退为 `NoMatch` 模式——配置中出现 `VSTPlugin:` 时，`VstFactory` 曾恒定返回 `FilterCreateResult::NoMatch`。v7.11 起（config 6.1 Unmatched → SyntaxError），解析器**不再静默跳过**：`VSTPlugin:` → `SyntaxError「未知命令 'VSTPlugin'」`，整体解析失败（保留旧链）。
 > 语义说明：`VSTPlugin` 仍是**合法命令关键字**（工厂已注册），返回 NoMatch 表示"功能未启用"。v7.11 严格化后与未知关键字同样落 SyntaxError——对用户是**诚实反馈**（此命令当前无效），符合 overview/项目概览.md「配置写错必有反馈」。
 
-**文件内容**：仅保留模块注释（说明当前行为与未来路径，供开发者查看），**无任何实现/测试**。
+**文件内容**：v6.5–v9.11 期间仅保留模块注释；**v9.11 起文件本身已删除**，无任何实现与测试。
 
-**保留不动**：
-- `FACTORY_COUNT = 19`（v9.2 起 FxSound 四工厂在尾部追加；VST 槽位仍为 `index::VST_PLUGIN = 13`）
-- `index::VST_PLUGIN = 13`
-- `register_builtin_filters` 仍注册 `VstFactory`
-
-> 未来恢复 VST2/VST3 时**无需调整注册表/索引结构**，只需：
-> 1. 补 `vst.rs` 实现（动态库加载需 `libloading` + 协议绑定：`AEffect` / `IPluginFactory` COM 接口）
-> 2. `VstFactory::create_filter` 返回 `Filter(Box::new(VstFilter::new(...)))`
->
-> 依赖 `libloading` 与 `[features] vst` **已删除**。
+**恢复成本（不再是「补一个工厂」）**：TOML 化后不存在可挂载的动态工厂注册表。恢复 VST2/VST3 需
+新增 `EffectType` 分支、`pipeline/dsp/factory.rs::create_from_model` 的 match 分支，以及对应的
+`Filter` 实现（动态库加载需重新引入 `libloading` 与协议绑定）；`[features] vst` 已随 v9.11 删除。
 
 ---
 

@@ -68,7 +68,17 @@ q = 1.0
 类型与旧参数键被接受但忽略，映射为 `compressor` 默认参数。
 
 **校验**：未知 type / 未知键 / 不适用字段 / 缺必填键 / 超范围 / PEQ 段数
-不在 [1, 31]（全局合计 ≤ 31）/ 声道名重复或不存于设备 → 整文件解析失败，保留旧链。
+不在 [1, 31] / 声道名重复或不存于设备 → 整文件解析失败，保留旧链。
+
+> **段数上限按块计（v9.x 现状，勿写成「全局合计 ≤ 31」）**：单块 1–31；**声道未声明**的块共享
+> 31 段预算（`unscoped 'peq' bands count 32 exceeds max 31`）；**声明声道**的块按声道各自 31 段
+> （`channel 'L' peq bands count 32 exceeds max 31`）——因此 `L 20 + R 20` 合法，跨声道合计可超 31。
+> 依据：`config/model/tests.rs`——`total_peq_band_cap_enforced`（未声明声道共享预算，报
+> `unscoped 'peq' bands count 32 exceeds max 31`）、`per_channel_peq_band_cap`（按声道各自 31，
+> `L 20 + R 20` 通过、单声道 32 报 `channel 'L' peq bands count 32 exceeds max 31`）、
+> `band_count_out_of_range_rejected`（单块 32 段报 `out of range [1, 31]`）、
+> `single_band_peq_accepted`（单块下限 1 段合法）。App 侧 `addBand` / `applyPreset` 按同一口径
+> 校验：未开通道选择器按整设备计数，开启后按当前声道计数。
 
 **指纹与热重载**：spec 指纹 = `EffectConfig::spec()`（DSP 字段稳定序列化，
 `name`/`group`/`meta` 不参与）；watcher 监控 `config.toml`。
@@ -136,6 +146,14 @@ impl std::error::Error for ConfigError {}
 ---
 
 #### ConfigParser
+
+> **本节以下 API 列表为 v9.11 前的文本命令实现**（`normalize_tokens`、`normalize_number`、
+> `split_command_value`、`produce_spec`、`is_known_dsp_command` 以及 `XxxFactory` 动态注册表）——
+> **这些符号现均不存在**（全仓搜索为 0 处）。现行解析器 API 见 `config/parser.rs`：
+> `ConfigParser::parse_file_with_spec(path, ctx) -> (Vec<Box<dyn Filter>>, SpecChain)`，流程为
+> `toml::from_str::<FileModel>` → `FileModel::into_chain_model` → `factory::create_from_model`。
+> 本节保留的 v7.9 / v7.11 / v8.3 沿革与 EAPO 对比注记属**历史依据**，仍然有效；旧文本格式的
+> 转换入口在 CLI（`vxapo-cli/src/commands/convert.rs`，EAPO txt → TOML）。
 
 ```rust
 /// 配置指纹（v9.11）：`EffectConfig::spec()` 稳定序列化（DSP 字段，
@@ -205,7 +223,7 @@ fn produce_spec(cmd: &str, value: &str) -> String {
 > **无冒号行不应被解析**（overview/项目概览.md「语法严格性」：冒号前字符串决定解析目标，必须是严格关键字）。
 > **EAPO 行为事实（v8.3 补注，S5）**：EAPO 对无冒号行是**静默跳过**（FilterEngine.cpp 329-330：
 > `pos = line.find(':')`，`pos==-1` 时整行不解析、无错误）——**VxAPO「拒绝报错」比 EAPO 更严格**，
-> 属**有意差异**（intent「输入严格保证解析宽容」：写错必有反馈），非对齐。详见 `Equalizer 行为文档.md` C23。
+> 属**有意差异**（intent「输入严格保证解析宽容」：写错必有反馈），非对齐。详见 `配置与DSP设计.md` §5「EqualizerAPO 行为参考」C23 条（`Equalizer 行为文档` 已随 v9.11 移除）。
 > 因此 **v7.9 的裸命令可达性修正删除**：
 > - `split_command_value` 零冒号 → `SyntaxError「缺少冒号」`（整体失败），不落 registry、不产出 spec；
 > - 效果：`BogusCommand`（无冒号）→ 明确「缺少冒号」错误，而非被 Convolution 宽容语义

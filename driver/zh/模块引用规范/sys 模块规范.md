@@ -444,7 +444,7 @@ pub use crate::sys::com::prelude::{
 
 **禁止依赖**：`pipeline/`、`install/`、`config/`、`object/`、`utils/`、`telemetry/`
 
-> 由原 `read.rs`、`write.rs`、`delete.rs` 合并为单一模块。GUID 格式化统一走 `sys/com/prelude::guid_to_string`（StringFromGUID2 的 unsafe 已收窄至该单一安全边界；依赖 `prelude` 的 `guid_to_string` 属允许例外）。错误类型统一为 `windows::core::Error`。权限提升函数（`make_writable`、`take_ownership`、`PrivilegeGuard`、`enable_take_ownership_privilege`、`create_administrators_sid`）迁移至 `install/permission.rs`，不属于工具层职责。
+> 由原 `read.rs`、`write.rs`、`delete.rs` 合并为单一模块。GUID 格式化统一走 `sys/com/prelude::guid_to_string`（StringFromGUID2 的 unsafe 已收窄至该单一安全边界；依赖 `prelude` 的 `guid_to_string` 属允许例外）。错误类型统一为 `windows::core::Error`。权限提升函数（`make_writable`、`take_ownership`、`PrivilegeGuard`、`enable_take_ownership_privilege`、`create_administrators_sid`）**已从代码中整体移除**（原注"迁移至 `install/permission.rs`"——该文件现不存在，全仓搜索无这些符号）。现行 ACL 处理在 `install/device/stale/acl.rs`：`fix_config_acl(guid)` 对 config 目录与 snapshot 文件调 `grant_interactive_modify`，后者直接执行 `icacls /grant *S-1-5-4:(OI)(CI)M`（目录递归、文件不带 `/T`），失败只记录告警而不影响迁移结果（App 侧可提示以管理员身份运行一次修复）；`cleanup_orphan(guid)` 负责归档旧 GUID 的 config/snapshot 并删除子 APO 记录。
 
 ---
 
