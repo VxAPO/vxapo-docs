@@ -41,19 +41,48 @@ q = 1.0
 - Unknown `type`, unknown keys, missing required keys, out-of-range values, or type errors fail the whole file.
 - On failure, the old chain is kept.
 - PEQ bands: 1-31 per block; global total per channel/shared scope <= 31.
+  Blocks with explicit `channels` count against those channels; unscoped blocks count against the shared budget.
+- PEQ per-band ranges: `fc 20..20000`, `gain_db -30..+30`, `q 0.1..12`,
+  `crossover_hz 20..20000` (default 200).
+- The general `[-120, +48]` dB gain range only applies to `preamp.gain_db`; each effect validates its own ranges (see 1.3).
+- Legacy mapping: `type = "maximizer"` / `"leveler"` parse as `compressor`; their legacy parameter keys
+  (`gain_boost_db` / `max_output_db` / `target` / `lookahead_ms` / `dither` / `target_rms_db` /
+  `response_s` / `max_gain_db` / `dynamic_preserve` / `noise_gate_db` / `peak_limit_db`) are accepted
+  but ignored, and `CompressorParams` defaults apply.
+- Legacy `wide` keys `intensity` / `depth` fall back to `air` (only when `air` is not set on that block).
 - `enabled = false` bypasses an effect.
 
 ### 1.3 Effect types
 
-| type | main parameters |
-|------|-----------------|
-| `peq` | `crossover_hz`, `bands` (fc/gain_db/q/type) |
-| `preamp` | `gain_db` |
-| `aural` | `tune_hz/drive/odd/even/wet/dry` |
-| `reverb` | `room_size/decay/damping/bandwidth/density/lat/pre_delay/motion/wet/dry` |
-| `maximizer` | `gain_boost_db/max_output_db/release_ms/target/lookahead_ms/dither/wet/dry` |
-| `wide` | `intensity` |
-| `loudness` | `phon/reference_phon` |
+| type | parameters (range) | defaults |
+|------|--------------------|----------|
+| `peq` | `crossover_hz` (20..20000), `bands` (fc/gain_db/q/type) | `200` / required |
+| `preamp` | `gain_db` (-120..48) | required |
+| `aural` | `tune_hz` (500..10000), `drive` (0..4.25), `odd` (0..1.5), `even` (0..0.75), `wet`/`dry` (0..1) | `1760 / 1.76993 / 1.5 / 0.25 / 0.5 / 0.5` |
+| `reverb` | `room_size` (0.5..1.5), `decay`/`damping`/`bandwidth`/`density`/`lat5`/`lat6` (0..1), `pre_delay_ms` (0..100), `motion_rate` (0.05..2), `motion_depth` (0..2, legacy `motion_depth_ms`), `low_cut_hz` (20..250), `wet`/`dry` (0..1) | `1.0 / 0.41 / 0.408290 / 0.350110 / 1.0 / 0.70 / 0.50 / 0 / 0.110871 / 0.63 / 100 / 0.27 / 0.73` |
+| `compressor` | `threshold_db` (-60..0), `ratio` (1..20), `knee_db` (0..12), `attack_ms` (0.1..100), `release_ms` (10..1000), `makeup_gain_db` (0..24), `wet`/`dry` (0..1) | `-18 / 4 / 3 / 10 / 100 / 6 / 1 / 0` |
+| `wide` | `gain`/`air`/`air_side`/`mix` (0..1), `crossover_hz` (200..1000) | `0 / 0.354331 / 0 / 0.6 / 200` |
+| `loudness` | `phon` (0..120, required), `reference_phon` (0..120) | `reference_phon 80` |
+
+PEQ band types (`bands[].type`, default `peaking`):
+
+| type | meaning |
+|------|---------|
+| `peaking` | RBJ peaking EQ |
+| `low_shelf` / `high_shelf` | shelf filters; `gain_db` is the target level |
+| `low_pass` / `high_pass` | RBJ pass filters have no gain term, so `gain_db` is applied linearly to the **passband**; `0 dB` keeps pure filter behavior |
+
+Implementation notes:
+
+- `reverb`: Dattorro plate reverb; `low_cut_hz` is the low-frequency transient protection crossover
+  (content below it bypasses the reverb per channel, `20` ~ off).
+- `compressor`: all-channel linked RMS detection + soft-knee static curve + dB-domain attack/release
+  smoothing + makeup gain; replaces the former `maximizer` / `leveler`.
+- `wide`: linear-phase FIR crossover processing only the high band; `gain` drives side gain,
+  `air` is center air absorption, `air_side` is side air absorption (default 0 = off), `mix` is the
+  processed-increment dry/wet ratio.
+- `aural`: 2nd-order Butterworth high-pass + level follower + tanh odd-order soft saturation +
+  half-wave rectified even-order term, wet/dry mixed.
 
 ## 2. Fingerprint and hot reload
 
@@ -69,6 +98,9 @@ PEQ uses a 200 Hz crossover hybrid architecture:
 - `Fc < 200 Hz`: IIR biquad path.
 - `Fc >= 200 Hz`: FIR path.
 - If a high-frequency band deviates more than 0.25 dB at the crossover, it also goes to IIR for low-frequency accuracy.
+- Band types: `peaking` / `low_shelf` / `high_shelf` / `low_pass` / `high_pass` (default peaking).
+  For `low_pass` / `high_pass`, `gain_db` is applied linearly to the passband (0 dB is identical to a
+  pure filter), so one band can express both cutoff and passband level.
 
 Processing chain:
 
@@ -112,6 +144,10 @@ Extreme parameters (e.g. ±1000 dB) can cause:
 | `Q_MIN` / `Q_MAX` | 0.05 / 18.0 | safe Q range |
 | `MAX_GAIN_STEP_RATIO` | 0.05 | gain smoothing step |
 | `MAX_PEQ_BANDS` | 31 | PEQ band limit |
+| PEQ `crossover_hz` | 20.0 / 20_000.0 | PEQ crossover range (default 200) |
+| PEQ `fc` | 20.0 / 20_000.0 | per-band frequency range |
+| PEQ `gain_db` | -30.0 / 30.0 | per-band gain range |
+| PEQ `q` | 0.1 / 12.0 | per-band Q range |
 
 ## 5. EqualizerAPO behavior reference
 

@@ -3,6 +3,9 @@
 > **Purpose**: Define the specification boundary, architecture, module structure, data flow, and evolution path for the VxAPO App (`vxapo-app`).
 > **Positioning**: The App is the end-user UI layer (see `overview/Project Overview.md` "three-layer separation"). It makes decisions and writes files only; it does not perform real-time audio processing. The only communication channel with the DLL is the file system (`config.toml` / preset TOML).
 > **Basis**: Source read of `D:\APO_Project\VxAPO\vxapo-app` (Vite 7 + React 19 + TS 5.8 + framer-motion 13 + lucide-react + @radix-ui + @dnd-kit + @tauri-apps/api 2, 2026-08-23) + `CLI Reference Specification.md` / `overview/Project Overview.md` / driver `Configuration and DSP Design.md`.
+>
+> **Last revision**: 2026-09-12 — refreshed against the current app/driver/cli code: stale-GUID
+> banner + migrate/cleanup, polling/caching strategy, component/hook inventory and backend command table.
 
 ---
 
@@ -34,7 +37,7 @@ vxapo-app/
 │   ├── Cargo.toml / tauri.conf.json / icons/ (multi-size ico + png)
 │   └── src/
 │       ├── main.rs
-│       └── lib.rs          # 11 Tauri commands + elevated CLI wrapper (see section 8)
+│       └── lib.rs          # 18 Tauri commands + elevated CLI wrapper (see section 8)
 └── src/
     ├── main.tsx            # entry (App + I18nProvider)
     ├── App.tsx             # main app: device/config/effects/preset/semantic+param views
@@ -42,17 +45,24 @@ vxapo-app/
     ├── styles/             # theme/topbar/sidebar/cards/tabs/device/curve/dialogs/
     │                       # toast/drag/overlay-scroll/dark (dark last)
     ├── assets/             # VxAPO_icon_v4.svg etc.
-    ├── components/         # 27 UI components (see 3.3)
+    ├── components/         # 28 UI components (see 3.3)
     ├── data/library.ts     # preset library data
-    ├── hooks/              # 13 hooks (see 3.4)
+    ├── hooks/              # 15 hooks (see 3.4)
     └── lib/                # api/model/toml/effects/blocks/channels/curve/rbj/...
 ```
 
 ### 2.2 Current conclusions
 
-- The Tauri Rust backend exposes 11 commands: config read/write, device list, install/uninstall (with rollback), progress read, import/export, Explorer reveal, and window show; `opener` / `dialog` plugins are enabled.
+- The Tauri Rust backend exposes 18 commands: config read/write (including fingerprint-checked
+  reads), device list, install/uninstall (with rollback), stale-GUID list/migrate/cleanup/ACL
+  repair, progress read, import/export, Explorer reveal, language read/write, and window show;
+  `opener` / `dialog` plugins are enabled.
 - The frontend is split into `components / hooks / lib / data / styles`; business state lives in `App.tsx` and hooks; components are controlled.
-- Implemented: device enumeration, config read/write with 300 ms auto-save debounce, 2 s external hot-update polling, install/uninstall (`--verify` loop + progress events), drag-and-drop import/export, marquee batch operations, i18n, custom overlay scrollbar, semantic/parameter dual views, and semantic strength mapping for effects.
+- Implemented: device enumeration, config read/write with 300 ms auto-save debounce, 2 s external
+  hot-update polling (content-fingerprint short-circuit, paused while the window is hidden),
+  install/uninstall (`--verify` loop + progress events), stale-GUID banner (migrate/cleanup plus
+  ACL self-repair on denied writes), drag-and-drop import/export, marquee batch operations, i18n,
+  custom overlay scrollbar, semantic/parameter dual views, and semantic strength mapping for effects.
 - The data model is based on `Block` / `Band` / `EffectItem` (PEQ blocks + non-PEQ effects).
 
 ### 2.3 Actual source structure (2026-08-23)
@@ -67,12 +77,13 @@ src/
 │                              # EffectCard, EffectSemanticCard, SemanticUnitCard, BandParamCard,
 │                              # GainSlider, SelectionToolbar, DragCard, DragLayer,
 │                              # InstallDialog, UninstallDialog, ImportDialog, SavePresetDialog,
-│                              # SettingsDialog, ConfirmDialog, OverlayScrollbar, Toast, VxSelect
+│                              # SettingsDialog, ConfirmDialog, OverlayScrollbar,
+│                              # StaleInstallBanner, Toast, VxSelect
 ├── data/library.ts            # preset library (with zh/en fields)
 ├── hooks/                     # useConfig, useDevices, useDragSort, useViewAnimation,
 │                              # useMarqueeSelection, useChannelState, usePresetActions,
 │                              # useCurveHover, useThrottledCompute, useTheme, useToast,
-│                              # useInterval, useWindowControls
+│                              # useInterval, useWindowControls, useEdgeTintLayer, useGlassRing
 ├── lib/
 │   ├── api.ts                 # Tauri command wrappers
 │   ├── model.ts               # shared types + type guards
@@ -134,6 +145,7 @@ src/
 | `SelectionToolbar` | marquee batch toolbar (save/delete/copy to channel) |
 | `DragCard` / `DragLayer` | drag-sort card / flying copy layer |
 | `OverlayScrollbar` | custom overlay scrollbar (no layout width, fade in/out, survives device switch) |
+| `StaleInstallBanner` | stale-GUID banner on the selected device (migrate/cleanup + migration confirm dialog) |
 | `InstallDialog` / `UninstallDialog` | install (`--verify` progress loop) / uninstall progress |
 | `ImportDialog` / `SavePresetDialog` / `SettingsDialog` / `ConfirmDialog` | import / save custom preset / settings / confirm |
 | `Toast` | toast notifications |
@@ -143,8 +155,10 @@ src/
 
 | Hook | Responsibility |
 |------|----------------|
-| `useConfig` | read/parse/auto-save config.toml (300 ms debounce), 2 s external poll, 31-band limit, per-device tuning-state init |
-| `useDevices` | device list, selected device, install/uninstall state |
+| `useConfig` | read/parse/auto-save config.toml (300 ms debounce); 2 s external poll (fingerprint short-circuit, paused while hidden); ACL repair + retry on denied write; 31-band limit; per-device tuning-state init |
+| `useDevices` | device list + stale-GUID list (5 s poll, paused during install), selected device, install/uninstall, stale migrate/cleanup state |
+| `useEdgeTintLayer` | external Canvas edge-tint layer (light-source sampling and dirty-rect repaint for cards/toolbar) |
+| `useGlassRing` | glass ring geometry: injects measured corner angles and top-highlight falloff angles |
 | `useDragSort` | custom pointer-level slot drag engine (avoidance/layout animation/fly) |
 | `useViewAnimation` | view-switch animation orchestration (0.32 s slide + 800 ms height collapse + scroll restore) |
 | `useMarqueeSelection` | marquee rectangle and card hit-testing (view-switch residue handling) |
@@ -154,16 +168,20 @@ src/
 | `useThrottledCompute` | throttled recompute (42 ms ≈ 24 fps, fixed interval while dragging + final pass) |
 | `useTheme` | light/dark/system |
 | `useToast` | notifications |
-| `useInterval` / `useWindowControls` | interval polling / window controls |
+| `useInterval` / `useWindowControls` | pausable interval polling / window controls |
 
 ### 3.5 src-tauri backend commands
 
 | Command | Responsibility |
 |---------|----------------|
 | `write_config` / `read_config` | atomic write / read `C:\ProgramData\VxAPO\{guid}\config.toml` |
+| `read_config_checked` | fingerprint-checked read: returns the revision and `text = null` when unchanged (poll short-circuit) |
+| `read_lang` / `write_lang` | read/write UI language `lang.txt` (shared with the installer) |
 | `list_devices` | invoke `vxapo-cli list --json` and deserialize to `Device[]` |
 | `install_device` | background-thread `vxapo-cli install --verify --progress-file`, emits `install-progress`, returns `InstallResult` |
 | `uninstall_device` / `rollback_install` | elevated CLI uninstall / install-failure rollback |
+| `list_stale_installs` | read-only `vxapo-cli stale list --json` → `StaleInstall[]` |
+| `migrate_stale_install` / `cleanup_stale_install` / `repair_stale_acl` | elevated CLI `stale migrate` / `cleanup` / `fix-acl`: migrate stale GUIDs, clean up orphans, repair config ACL |
 | `read_progress` | read progress file from elevated CLI |
 | `read_import_file` / `export_config` / `open_in_explorer` | import/export and Explorer reveal |
 | `show_main_window` | set background color per system dark mode, then show main window (no white flash) |
@@ -174,7 +192,10 @@ src/
 
 ### 4.1 State sources
 
-- Device state: `useDevices` maintains `devices`, `selectedGuid`, `installedDevices`, install/uninstall targets and progress.
+- Device state: `useDevices` maintains `devices`, `staleInstalls`, `selectedGuid`, `installedDevices`,
+  install/uninstall targets and progress, and stale migrate/cleanup busy state; devices and stale
+  records are fetched in one `Promise.allSettled` and shallow-compared so unchanged data keeps its
+  previous array reference (avoids whole-tree re-renders).
 - Config state: `useConfig` maintains `blocks`, `effects`, `tuningMap` (per-device top-level enabled), `loaded`, `dirtyRef`, and `tailRef` (preserved unknown-effect tail).
 - Channel state: `useChannelState` keeps per-device channel-selector state.
 - UI state: `App.tsx` / `useViewAnimation` / `useMarqueeSelection` hold view mode, marquee, drag sorting, dialogs, etc.
@@ -187,7 +208,9 @@ UI operation (add/edit band, toggle enabled, apply preset, semantic strength)
   -> after 300 ms debounce, buildToml(blocks, enabled, effects, channelCtx) + tail
   -> Tauri write_config(guid, content)   # Rust atomic write
   -> driver watcher detects change -> hot reload
-  -> useConfig polls read_config every 2 s; external changes refresh UI (skipped while editing)
+  -> useConfig polls read_config every 2 s (backend short-circuits on the content fingerprint;
+     paused while the window is hidden, refreshed once on return); external changes refresh the UI
+     (skipped while editing)
 
 Curve preview (independent path):
   -> useThrottledCompute(42 ms) recomputes buildEvalFreqs + curveRange (RBJ coefficient cache)
@@ -201,6 +224,26 @@ Curve preview (independent path):
 - `applyPreset` checks the 31-band limit and inserts preset bands according to current language/channel.
 - Channel mode: `ChannelCtx { mode, first, active }` controls `channels` emission and block filtering; outside channel mode only first-channel blocks are written.
 - Effect defaults are merged into params when writing TOML.
+
+### 4.4 Stale-GUID flow (added 2026-09-10)
+
+```text
+useDevices (mount + 5 s poll; paused during install)
+  -> listDevices() + listStaleInstalls() (Tauri -> CLI `list --json` / `stale list --json`)
+  -> shallow-compare and store devices / staleInstalls
+
+StaleInstallBanner (rendered only when a stale record's target_guid == the selected device)
+  -> multiple matches: prefer matched_partial, then the newest config_mtime_ms
+  -> [migrate] ("migrate + repair" for matched_partial, otherwise "migrate config")
+       -> confirm dialog (target device / config / snapshot / inferred mode)
+       -> migrateStale(from, to) -> Tauri migrate_stale_install -> CLI `stale migrate`
+       -> refresh() reloads devices + stale records
+  -> [cleanup] -> cleanupStale(guid) per match -> CLI `stale cleanup` -> refresh()
+
+config write denied (migrated file inherits an administrator ACL)
+  -> useConfig.writeConfigSafe catches access denied -> repairStaleAcl(guid)
+       -> CLI `stale fix-acl` (grants the interactive user Modify) -> retry the write (once per device)
+```
 
 ---
 
@@ -233,6 +276,8 @@ export interface Device {
   index: number;
   name: string;
   guid: string;
+  device_id?: string | null;   // device instance ID (CLI `list --json`)
+  connection?: string | null;  // connection name (currently empty; reserved)
   installed_version: string;
   install_mode: string;
   slots: Record<string, string | null>;
@@ -270,6 +315,39 @@ export interface EffectItem {
 }
 
 export type ThemeMode = "light" | "dark" | "system";
+
+/** Stale GUID record (deserialized from CLI `stale list --json`) */
+export interface StaleInstall {
+  guid: string;
+  device_instance_id: string;
+  display_name: string;
+  config_path?: string | null;
+  config_mtime_ms?: number | null;
+  snapshot_path?: string | null;
+  snapshot_mtime_ms?: number | null;
+  premix_slot?: string | null;
+  postmix_slot?: string | null;
+  inferred_mode: string;
+  has_child_backup: boolean;
+  has_sysfx_backup: boolean;
+  target_guid?: string | null;
+  target_name?: string | null;
+  /** matched_healthy | matched_partial | unmatched */
+  target_state: string;
+}
+
+/** Migration report (CLI `stale migrate --json`) */
+export interface MigrationReport {
+  success: boolean;
+  target_guid: string;
+  config_from?: string | null;
+  snapshot_from?: string | null;
+  config_migrated: boolean;
+  snapshot_migrated: boolean;
+  install_repaired: boolean;
+  removed_guids: string[];
+  warnings: string[];
+}
 ```
 
 > All business types are centralized in `lib/model.ts` with `isPresetLibraryEntry` / `isPresetMeta` guards.
@@ -307,12 +385,17 @@ Semantic strength round-trip (`semanticStrength` / `applySemanticStrength`):
 1. The App does not touch real-time audio; DSP is handled by the driver pipeline.
 2. Config path is fixed: `C:\ProgramData\VxAPO\{GUID}\config.toml`.
 3. Config writes are atomic in Rust (temp file + rename); unknown third-party effects are preserved via `tail`.
-4. Auto-save uses a 300 ms debounce; external hot updates are synchronized by a 2 s poll.
+4. Auto-save uses a 300 ms debounce; external hot updates are synchronized by a 2 s poll
+   (content-fingerprint short-circuit, paused while the window is hidden); device/stale lists poll
+   every 5 s and pause during install.
 5. Install/uninstall go through elevated CLI with an `--verify` loop and `rollback_install` fallback; the App never writes the registry directly.
 6. The top-level `enabled` switch is implemented (whole-chain passthrough); per-device tuning switches are remembered and initialized from disk.
 7. EQ curve preview is implemented via `CurvePlot` + `CurveGrid`, with 42 ms throttled recompute while dragging.
 8. i18n Chinese/English UI is implemented; the preset library contains Chinese/English fields.
 9. Scrollbars are custom-drawn (`os-scroll` hides native scrollbars); the overlay scrollbar takes no layout width, appears on genuine user scrolling (wheel/touch/thumb drag), auto-fades after 1.2 s idle (0.25 s transition), and fades out on device switch instead of hard-disappearing.
+10. Stale GUID records are surfaced by `StaleInstallBanner` on the selected device; migration,
+    cleanup and ACL repair always go through the elevated CLI `stale` subcommands. The App never
+    moves files or changes permissions by itself.
 
 ---
 
@@ -322,12 +405,18 @@ Semantic strength round-trip (`semanticStrength` / `applySemanticStrength`):
 |---------|-------|--------|----------------|
 | `list_devices` | — | `Device[]` | CLI `list --json` + serde deserialization |
 | `read_config` | guid | `String` | read `C:\ProgramData\VxAPO\{guid}\config.toml` |
+| `read_config_checked` | guid, known_revision | `{revision, text?}` | fingerprint-checked read (`text = null` when unchanged, for the 2 s poll) |
 | `write_config` | guid, content | `()` | atomic write (tmp + rename) |
 | `install_device` | guid | `InstallResult` | background `install --verify --progress-file`, emits `install-progress` |
 | `uninstall_device` | guid | `String` | elevated `uninstall -d <guid> --json` |
 | `rollback_install` | guid | `String` | elevated rollback after install failure |
+| `list_stale_installs` | — | `StaleInstall[]` | CLI `stale list --json` (read-only, no elevation) |
+| `migrate_stale_install` | from, to, config_from?, snapshot_from? | `String` (MigrationReport JSON) | elevated `stale migrate --from --to --json` |
+| `cleanup_stale_install` | guid | `String` | elevated `stale cleanup -d <guid> --json` |
+| `repair_stale_acl` | guid | `String` | elevated `stale fix-acl -d <guid> --json` |
 | `read_progress` | tag | `String` | read elevated CLI progress file |
 | `read_import_file` | path | `String` | drag-and-drop import file content |
+| `read_lang` / `write_lang` | — / lang | `String` / `()` | read/write UI language `lang.txt` (shared with the installer) |
 | `export_config` / `open_in_explorer` | guid/path | `()` | export and reveal in Explorer |
 | `show_main_window` | — | `()` | set background per system dark mode, show and maximize window |
 
@@ -341,6 +430,8 @@ Additional Tauri plugins: `tauri-plugin-opener`, `tauri-plugin-dialog`.
 
 - Tauri 2 backend, device list, config read/write, auto-save, elevated install/uninstall with verification loop and rollback, import/export, i18n.
 - Preset library, PEQ block editing, curve preview (throttled), channel mode, drag sorting, marquee batch operations, custom preset storage, semantic/parameter dual views, effect semantic strength mapping, custom overlay scrollbar.
+- Stale GUIDs: in-page banner with one-click migrate/cleanup and post-migration ACL self-repair
+  (wired to the driver/cli `stale` commands).
 
 ### Possible future work
 
@@ -357,6 +448,8 @@ Additional Tauri plugins: `tauri-plugin-opener`, `tauri-plugin-dialog`.
 4. State has a single source of truth; components are controlled.
 5. Clamp/validation rules follow driver behavior (`[-120, +48]`, floor -60, NaN/inf rejected); clamping happens on write only.
 6. 31-band limit enforced by `applyPreset` / `addBand`.
+7. Stale-GUID migration never writes the registry or file permissions directly from the App; it
+   calls the elevated CLI `stale migrate/cleanup/fix-acl` commands.
 
 ---
 

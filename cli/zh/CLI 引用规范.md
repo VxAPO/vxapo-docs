@@ -31,17 +31,21 @@ vxapo-cli/
 | 命令 | 行为 | 现状 |
 |------|------|------|
 | 无参数启动 | 交互式菜单：1 查看模式 / 2 Driver 模式 / q 退出 | 有 |
-| `list` / `status` | 枚举设备并显示 GUID、版本、模式、5 槽位、EAPO/失守状态；支持 `--json` | 有 |
-| `install -d <device> [--mode ...] [--no-child]` | 安装/重装（自动探测模式、快照基线、自动注册 driver、自动导入 config） | 有 |
-| `uninstall -d <device>` | 卸载（停止音频服务、清槽位、回读验证、快照 diff） | 有 |
+| `list` / `status` | 枚举设备并显示 GUID、版本、模式、5 槽位、EAPO/失守状态；支持 `--json`（含 `device_id` 设备实例 ID） | 有 |
+| `install -d <device> [--mode ...] [--no-child] [--verify] [--timeout=<sec>] [--progress-file=<path>]` | 安装/重装（自动探测模式、快照基线、自动注册 driver、自动导入 config；`--verify` 走验证闭环） | 有 |
+| `uninstall -d <device>` | 卸载（停止音频服务、清槽位、回读验证、快照 diff；端点键已被移除时转残留清理） | 有 |
 | `config set/show` | 写/读 `C:\ProgramData\VxAPO\{GUID}\config.toml` | 有 |
 | `snapshot diff/restore/create` | 注册表基线快照、diff、恢复 | 有 |
+| `stale list/migrate/cleanup/fix-acl` | 旧 GUID 残留列表、迁移到当前端点、清理孤儿记录、修 config ACL | 有 |
 | `[0-N]` 选择端点 | 查看模式进入端点详情子菜单 | 有 |
 | `[x]` 查看注册表 | 转储端点注册表键 | 有 |
 | `[r]` 刷新 / `[q]` 退出 | 重新枚举 / 退出 | 有 |
 
 **现状**：CLI 已具备 install/uninstall/config/snapshot/status 能力，并依赖 `vxapo-driver` 的
 `install::device::info::enumerate_devices`、`install::selector::operation` 等 API；不再只是纯交互式诊断工具。
+
+> `stale` 已实现但尚未列入 `vxapo-cli help` 的文本输出（`print_help` 未同步），
+> 交互菜单内直接输入 `stale list` 等子命令可正常执行。
 
 ---
 
@@ -377,10 +381,20 @@ main
  └─ cli::uninstall(args)
      ├─ 1. require_admin()
      ├─ 2. (guid, ..) = resolve_device(args.device)
+     ├─ 2b. **残留兜底**：`find_endpoint_path(guid)` 失败且该 guid 在 `stale list` 中
+     │         → 直接转 `stale_cleanup(guid)`，清 Child APOs 键 + 配置目录后返回
      ├─ 3. **不重照快照**（基线保持，明确）——`diff_snapshot(baseline, current)` 用**最开始的基线**
      │        # 展示「卸载是否恢复原状/清除了什么」；基线只在下次重新安装时替换（`snapshot_device(replace=true)`）
-     ├─ 4. uninstall_endpoint(&guid)                            # driver：停服务 → 删除 FxProperties 槽位 VxAPO CLSID → 重启服务
-     │     └─（driver 内部）停止 AudioSrv + taskkill 兜底（audiodg 句柄释放）
+     ├─ 3b. **卸载前置停服（CLI 层）**：`stop_audio_service` + `taskkill audiodg` →
+     │        `audiodg::wait_for_audiodg_exit(5000)` **事件驱动等待**
+     │        （Toolhelp 取 PID → OpenProcess(SYNCHRONIZE) → WaitForSingleObject；
+     │         实测 7 ms 返回，旧实现是固定 `sleep(1500)`），目的是释放
+     │         `vxapo_driver.dll` 模块映像（见 ④ 说明），**不是**"解锁槽位值"
+     ├─ 4. uninstall_endpoint(&guid)                            # driver：停服务 → 删除 FxProperties 槽位 VxAPO CLSID → 重启端点/服务
+     │     └─（driver 内部）停止 AudioSrv —— 不是为"能删值"（删值只需 KEY_SET_VALUE
+     │          句柄；实测 DLL 已加载 + audiodg 持有点端时删值仍成功），而是为
+     │          ①释放 vxapo_driver.dll 模块映像（否则随后重装/换 DLL 无法覆盖；
+     │          NSIS installer-hooks 同样为此停服务）②让端点重启后 APO 链立刻重建
      │     └─（driver 内部）删除 childApoPath\{guid} 整个键（v8.5 卸载必删——再次安装回全量路径）
      │     └─（driver 内部）重启 AudioSrv（恢复输出）
      ├─ 5. 成功 → 打印「已卸载 <guid>」+ `snapshot diff`（红绿对比卸载清除项/已还原项）
@@ -449,6 +463,50 @@ L ── uninstall（清槽位；基线保持）──────► B
 ⑥ 槽位失守模拟：手动改槽位为非 VxAPO → status 标注失守 → install 重装 → childapo 覆盖为最新前任（P0-6 ④）
 ```
 
+### 5.6 旧 GUID 残留流（`stale`，2026-09-10 新增）
+
+**签名**：
+
+```text
+vxapo-cli stale list [--json]
+vxapo-cli stale migrate --from <oldGuid> --to <newGuid> [--config-from <guid>] [--snapshot-from <guid>] [--json]
+vxapo-cli stale cleanup -d <guid> [--json]
+vxapo-cli stale fix-acl -d <guid> [--json]
+```
+
+```text
+stale list（只读，无需提权）
+ └─ driver install::device::stale::list_stale_installs()
+     扫描 HKLM\SOFTWARE\VxAPO\Child APOs\{旧GUID} + C:\ProgramData\VxAPO\{旧GUID}
+     + snapshots\{旧GUID}.json，按**分层身份**匹配活跃端点（v9.24：
+       端点历史属性 → 老端点键实例 ID → 记录落盘身份 → 硬件 ID+产品名唯一命中；
+       歧义/未命中维持 unmatched，不猜）
+     → 输出 StaleInstall[]（target_state = matched_healthy / matched_partial / unmatched，
+       matched_by = endpoint_history / device_instance_id / stored_identity / hardware_id / null）
+
+stale migrate（需管理员）
+ └─ 1. require_admin
+    2. **不停服**（2026-09-16 实测：写/删 FxProperties 值只需 KEY_SET_VALUE 句柄，
+       audiodg 持有点端不影响；停服只是历史误解）
+    3. migrate_install(from, to, config_from, snapshot_from)
+         · 来源缺省：同设备实例的旧记录 vs 目标现有文件 → 最新 config、最早 snapshot
+         · 迁移 config.toml + snapshot → 修复新 GUID 安装状态 → 删旧 GUID 记录
+         · 刷新目标记录身份值并把 EndpointHistory 写回并集（含新 GUID，供下次 GUID 刷新认回）
+         · 目标已有文件先备份到 C:\ProgramData\VxAPO\_migration_backup\{guid}\
+         · 修复分支写完后 driver 调 restart_endpoint_device 让槽位改写生效（引擎缓存 APO 链）
+    4. 输出 MigrationReport（success/config_migrated/snapshot_migrated/install_repaired/
+       removed_guids/warnings）；收尾确保 audiosrv 运行（幂等）
+
+stale cleanup（需管理员）
+ └─ cleanup_orphan(guid)：清理无法匹配活跃端点的旧记录
+
+stale fix-acl（需管理员）
+ └─ fix_config_acl(guid)：给交互用户授予 config/snapshot 的 Modify（icacls SID *S-1-5-4）
+```
+
+> 迁移走提权 CLI，config.toml 可能继承管理员 ACL；App 首次写入被拒时会自动调用
+> `stale fix-acl` 再重试（见 App 引用规范 §4.4）。
+
 ---
 
 ## 六、修改约束（硬性）
@@ -461,6 +519,8 @@ L ── uninstall（清槽位；基线保持）──────► B
 4. **config 写归 CLI**：driver 只兜底 default config（object 7.1.8）；CLI 负责 config set（intent
    「应用层写文件」）。
 5. **权限**：install/uninstall 需管理员（写入 HKLM）；CLI 检测非管理员运行时应提示并拒绝操作。
+6. **残留迁移属安装层写操作**：`stale migrate/cleanup/fix-acl` 需管理员，且只经
+   `install::device::stale` + `install::selector::operation` 提供的 API，不自行写注册表。
 
 ---
 

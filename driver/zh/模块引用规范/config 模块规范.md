@@ -63,8 +63,9 @@ q = 1.0
 ```
 
 **效果器类型（v1 保留集）**：`peq`（混合式，见 `pipeline 4.22`）、`preamp`、
-`aural`、`reverb`、`maximizer`、`wide`、`loudness`；`enabled = false` 旁路；
-`channels = ["FL", "FR"]` 限定作用声道（缺省全部）。
+`aural`、`reverb`、`compressor`、`wide`、`loudness`；`enabled = false` 旁路；
+`channels = ["FL", "FR"]` 限定作用声道（缺省全部）。旧 `maximizer` / `leveler`
+类型与旧参数键被接受但忽略，映射为 `compressor` 默认参数。
 
 **校验**：未知 type / 未知键 / 不适用字段 / 缺必填键 / 超范围 / PEQ 段数
 不在 [1, 31]（全局合计 ≤ 31）/ 声道名重复或不存于设备 → 整文件解析失败，保留旧链。

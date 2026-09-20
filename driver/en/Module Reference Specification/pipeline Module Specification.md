@@ -43,7 +43,7 @@ pipeline/
     ├── math.rs
     ├── loudness.rs
     ├── aural.rs
-    ├── maximizer.rs
+    ├── compressor.rs
     ├── reverb.rs
     └── wide.rs
 ```
@@ -85,12 +85,21 @@ Lock-free ring buffer used by telemetry and real-time logging.
 Defines the `Filter` trait and `DspContext` (pure data). `DspContext` is constructed by the caller (object layer) and passed to config parser.
 
 ```rust
-pub trait Filter {
-    fn initialize(&mut self, sample_rate: u32, channel_names: &[String]) -> Result<Option<Vec<String>>>;
-    fn process(&mut self, input: &[f32], output: &mut [f32], ctx: &DspContext) -> Result<()>;
-    fn reset(&mut self);
+pub trait Filter: Send + Sync + std::fmt::Debug {
+    /// Process one block in deinterleaved space: `samples[channel][frame]`, in place.
+    /// Must not allocate, do I/O, or panic.
+    fn process(&mut self, samples: &mut [Vec<f32>], frame_count: usize);
+
+    /// Returns the output channel names (`Some` = channel selection, `None` = unchanged).
+    fn initialize(&mut self, sample_rate: u32, channel_names: &[String]) -> Option<Vec<String>>;
+
+    fn is_channel_select(&self) -> bool { false }
+    fn set_channel_indices(&mut self, _indices: &[usize]) {}
+    fn fixed_channel_indices(&self) -> Option<Vec<usize>> { None }
     fn is_in_place(&self) -> bool { true }
-    fn total_latency(&self) -> u32 { 0 }
+    fn latency(&self) -> u32 { 0 }
+    fn max_frame_count(&self) -> Option<usize> { None }
+    fn reset(&mut self) {}
 }
 ```
 
@@ -109,12 +118,20 @@ Static `match` dispatch from `EffectConfig`/`EffectType` to concrete filter inst
 - `loudness.rs`: loudness compensation.
 - `fir.rs`: FIR infrastructure (SIMD dot / block FFT).
 - `peq_hybrid.rs`: hybrid PEQ (IIR + FIR).
-- `aural.rs`, `reverb.rs`, `maximizer.rs`, `wide.rs`: effect processors.
+- `aural.rs`, `reverb.rs`, `compressor.rs`, `wide.rs`: effect processors.
 - Historical/removed: `graphic_eq.rs`, `convolution.rs`, `vst.rs` are deprecated or removed; current effects use the TOML model.
 
 ## 4.22 Effect processors (v9.11)
 
-The v1 TOML effect set includes `peq`, `preamp`, `aural`, `reverb`, `maximizer`, `wide`, `loudness`. Each effect has an `EffectConfig` with `spec()` for fingerprinting and `create_from_model` for instantiation.
+The v1 TOML effect set includes `peq`, `preamp`, `aural`, `reverb`, `compressor`, `wide`,
+`loudness`. Each effect has an `EffectConfig` with `spec()` for fingerprinting and
+`create_from_model` for instantiation. Legacy `maximizer` / `leveler` types map to `compressor`
+with their old parameter keys ignored.
+
+Parameter ranges/defaults, the PEQ band types (`peaking` / `low_shelf` / `high_shelf` /
+`low_pass` / `high_pass`, with passband gain applied for the pass filters) and the per-effect
+algorithms are documented in `driver/en/Configuration and DSP Design.md` and (in Chinese,
+verbatim) `driver/zh/模块引用规范/pipeline 模块规范.md` 4.22.
 
 ## Hard constraints
 
@@ -122,4 +139,5 @@ The v1 TOML effect set includes `peq`, `preamp`, `aural`, `reverb`, `maximizer`,
 2. `chain.rs` must not depend on `dsp/transition.rs`; transition state is managed by object.
 3. `context.rs` must not reference `dsp/filter.rs` types.
 4. RT path must be allocation-free and non-blocking.
-5. `Filter`/`Chain`/`DspContext`/`RealtimeContext` must not appear in public API surface (D8 pending).
+5. `Filter`/`Chain`/`DspContext`/`RealtimeContext` must not appear in the public API surface
+   (D8 pending; enforce by crate visibility, not by adding an api layer).

@@ -12,6 +12,14 @@ utils/        -> depends on no other module
 telemetry/    -> depends on pipeline/realtime/ring.rs
 ```
 
+> **No api/interface layer**: the driver's external surface is the crate root `lib.rs` and the
+> modules it exposes — the CLI depends on the crate as a path dependency and reuses `install/`
+> functions directly, and the App goes through CLI / Tauri commands. Neither goes through an extra
+> API layer. The dependency flow stays `sys <- pipeline <- config`, plus `install/`,
+> `object/` (the only glue layer), `telemetry/` and `utils/`. Keeping RT types out of the public
+> surface is done by **visibility tightening** (`pub(crate)`, no re-exports; see D8), not by
+> adding a layer.
+
 ## 2. Complete module tree
 
 ```
@@ -58,7 +66,7 @@ src/
 │       ├── math.rs
 │       ├── loudness.rs
 │       ├── aural.rs
-│       ├── maximizer.rs
+│       ├── compressor.rs
 │       ├── reverb.rs
 │       └── wide.rs
 │
@@ -71,6 +79,7 @@ src/
 │   │   ├── format.rs
 │   │   ├── slots.rs
 │   │   ├── sysfx.rs
+│   │   ├── stale.rs
 │   │   └── info.rs
 │   └── selector/
 │       └── operation.rs
@@ -147,11 +156,12 @@ App and CLI reference specifications are under `app/` and `cli/` respectively.
 | `install/device/slots.rs` | sys/registry, utils/guid, prelude | pipeline/config |
 | `install/device/info.rs` | device/endpoint, device/format, device/slots, sys/registry, object/vx_reg_props, utils/error | pipeline/config |
 | `install/device/sysfx.rs` | device/slots, object/vx_reg_props, sys/registry, prelude, utils/error | pipeline/config |
+| `install/device/stale.rs` | device/endpoint, device/info, device/slots, device/sysfx, selector/operation, sys/registry, prelude, utils/guid, utils/error | pipeline/config |
 | `install/selector.rs` | selector/operation (entry aggregation) | pipeline/config |
 | `install/selector/operation.rs` | install/audiodg, device/slots, device/sysfx, device/format, sys/registry, object/vx_reg_props, object/dll_exports, prelude, utils/error | pipeline/config |
 | `install/audiodg.rs` | sys/registry, utils/error | pipeline/config/object |
 | `config/parser.rs` | config/error, config/model, pipeline/dsp/model, pipeline/dsp/filter, pipeline/dsp/factory | concrete dsp types, install/object, pipeline process/chain/context, sys/audio_defs |
-| `config/model.rs` | config/error, pipeline/dsp/model, pipeline/dsp/{aural,maximizer,reverb,wide} | install/object, pipeline process/chain |
+| `config/model.rs` | config/error, pipeline/dsp/model, pipeline/dsp/{aural,compressor,reverb,wide} | install/object, pipeline process/chain |
 | `config/watcher.rs` | config/error, utils | install/object |
 | `object/apo.rs` | all modules (glue) | none |
 | `object/apo/*.rs` | as authorized by the detailed table | object/apo circular dependencies |
@@ -185,7 +195,7 @@ App and CLI reference specifications are under `app/` and `cli/` respectively.
 | D5 | `install/` must not depend on `pipeline/config` (except `object/vx_reg_props`) | ✅ |
 | D6 | `object/` is the only glue layer allowed to depend on all modules; `object/apo/*` only uses authorized sibling references | ⚠️ per table |
 | D7 | `telemetry/` depends only on `pipeline/realtime/ring` | ✅ |
-| D8 | RT path types (`Filter/Chain/DspContext/RealtimeContext`) must not appear in public API surface | pending |
+| D8 | RT path types (`Filter/Chain/DspContext/RealtimeContext`) must not appear in public API surface | pending (enforce via `lib.rs` visibility: `pub(crate)` RT types, no re-exports; **no api layer is introduced**) |
 
 ### 4.3 Automatic validation
 

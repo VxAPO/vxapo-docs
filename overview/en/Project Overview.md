@@ -4,7 +4,7 @@
 
 VxAPO is a Windows audio APO (Audio Processing Object) DSP engine that provides:
 
-- Real-time audio DSP: EQ, gain, loudness, reverb, maximizer, wide, etc.
+- Real-time audio DSP: EQ, gain, loudness, reverb, dynamic compression, stereo widening, etc.
 - Per-device configuration: one `config.toml` per audio endpoint.
 - User-facing tools for different levels: CLI and GUI App.
 - Hot reload with dual-chain transition: no pops or interruptions when changing configuration.
@@ -44,9 +44,13 @@ vxapo_driver.dll (APO)
 
 ## 5. Current status
 
-- Driver: TOML config model, hybrid PEQ, DSP numerical safety, install/uninstall, hot reload.
-- CLI: `list/status`, `install`, `uninstall`, `config`, `snapshot`.
-- App: device list, config read/write, auto-save, install/uninstall, import/export, i18n.
+- Driver: TOML config model, hybrid PEQ, DSP numerical safety, install/uninstall, hot reload;
+  effects are peq/preamp/aural/reverb/compressor/wide/loudness, plus stale-GUID detection,
+  migration and cleanup (device instance ID as the stable identity).
+- CLI: `list/status`, `install` (with `--verify`), `uninstall`, `config`, `snapshot`,
+  `stale list/migrate/cleanup/fix-acl`.
+- App: device list, config read/write, auto-save, install/uninstall, import/export, i18n, and a
+  stale-GUID banner (migrate/cleanup + ACL self-repair).
 - Production build: `panic = "abort"`, `codegen-units = 1`.
 
 ## 6. Key design principles

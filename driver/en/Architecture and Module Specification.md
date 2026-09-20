@@ -60,6 +60,7 @@ Handles device APO install/uninstall and device query.
 - `device/slots.rs`: 5 APO slots, install modes, child APO path.
 - `device/info.rs`: `enumerate_devices` single entry.
 - `device/sysfx.rs`: CAPX default-effect template takeover/restore.
+- `device/stale.rs`: stale-GUID detection, migration and cleanup (device instance ID as stable identity).
 - `selector/operation.rs`: `install_endpoint` / `uninstall_endpoint` with transaction rollback.
 - `audiodg.rs`: `DisableProtectedAudioDG` check and audio service control.
 
@@ -124,6 +125,8 @@ Third-party dependencies:
 ```text
 CLI/App
   -> install::device::info::enumerate_devices
+  -> install::device::stale::{list_stale_installs, migrate_install, cleanup_orphan, fix_config_acl}
+       (stale GUIDs: migrate config/snapshot, repair install state, clean up orphans)
   -> install::selector::operation::install_endpoint
        -> audiodg check
        -> registry slot writes

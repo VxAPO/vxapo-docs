@@ -30,16 +30,20 @@ vxapo-cli/
 | Command | Behavior | Status |
 |---------|----------|--------|
 | no-argument launch | interactive menu: 1 viewer mode / 2 driver mode / q quit | implemented |
-| `list` / `status` | enumerate devices, show GUID/version/mode/5 slots/EAPO/lost status; supports `--json` | implemented |
+| `list` / `status` | enumerate devices, show GUID/version/mode/5 slots/EAPO/lost status; supports `--json` (includes `device_id`, the device instance ID) | implemented |
 | `install -d <device> [--mode ...] [--no-child] [--verify] [--timeout=<sec>] [--progress-file=<path>]` | install/reinstall; `--verify` runs the verification loop (write → full service restart → named-pipe APO load verification → score/retry), see 5.1b | implemented |
-| `uninstall -d <device>` | uninstall (stop audio service, clear slots, verify, snapshot diff) | implemented |
+| `uninstall -d <device>` | uninstall (stop audio service, clear slots, verify, snapshot diff); falls back to stale cleanup when the endpoint key is already gone | implemented |
 | `config set/show` | write/read `C:\ProgramData\VxAPO\{GUID}\config.toml` | implemented |
 | `snapshot diff/restore/create` | registry baseline snapshot, diff, restore | implemented |
+| `stale list/migrate/cleanup/fix-acl` | stale-GUID records: list, migrate to the current endpoint, clean up orphans, repair config ACL | implemented |
 | `[0-N]` select endpoint | viewer-mode endpoint detail submenu | implemented |
 | `[x]` registry dump | dump endpoint registry keys | implemented |
 | `[r]` refresh / `[q]` exit | refresh / exit | implemented |
 
 The CLI is no longer a pure interactive diagnostic tool. It depends on `vxapo-driver` APIs such as `install::device::info::enumerate_devices` and `install::selector::operation`.
+
+> `stale` is implemented but not yet listed in the `vxapo-cli help` text output; typing
+> `stale list` and friends in the interactive menu works.
 
 ---
 
@@ -139,6 +143,7 @@ config show -d <device>
 ```text
 uninstall -d <device>
   -> require snapshot baseline
+  -> if find_endpoint_path(guid) fails and guid is in `stale list`: stale cleanup (Child APOs + config dir)
   -> stop audio service / kill audiodg
   -> uninstall_endpoint(&guid)
   -> verify no VxAPO CLSID remains in 5 slots
@@ -162,6 +167,29 @@ Transitions:
 - L --uninstall--> B
 - Reinstall replaces the baseline.
 
+### 5.6 Stale GUID flow (`stale`, added 2026-09-10)
+
+```text
+vxapo-cli stale list [--json]
+vxapo-cli stale migrate --from <oldGuid> --to <newGuid> [--config-from <guid>] [--snapshot-from <guid>] [--json]
+vxapo-cli stale cleanup -d <guid> [--json]
+vxapo-cli stale fix-acl -d <guid> [--json]
+```
+
+- `stale list` (read-only): `install::device::stale::list_stale_installs()` scans
+  `HKLM\SOFTWARE\VxAPO\Child APOs\{oldGuid}` + `C:\ProgramData\VxAPO\{oldGuid}` +
+  `snapshots\{oldGuid}.json`, matches records to active endpoints by device instance ID, and emits
+  `StaleInstall[]` with `target_state` = `matched_healthy` / `matched_partial` / `unmatched`.
+- `stale migrate` (admin): stop the audio service + `taskkill audiodg`, then `migrate_install`
+  (default source selection: latest config, earliest snapshot among the same device instance's old
+  records and the target's existing files), migrate `config.toml` + snapshot, repair the new GUID
+  install state, delete the old records, back up overwritten target files to
+  `C:\ProgramData\VxAPO\_migration_backup\{guid}\`, and emit a `MigrationReport`. On failure the
+  audio service is restarted.
+- `stale cleanup` (admin): remove records that match no active endpoint.
+- `stale fix-acl` (admin): grant the interactive user Modify on `config.toml` / snapshot
+  (`icacls` SID `*S-1-5-4`); the App calls this automatically after a denied write and retries.
+
 ---
 
 ## 6. Hard constraints
@@ -171,3 +199,5 @@ Transitions:
 3. Do not duplicate enumeration; use `enumerate_devices` as the single entry point.
 4. Config writes belong to the CLI (driver only provides default config fallback).
 5. Install/uninstall require administrator privileges; the CLI detects and rejects non-admin operations.
+6. Stale-GUID migration/cleanup/ACL repair are install-layer writes: they require administrator
+   privileges and go through `install::device::stale` + `install::selector::operation` only.

@@ -53,7 +53,10 @@ gain_db = 3.0
 q = 1.0
 ```
 
-Effect types in v1: `peq`, `preamp`, `aural`, `reverb`, `maximizer`, `wide`, `loudness`. `enabled = false` bypasses; `channels = ["FL", "FR"]` restricts scope (default all).
+Effect types in v1: `peq`, `preamp`, `aural`, `reverb`, `compressor`, `wide`, `loudness`.
+`enabled = false` bypasses; `channels = ["FL", "FR"]` restricts scope (default all). Legacy
+`maximizer` / `leveler` types and their old parameter keys are accepted but ignored and map to
+`compressor` defaults.
 
 Validation: unknown type / unknown key / inapplicable field / missing required key / out-of-range / PEQ band count not in [1, 31] (global total <= 31) / duplicate or non-device channel name -> whole-file parse failure; old chain is retained.
 

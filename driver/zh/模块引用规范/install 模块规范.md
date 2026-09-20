@@ -18,6 +18,8 @@ install/
 │   ├── format.rs          # WAVEFORMATEX 解析 + 通道掩码兜底（只读）
 │   ├── slots.rs           # 5 槽位读取 + 3 模式 + GUID 回退（只读）
 │   ├── sysfx.rs           # CAPX MSFX 模板定位/接管/恢复（v9.0）
+│   ├── identity.rs        # 端点稳定身份（实例 ID / 硬件 ID / 产品名 / 端点历史）
+│   ├── stale.rs           # 旧 GUID 残留检测/迁移/清理（分层身份匹配）
 │   └── info.rs            # 组合查询层 + 设备枚举唯一入口（只读）
 ├── selector.rs            # 模块入口（pub mod operation;）
 ├── audiodg.rs             # DisableProtectedAudioDG 检查与修复
@@ -552,8 +554,13 @@ pub fn uninstall_endpoint(device_guid: &str) -> Result<()>;
 **卸载流程**（v8.5 补删键；v8.9 实现对齐——只删 VxAPO CLSID/删空才恢复/接管者不覆盖）：
 
 **卸载语义（2026-08-04 明确+实测）**：只卸载「能确定属于 VxAPO 的部分」，绝不碰其他 APO：
-0. **先停 AudioSrv**（`install/audiodg::stop_audio_service`）——audiodg 持有点端会锁
-   MMDevices 槽位句柄，不停服删除会失败
+0. **先停 AudioSrv**（`install/audiodg::stop_audio_service`）——作用**不是**解锁：
+   写/删 `FxProperties` 值只需句柄具备 `KEY_SET_VALUE`（`open_for_write` 即是），
+   2026-09-16 实测：音频播放中、DLL 已被 audiodg 加载、audiodg 持有点端时删槽位值
+   同样成功。真正的理由是 ① **释放 `vxapo_driver.dll` 模块映像**（audiodg 不退出则
+   紧随其后的重装/换 DLL 会因文件被占用而覆盖失败；NSIS `installer-hooks.nsh`
+   同样为此在安装/卸载前停服务）② 让本流程末尾的端点重启
+   （`pnputil /restart-device`）**立刻生效**（引擎会缓存端点 APO 链）
 1. 定位端点 FxProperties（不存在 → 视为未安装，返回成功）；**用 `open_for_write` 打开**
    （删除值需写权限；SAM_ALL 超权限在 MMDevices 端点键被拒 0x80070005）
 2. **只删 VxAPO 的 CLSID**：遍历 5 槽位，仅当槽位值 == VxAPO PRE/POST CLSID 才删除
@@ -630,6 +637,30 @@ pub fn stop_audio_service() -> Result<()>;
 
 /// 重启 Windows 音频服务（安装/卸载收尾，EAPO 安装对齐）。
 pub fn restart_audio_service() -> Result<()>;
+
+/// 确保音频服务处于运行状态（不重启，仅在停止时启动）。
+pub fn ensure_audio_service_running() -> Result<()>;
+
+/// 依赖服务感知地停止音频服务（先停 AudioEndpointBuilder 等依赖，轮询 STOPPED）。
+pub fn stop_audio_service_with_dependents(stop_timeout_secs: u32) -> Result<()>;
+
+/// 依赖服务感知地启动音频服务（轮询 RUNNING）。
+pub fn start_audio_service_with_dependents(start_timeout_secs: u32) -> Result<()>;
+
+/// 停服 + 启服并等待结果（--verify 安装流程用）。
+pub fn restart_audio_service_wait(stop_timeout_secs: u32, start_timeout_secs: u32) -> Result<()>;
+
+/// 定向重启单个端点设备（render / capture），不整服重启。
+pub fn restart_endpoint_device(device_guid: &str, is_capture: bool) -> Result<()>;
+
+/// 事件驱动等待 `audiodg.exe` 全部退出（Toolhelp 快照取 PID →
+/// OpenProcess(SYNCHRONIZE) → WaitForSingleObject，进程一退出立即返回；上限两轮扫描）。
+///
+/// 用途：停服/`taskkill` 之后确认 **模块映像**已释放（audiodg 不退出则
+/// `vxapo_driver.dll` 仍被占用，随后的重装/换 DLL 会覆盖失败）。
+/// 槽位值的写/删不依赖本函数（只需 KEY_SET_VALUE 句柄）。
+/// 返回 true = 已无 audiodg；false = 超时仍有残留（调用方 best-effort 继续）。
+pub fn wait_for_audiodg_exit(timeout_ms: u32) -> bool;
 ```
 
 **注册表路径**：`HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Audio`
@@ -644,3 +675,164 @@ pub fn restart_audio_service() -> Result<()>;
 - 不使用 unsafe 指针转换（pre 的 `RegKey::handle()` 已暴露底层句柄）
 
 **禁止**：不知道 `pipeline/` 的存在
+
+---
+
+### 5.7 `install/device/stale.rs`
+
+**职责**：Windows 重新枚举端点后，旧 GUID 的槽位键消失但 VxAPO 记录残留
+（`HKLM\SOFTWARE\VxAPO\Child APOs\{旧GUID}`、`C:\ProgramData\VxAPO\{旧GUID}`、
+`snapshots\{旧GUID}.json`）。本模块以**设备稳定身份**（端点历史 / 设备实例 ID / 硬件 ID）
+把旧记录匹配到当前活跃端点，并支持迁移/清理。
+
+**分层匹配（v9.24，2026-09-16 修复）**：Windows 大版本更新会重排端点 GUID，并可能把
+老端点键 `...\MMDevices\Audio\{Render|Capture}\{oldGuid}` **整体删除**——此时原本
+「读老端点键拿实例 ID」的配对路径失效，记录退化为 `unmatched`（实测 App 只剩清理出口，
+恢复逻辑不触发）。现按优先级分层匹配，命中来源写入 `matched_by`：
+
+1. `endpoint_history`：老 GUID 出现在活跃端点的端点历史属性
+   `{4b416b7d-8501-40c1-acfd-97aa9bdc17c8},1`（REG_MULTI_SZ，元素形如
+   `{0.0.0.00000000}.{guid}`）里；或活跃 GUID 出现在记录已落盘的 `EndpointHistory` 值里；
+2. `device_instance_id`：老端点键仍可读时的实例 ID（旧路径保留）；
+3. `stored_identity`：记录键里安装/迁移时落盘的 `DeviceInstanceId`；
+4. `hardware_id`：硬件 ID 相交且产品名一致，且**唯一**命中（USB 换口兜底）。
+
+多候选（歧义）或全部未命中 → `unmatched`：只提供清理，不猜、不自动迁移。
+
+**引用来源**：
+- `crate::install::device::{endpoint::query_endpoint, info::{enumerate_devices, detect_mode_for_guid}}`
+- `crate::install::device::slots::{child_apo_key_exists, ChildApoKind, InstallMode, CHILD_APO_PATH_ROOT, FX_PROPERTIES_KEY, INSTALL_VERSION}`
+- `crate::install::device::sysfx::{decode_backups, SYSFX_BACKUP_VALUE}`
+- `crate::install::selector::operation::{find_endpoint_path, write_install_config, InstallConfig}`
+- `crate::sys::registry::{delete_tree, split_key, RegKey, RegValue}`
+- `crate::utils::guid::parse_guid_string`、`crate::utils::vx_error::{Result, VxApoError}`
+
+**导出给**：`vxapo-cli`（`stale list/migrate/cleanup/fix-acl`）、App 后端命令
+`list_stale_installs` / `migrate_stale_install` / `cleanup_stale_install` / `repair_stale_acl`；
+`selector/operation.rs::uninstall_endpoint` 的残留兜底路径。
+
+**公开 API**：
+
+```rust
+#[derive(Serialize)] #[serde(rename_all = "snake_case")]
+pub struct StaleInstall {
+    pub guid: String,
+    pub device_instance_id: String,
+    pub display_name: String,
+    pub matched_by: Option<String>,    // endpoint_history | device_instance_id | stored_identity | hardware_id
+    pub config_path: Option<String>,
+    pub config_mtime_ms: Option<u64>,
+    pub snapshot_path: Option<String>,
+    pub snapshot_mtime_ms: Option<u64>,
+    pub premix_slot: Option<String>,
+    pub postmix_slot: Option<String>,
+    pub inferred_mode: String,
+    pub has_child_backup: bool,
+    pub has_sysfx_backup: bool,
+    pub target_guid: Option<String>,
+    pub target_name: Option<String>,
+    pub target_state: String,          // matched_healthy | matched_partial | unmatched
+}
+
+#[derive(Serialize)] #[serde(rename_all = "snake_case")]
+pub struct MigrationReport {
+    pub success: bool,
+    pub target_guid: String,
+    pub config_from: Option<String>,
+    pub snapshot_from: Option<String>,
+    pub config_migrated: bool,
+    pub snapshot_migrated: bool,
+    pub install_repaired: bool,
+    pub removed_guids: Vec<String>,
+    pub warnings: Vec<String>,
+}
+
+/// 扫描旧 GUID 安装记录，并匹配当前活跃端点（只读）。
+pub fn list_stale_installs() -> Result<Vec<StaleInstall>>;
+
+/// 清理一个无法匹配到活跃端点的旧 GUID 记录。
+pub fn cleanup_orphan(guid: &str) -> Result<()>;
+
+/// 修复迁移后 config/snapshot 的 ACL：给交互用户授予 Modify。
+pub fn fix_config_acl(guid: &str) -> Result<()>;
+
+/// 把旧 GUID 安装迁移到新 GUID。
+///
+/// `config_from` / `snapshot_from` 为显式来源；缺省按「最新 config、最早 snapshot」
+/// 在同设备实例的旧记录与目标现有文件之间选择。
+pub fn migrate_install(
+    from: &str,
+    to: &str,
+    config_from: Option<&str>,
+    snapshot_from: Option<&str>,
+) -> Result<MigrationReport>;
+```
+
+**关键路径**：
+- 配置根：`C:\ProgramData\VxAPO`；快照：`C:\ProgramData\VxAPO\snapshots`；
+  迁移备份：`C:\ProgramData\VxAPO\_migration_backup`。
+- 子 APO 根：`HKLM\SOFTWARE\VxAPO\Child APOs`。
+
+**实现要点**：
+- `target_state` 由「分层匹配结果 + `target_health`」决定；`matched_by` 记录命中来源
+  （未命中为 `null`），供 CLI `stale list` 与 App 诊断展示。
+- 记录键（`Child APOs\{guid}`）新增 4 个**值**（不是子键——迁移的 `copy_values`
+  只搬值，写成子键会在迁移时静默丢失）：`DeviceInstanceId`（REG_SZ）、
+  `DeviceHardwareIds`（REG_MULTI_SZ）、`DeviceProductName`（REG_SZ）、
+  `EndpointHistory`（REG_MULTI_SZ，小写带花括号）。它们**不参与** APO 加载——
+  加载只看 `FxProperties` 槽位 `{d04e05a6-…},0/3/5/6/7`；该键仍只由 install 建、
+  uninstall 整键删，语义不变。
+- 安装期由 `selector/operation.rs::write_child_apo_config` 写入身份值；迁移成功后
+  用活跃端点身份刷新，并把 `EndpointHistory` 写回并集（已落盘历史 ∪ 活跃端点历史 ∪
+  各旧 GUID ∪ 新 GUID，去重排序），使后续再次刷新 GUID 仍能认回同一设备。
+- 迁移前把会被覆盖的目标文件备份到 `_migration_backup\{target_guid}\`，
+  `removed_guids` 记录被删除的旧 GUID，`warnings` 收集非致命问题（如 ACL 修复失败）。
+- `fix_config_acl` 用 `icacls` 给交互用户 SID `*S-1-5-4` 授予 Modify（目录递归 `(OI)(CI)M /T`）。
+- `stale migrate` **全程不停服**（2026-09-16 实测）：写/删端点 `FxProperties` 值只需
+  句柄具备 `KEY_SET_VALUE`（`RegKey::open_for_write` 即是），与 audiodg 是否持有点端
+  无关——在活动音频流上删除槽位值同样成功；历史 0x80070005 来自旧实现用 `SAM_ALL`
+  （含 CreateSubKey 位，ACL 未授予）或只读句柄打开该键。健康路径只写 ProgramData
+  文件与 `HKLM\SOFTWARE\VxAPO\Child APOs\*` 值，`config.toml` 也不会被"占用"
+  （DLL 一次性 `fs::read` + 目录通知热重载，App 一直用 tmp+rename 改写）。
+  修复分支（目标安装状态不健康 → `write_install_config` 改写槽位）在写完后**重启该端点**
+  （`audiodg::restart_endpoint_device`）让变更生效——引擎会缓存端点 APO 链，只改注册表
+  不会立刻重载（实测：删掉槽位值后新起的流仍加载旧 APO）。收尾统一调
+  `ensure_audio_service_running()`（已运行则幂等返回）。
+- `copy_file` 的 `tmp → 目标` 替换带有限重试（5 次 × 50 ms，仅对
+  ACCESS_DENIED/SHARING_VIOLATION/LOCK_VIOLATION 重试）——覆盖"不停服时 rename
+  恰好撞上 DLL 读取"的微秒级窗口，避免一次瞬时共享冲突让整次迁移硬失败。
+- 需管理员权限的调用由 CLI / App 提权路径完成；本模块自身不弹 UAC。
+
+**禁止**：依赖 `pipeline/`、`config/` 的运行时语义。
+
+---
+
+### 5.8 `install/device/identity.rs`
+
+**职责**（v9.24 新增）：跨端点 GUID 刷新的**稳定身份**读取与落盘，供 `stale.rs` 配对、
+`selector/operation.rs` 安装期写入身份使用。不依赖老端点键，因此端点键被 Windows
+整体删除后仍可工作。
+
+**身份来源**：
+- 活跃端点 `Properties` 子键：`PKEY_DeviceInstanceId`（`{b3f8fa53-…},2`）、
+  `PKEY_Device_ProductName`（`{b3f8fa53-…},6`）、
+  `PKEY_DeviceInterface_FriendlyName`（`{a45c254e-…},2`）、
+  设备节点硬件 ID（`{9dad2fed-3c19-4cde-b3c9-1bd56be25698},0`，REG_MULTI_SZ）、
+  端点历史（`{4b416b7d-8501-40c1-acfd-97aa9bdc17c8},1`，REG_MULTI_SZ）。
+- VxAPO 记录键值：`DeviceInstanceId` / `DeviceHardwareIds` / `DeviceProductName` /
+  `EndpointHistory`（与 `operation.rs` 写入的值名一致）。
+
+**纯函数（可单测）**：
+- `normalize_device_id`：`\\?\`、`{1}.`、`{2}.` 前缀**循环**剥离（实证
+  `{2}.\\?\usb#vid_…` 叠加形态）、`#`→`\`、大写、去首尾 `\`；
+- `normalize_endpoint_guid`：`{0.0.0.00000000}.{guid}` / `{0.0.1.00000000}.{guid}` /
+  接口路径 / 裸 GUID → 小写 `{guid}`（非法输入返回 `None`）；
+- `normalize_endpoint_history` / `merge_endpoint_history`：解析、去重、排序。
+
+**实现要点**：
+- `read_endpoint_identity` 缺失值一律降级为空值（不返回错误），保证扫描不因单台设备
+  属性异常而整体失败。
+- 身份值一律写成**值**而非子键：`stale.rs::copy_values` 迁移时只搬值。
+- 新增/读取身份**不改变** APO 加载：加载只看 `FxProperties` 槽位。
+
+**禁止**：依赖 `pipeline/`、`config/`；写入 `MMDevices`（端点键只读）。

@@ -6,6 +6,9 @@
 > **依据**：源码实读 `D:\APO_Project\VxAPO\vxapo-app`（Vite 7 + React 19 + TS 5.8 +
 > framer-motion 13 + lucide-react + @radix-ui + @dnd-kit + @tauri-apps/api 2，2026-08-23）
 > + `CLI 引用规范.md` / `overview/项目概览.md` / driver `配置与DSP设计.md`。
+>
+> **最近修订**：2026-09-12 —— 按 app/driver/cli 三仓库当前代码回填旧 GUID 残留横幅与
+> 迁移/清理、轮询与缓存策略、组件/hook 清单与后端命令表。
 
 ---
 
@@ -38,7 +41,7 @@ vxapo-app/
 │   ├── Cargo.toml / tauri.conf.json / icons/（多尺寸 ico + png）
 │   └── src/
 │       ├── main.rs
-│       └── lib.rs          # 11 个 Tauri commands + 提权 CLI 封装（见第八章）
+│       └── lib.rs          # 18 个 Tauri commands + 提权 CLI 封装（见第八章）
 └── src/
     ├── main.tsx            # 入口（挂载 App + I18nProvider）
     ├── App.tsx             # 主应用：设备/配置/效果器/预设/语义与参数视图编排
@@ -46,21 +49,23 @@ vxapo-app/
     ├── styles/             # theme/topbar/sidebar/cards/tabs/device/curve/dialogs/
     │                       # toast/drag/overlay-scroll/dark（dark 最后级联）
     ├── assets/             # VxAPO_icon_v4.svg 等图标
-    ├── components/         # 27 个 UI 组件（见 3.3）
+    ├── components/         # 28 个 UI 组件（见 3.3）
     ├── data/library.ts     # 预设库数据
-    ├── hooks/              # 13 个 hooks（见 3.4）
+    ├── hooks/              # 15 个 hooks（见 3.4）
     └── lib/                # api/model/toml/effects/blocks/channels/curve/rbj/...
 ```
 
 **现状结论**：
 
-- Tauri **Rust 后端**提供 11 个命令：config 读写、设备列表、安装/卸载（含失败回滚）、
-  进度读取、导入导出、资源管理器定位、窗口显示；并启用 `opener` / `dialog` 插件。
+- Tauri **Rust 后端**提供 18 个命令：config 读写（含指纹短路读）、设备列表、安装/卸载
+  （含失败回滚）、旧 GUID 残留列表/迁移/清理/ACL 修复、进度读取、导入导出、资源管理器定位、
+  语言读写、窗口显示；并启用 `opener` / `dialog` 插件。
 - 前端按 `components / hooks / lib / data / styles` 拆分；业务状态集中在 `App.tsx` 与 hooks，
   组件受控。
-- 已实现：设备枚举、config 读写与自动保存（300ms 去抖）、外部热更新轮询（2s）、
-  安装/卸载（`--verify` 闭环 + 进度事件）、拖拽导入导出、框选批量操作、i18n 中英文、
-  自绘 overlay 滚动条、语义/参数双视图与效果器语义强度映射。
+- 已实现：设备枚举、config 读写与自动保存（300ms 去抖）、外部热更新轮询
+  （2s + 内容指纹短路，窗口不可见时暂停）、安装/卸载（`--verify` 闭环 + 进度事件）、
+  旧 GUID 残留横幅（迁移/清理 + 写入被拒时 ACL 自修复）、拖拽导入导出、框选批量操作、
+  i18n 中英文、自绘 overlay 滚动条、语义/参数双视图与效果器语义强度映射。
 - 数据模型以 `Block` / `Band` / `EffectItem` 为主（PEQ 块 + 非 PEQ 效果器）。
 
 ### 2.2 实际源码结构（2026-08-23）
@@ -75,12 +80,13 @@ src/
 │                              # EffectCard, EffectSemanticCard, SemanticUnitCard, BandParamCard,
 │                              # GainSlider, SelectionToolbar, DragCard, DragLayer,
 │                              # InstallDialog, UninstallDialog, ImportDialog, SavePresetDialog,
-│                              # SettingsDialog, ConfirmDialog, OverlayScrollbar, Toast, VxSelect
+│                              # SettingsDialog, ConfirmDialog, OverlayScrollbar,
+│                              # StaleInstallBanner, Toast, VxSelect
 ├── data/library.ts            # 预设库（含中英文字段）
 ├── hooks/                     # useConfig, useDevices, useDragSort, useViewAnimation,
 │                              # useMarqueeSelection, useChannelState, usePresetActions,
 │                              # useCurveHover, useThrottledCompute, useTheme, useToast,
-│                              # useInterval, useWindowControls
+│                              # useInterval, useWindowControls, useEdgeTintLayer, useGlassRing
 ├── lib/
 │   ├── api.ts                 # Tauri 命令封装
 │   ├── model.ts               # 共享类型 + 类型守卫
@@ -142,6 +148,7 @@ src/
 | `SelectionToolbar.tsx` | 框选批量工具栏（保存/删除/复制到声道） |
 | `DragCard.tsx` / `DragLayer.tsx` | 拖拽排序卡 / 飞行副本层 |
 | `OverlayScrollbar.tsx` | 自绘 overlay 滚动条（不占布局宽度、淡入淡出、跨设备存活） |
+| `StaleInstallBanner.tsx` | 旧 GUID 残留横幅（当前设备命中残留时提示迁移/清理 + 迁移确认弹窗） |
 | `InstallDialog.tsx` / `UninstallDialog.tsx` | 安装（`--verify` 进度闭环）/ 卸载进度 |
 | `ImportDialog.tsx` / `SavePresetDialog.tsx` / `SettingsDialog.tsx` / `ConfirmDialog.tsx` | 导入 / 保存自定义预设 / 设置 / 确认 |
 | `Toast.tsx` | 轻提示 |
@@ -151,8 +158,10 @@ src/
 
 | Hook | 职责 |
 |------|------|
-| `useConfig.ts` | 读取/解析/自动保存 config.toml（300ms 去抖），2s 轮询外部热更新；31 段上限；按设备初始化调音开关状态 |
-| `useDevices.ts` | 设备列表、选中设备、安装/卸载状态 |
+| `useConfig.ts` | 读取/解析/自动保存 config.toml（300ms 去抖）；2s 轮询外部热更新（内容指纹短路 + 窗口不可见暂停）；写被拒时提权修 ACL 后重试；31 段上限；按设备初始化调音开关状态 |
+| `useDevices.ts` | 设备列表 + 旧 GUID 残留列表（5s 轮询，安装中暂停）、选中设备、安装/卸载、残留迁移/清理状态 |
+| `useEdgeTintLayer.ts` | 外部 Canvas 环带染色层（卡片/工具栏光源采样与脏区重绘） |
+| `useGlassRing.ts` | 玻璃环带几何：按实测宽高注入四角角度与顶部亮线衰减角 |
 | `useDragSort.tsx` | 自定义指针级槽位拖拽引擎（避让/布局动画/飞行落位） |
 | `useViewAnimation.tsx` | 视图切换动画编排（0.32s 平移 + 800ms 高度收窄 + 滚动位置恢复） |
 | `useMarqueeSelection.ts` | 框选矩形与卡片命中（含视图切换残留处理） |
@@ -162,16 +171,20 @@ src/
 | `useThrottledCompute.ts` | 重计算节流（42ms ≈ 24fps，拖动滑块时固定间隔重算 + 停止补算） |
 | `useTheme.ts` | 亮/暗/跟随系统 |
 | `useToast.ts` | 通知 |
-| `useInterval.ts` / `useWindowControls.ts` | 固定间隔轮询 / 窗口控制 |
+| `useInterval.ts` / `useWindowControls.ts` | 可暂停固定间隔轮询 / 窗口控制 |
 
 ### 3.5 src-tauri（Rust 后端命令）
 
 | 命令 | 职责 |
 |------|------|
 | `write_config` / `read_config` | 原子写 / 读 `C:\ProgramData\VxAPO\{guid}\config.toml` |
+| `read_config_checked` | 带内容指纹的读：与传入 `known_revision` 相同则只回指纹、`text = null`（轮询短路） |
+| `read_lang` / `write_lang` | 读写界面语言 `lang.txt`（与安装器共用） |
 | `list_devices` | 调 `vxapo-cli list --json` 并反序列化为强类型 `Device[]` |
 | `install_device` | 后台线程流式执行 `vxapo-cli install --verify --progress-file`，逐行 emit `install-progress`，返回 `InstallResult` |
 | `uninstall_device` / `rollback_install` | 提权运行 CLI 卸载 / 安装失败兜底回滚 |
+| `list_stale_installs` | 只读调用 `vxapo-cli stale list --json`，返回 `StaleInstall[]` |
+| `migrate_stale_install` / `cleanup_stale_install` / `repair_stale_acl` | 提权调用 CLI `stale migrate` / `cleanup` / `fix-acl`，迁移旧 GUID 残留、清理孤儿记录、修 config ACL |
 | `read_progress` | 读取提权 CLI 的进度文件 |
 | `read_import_file` / `export_config` / `open_in_explorer` | 导入导出与资源管理器定位 |
 | `show_main_window` | 按系统明暗设置背景色后显示主窗口（消除白屏） |
@@ -182,7 +195,9 @@ src/
 
 ### 4.1 状态来源
 
-- **设备状态**：`useDevices` 维护 `devices`、`selectedGuid`、`installedDevices`、安装/卸载目标与进度。
+- **设备状态**：`useDevices` 维护 `devices`、`staleInstalls`、`selectedGuid`、`installedDevices`、
+  安装/卸载目标与进度、残留迁移/清理 busy 态；设备与残留列表同一次 `Promise.allSettled`
+  拉取并做浅比较，内容未变时保留旧引用避免整树重渲染。
 - **配置状态**：`useConfig` 维护 `blocks`（PEQ 块）、`effects`（非 PEQ 效果器）、`tuningMap`
   （逐设备顶层 enabled）、`loaded`、`dirtyRef` 与 `tailRef`（未知第三方效果器原文保留）。
 - **通道状态**：`useChannelState` 逐设备记忆通道选择器开关与活动声道。
@@ -197,7 +212,8 @@ UI 操作（增删频段/改参数/切换 enabled/应用预设/语义强度）
   → 300ms 去抖后 buildToml(blocks, enabled, effects, channelCtx) + tail
   → Tauri write_config(guid, content)   # Rust 原子写 C:\ProgramData\VxAPO\{guid}\config.toml
   → driver watcher 检测变更 → 热重载
-  → useConfig 每 2s 轮询 read_config，外部变更自动刷新 UI（编辑中跳过）
+  → useConfig 每 2s 轮询 read_config（后端按内容指纹短路；窗口不可见时暂停，恢复可见补一次），
+     外部变更自动刷新 UI（编辑中跳过）
 
 曲线预览（独立链路）：
   → useThrottledCompute(42ms) 固定间隔重算 buildEvalFreqs + curveRange（RBJ 系数缓存）
@@ -214,6 +230,26 @@ UI 操作（增删频段/改参数/切换 enabled/应用预设/语义强度）
 - 通道模式：`ChannelCtx { mode, first, active }` 决定写入 `channels` 与过滤块；
   非通道模式下只写第一声道的块。
 - 效果器默认参数在写 TOML 时补齐（`defaultEffectParams` + 已有 params 合并）。
+
+### 4.4 旧 GUID 残留流（2026-09-10 新增）
+
+```text
+useDevices（挂载 + 每 5s 轮询；安装中暂停）
+  → listDevices() + listStaleInstalls()（Tauri → CLI list --json / stale list --json）
+  → devices / staleInstalls 分别浅比较后入库
+
+StaleInstallBanner（仅当残留项 target_guid == 当前选中设备时渲染）
+  → 命中多条时优先 matched_partial，其次按 config_mtime_ms 最新
+  → [迁移]（matched_partial 显示"迁移修复"，否则显示"迁移配置"）
+       → 确认弹窗（展示目标设备 / config / snapshot / 推断模式）
+       → migrateStale(from, to) → Tauri migrate_stale_install → CLI stale migrate
+       → refresh() 重新拉设备与残留列表
+  → [清理] → 对命中项逐个 cleanupStale(guid) → CLI stale cleanup → refresh()
+
+config 写入被拒（迁移后 ACL 继承管理员）
+  → useConfig.writeConfigSafe 捕获 access denied → repairStaleAcl(guid)
+       → CLI stale fix-acl（给交互用户授予 Modify）→ 重试原写入（每设备只修一次）
+```
 
 ---
 
@@ -246,6 +282,8 @@ export interface Device {
   index: number;
   name: string;
   guid: string;
+  device_id?: string | null;   // 设备实例 ID（CLI list --json）
+  connection?: string | null;  // 连接名（当前后端输出空串，预留）
   installed_version: string;
   install_mode: string;
   slots: Record<string, string | null>;
@@ -283,6 +321,39 @@ export interface EffectItem {
 }
 
 export type ThemeMode = "light" | "dark" | "system";
+
+/** 旧 GUID 残留（CLI `stale list --json` 反序列化） */
+export interface StaleInstall {
+  guid: string;
+  device_instance_id: string;
+  display_name: string;
+  config_path?: string | null;
+  config_mtime_ms?: number | null;
+  snapshot_path?: string | null;
+  snapshot_mtime_ms?: number | null;
+  premix_slot?: string | null;
+  postmix_slot?: string | null;
+  inferred_mode: string;
+  has_child_backup: boolean;
+  has_sysfx_backup: boolean;
+  target_guid?: string | null;
+  target_name?: string | null;
+  /** matched_healthy | matched_partial | unmatched */
+  target_state: string;
+}
+
+/** 迁移报告（CLI `stale migrate --json`） */
+export interface MigrationReport {
+  success: boolean;
+  target_guid: string;
+  config_from?: string | null;
+  snapshot_from?: string | null;
+  config_migrated: boolean;
+  snapshot_migrated: boolean;
+  install_repaired: boolean;
+  removed_guids: string[];
+  warnings: string[];
+}
 ```
 
 > 类型定义统一收敛在 `lib/model.ts`，并带 `isPresetLibraryEntry` / `isPresetMeta` 类型守卫；
@@ -322,7 +393,8 @@ export type ThemeMode = "light" | "dark" | "system";
 1. **App 不触碰实时音频**：只做配置生成与设备管理，DSP 由 driver pipeline 处理。
 2. **config 路径固定**：`C:\ProgramData\VxAPO\{GUID}\config.toml`（与 CLI/driver 对齐）。
 3. **config 写回由 App/Rust 原子写**：临时文件 + rename；未知第三方效果器保留 `tail` 不破坏。
-4. **自动保存**：300ms 去抖；外部热更新通过 2s 轮询同步 UI。
+4. **自动保存与刷新**：300ms 去抖；外部热更新通过 2s 轮询同步 UI（带内容指纹短路，
+   窗口不可见时暂停）；设备/残留列表 5s 轮询，安装进行中暂停。
 5. **安装/卸载走 CLI 提权**：Rust 侧隐藏提权调用 `vxapo-cli install/uninstall`，
    安装走 `--verify` 闭环，失败有 `rollback_install` 兜底；不直接写注册表。
 6. **顶层总开关已实现**：`enabled` 字段控制整链 passthrough；标签页调音开关逐设备记忆，
@@ -332,6 +404,8 @@ export type ThemeMode = "light" | "dark" | "system";
 9. **滚动条自绘**：原生滚动条隐藏（`os-scroll`），overlay 滚动条不占布局宽度；
    只在真实用户滚动（滚轮/触摸/拖圆头）时出现，停止 1.2s 自动淡出（0.25s 过渡）；
    设备切换先淡出不硬消失。
+10. **旧 GUID 残留**：由 `StaleInstallBanner` 在选中设备页提示；迁移/清理/ACL 修复一律
+    经提权 CLI `stale` 子命令，App 不自行搬文件或改权限。
 
 ---
 
@@ -343,12 +417,18 @@ export type ThemeMode = "light" | "dark" | "system";
 |------|------|------|------|
 | `list_devices` | — | `Device[]` | CLI `list --json` + serde 反序列化 |
 | `read_config` | guid | `String` | 读 `C:\ProgramData\VxAPO\{guid}\config.toml` |
+| `read_config_checked` | guid, known_revision | `{revision, text?}` | 带内容指纹的读（未变时 text=null，供 2s 轮询短路） |
 | `write_config` | guid, content | `()` | 原子写 config.toml（tmp + rename） |
 | `install_device` | guid | `InstallResult` | 后台线程 `install --verify --progress-file`，emit `install-progress` |
 | `uninstall_device` | guid | `String` | 提权 `uninstall -d <guid> --json` |
 | `rollback_install` | guid | `String` | 安装失败后提权回滚卸载 |
+| `list_stale_installs` | — | `StaleInstall[]` | CLI `stale list --json`（只读，不提权） |
+| `migrate_stale_install` | from, to, config_from?, snapshot_from? | `String`（MigrationReport JSON） | 提权 `stale migrate --from --to --json` |
+| `cleanup_stale_install` | guid | `String` | 提权 `stale cleanup -d <guid> --json` |
+| `repair_stale_acl` | guid | `String` | 提权 `stale fix-acl -d <guid> --json` |
 | `read_progress` | tag | `String` | 读取提权 CLI 进度文件 |
 | `read_import_file` | path | `String` | 拖拽导入文件内容 |
+| `read_lang` / `write_lang` | — / lang | `String` / `()` | 读写界面语言 `lang.txt`（与安装器共用） |
 | `export_config` / `open_in_explorer` | guid/path | `()` | 导出并在资源管理器选中 |
 | `show_main_window` | — | `()` | 按系统明暗设置背景色后显示并最大化主窗口 |
 
@@ -364,6 +444,7 @@ export type ThemeMode = "light" | "dark" | "system";
   导入导出、i18n。
 - 预设库、PEQ 块编辑、频响曲线（节流重算）、通道模式、拖拽排序、框选批量操作、
   自定义预设存储、语义/参数双视图、效果器语义强度映射、自绘 overlay 滚动条。
+- 旧 GUID 残留：横幅提示 + 一键迁移/清理 + 迁移后 ACL 自修复（与 driver/cli `stale` 打通）。
 
 ### 后续可扩展
 
@@ -382,6 +463,7 @@ export type ThemeMode = "light" | "dark" | "system";
 5. **主动限幅规则与 driver 一致**：`[-120, +48]`（滤波深切地板 -60）、NaN/inf 拒绝；
    只写回时限幅，不做 DLL 回写。
 6. **31 段上限**：`applyPreset` / `addBand` 均检查总段数，超限拒绝。
+7. **残留迁移不经 App 直接改注册表/文件权限**：只调用提权 CLI `stale migrate/cleanup/fix-acl`。
 
 ---
 

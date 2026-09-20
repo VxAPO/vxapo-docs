@@ -75,7 +75,7 @@ pipeline/
     ├── gain.rs         # 增益（含内部平滑插值）
     ├── loudness.rs     # ISO 226 等响曲线
     ├── aural.rs        # Aural Enhancer（谐波激励）
-    ├── maximizer.rs    # Maximizer
+    ├── compressor.rs   # Compressor（全声道联动 RMS + 软膝）
     ├── reverb.rs       # Dattorro 板式混响
     └── wide.rs         # 立体声加宽
 ```
@@ -1058,7 +1058,7 @@ impl FilterRegistry {
 
 ---
 
-#### 匹配结果
+#### 匹配结果（v9.11 已删除，历史参考）
 
 ```rust
 /// try_create 的返回结果。
@@ -1079,7 +1079,7 @@ pub enum OutcomeKind {
 
 ---
 
-#### 工厂索引常量
+#### 工厂索引常量（v9.11 已删除，历史参考）
 
 ```rust
 pub const FACTORY_COUNT: usize = 19;
@@ -1109,7 +1109,10 @@ pub mod index {
 
 ---
 
-#### 工厂注册
+#### 工厂注册（v9.11 已删除，历史参考）
+
+> 以下 EAPO 风格命令语法（`AuralEnhancer:` / `Reverb:` / `Maximizer:` / `Wide:`）与
+> 工厂注册顺序均不再存在；现行配置为 TOML `[[effects]]`，效果器与参数见本节 4.22。
 
 ```rust
 /// 创建默认工厂列表（19 个，按优先级排序）。
@@ -1490,98 +1493,99 @@ pub fn parse_loudness_params(spec: &str) -> Option<(f32, f32)>;
 
 ---
 
-### 4.22 `pipeline/dsp/` 效果器（aural/reverb/maximizer/wide/peq_hybrid，v9.11）
+### 4.22 `pipeline/dsp/` 效果器（peq/preamp/aural/reverb/compressor/wide/loudness）
 
-> v9.11 新增 `pipeline/dsp/peq_hybrid.rs`：混合式 PEQ——200 Hz 分频，
-> `Fc<200` 段 IIR biquad 级联、`Fc≥200` 段采样率自适应最小相位 FIR
-> （1024–8192 抽头，≤2048 直接 FIR / >2048 分块 FFT）；FIR 目标 =
-> 总目标 − IIR 频响（级联精确拟合）；`latency()` 按执行模式上报
-> （直接 = N-1，分块 = 128）。详见 `PEQ 设计文档.md`。
+> 现行配置模型是 TOML（`config/model.rs` → `ChainModel`），效果器由
+> `pipeline/dsp/factory.rs::create_from_model` 按 `EffectType` 静态 `match` 构造。
+> 旧的 EAPO 风格 `Key Value` 文本命令解析与 `XxxFactory` 动态注册表已删除；
+> 参数范围、键白名单与 PEQ 段数校验全部在 config 层完成（见 `配置与DSP设计.md`）。
 
-**来源与许可**：四个效果器均为独立实现（原创代码，无 AGPL 版权头）——
-`reverb.rs`（v9.3，按 Jon Dattorro 1997 论文）、`maximizer.rs`（v9.8，参考
-FFmpeg `alimiter` 多峰调度）、`wide.rs`（v9.10，200 Hz 线性相位 FIR 分频 +
-高频 M/S 幂指数加宽 + tanh 软限幅，原创实现）、`aural.rs`（v9.9，参考 Jatin
-Chowdhury / FAUST 类电平独立软饱和）。
+`peq_hybrid.rs`：混合式 PEQ——200 Hz 分频，`Fc<200` 段 IIR biquad 级联、
+`Fc≥200` 段采样率自适应最小相位 FIR（1024–8192 抽头，≤2048 直接 FIR / >2048 分块 FFT）；
+FIR 目标 = 总目标 − IIR 频响（级联精确拟合）。
+
+**来源与许可**：效果器均为独立实现（原创代码，无 AGPL 版权头）——
+`reverb.rs`（按 Jon Dattorro 1997 论文）、`compressor.rs`（全声道联动 RMS 压缩器）、
+`wide.rs`（线性相位 FIR 分频 + 高频 M/S 去相关 + 空气吸收 + 软限幅，原创实现）、
+`aural.rs`（二阶 Butterworth 高通 + 电平跟随 + tanh 奇次软饱和）。
 文件直接平铺在 `pipeline/dsp/` 下，无 `fxsound/` 子目录、无 `mod.rs`。
 
-**职责**：四个可调参效果器，以 EAPO 风格 `Key Value` 命令接入 config：
+| 文件 | 效果 | `type` |
+|------|------|--------|
+| `aural.rs` | Aural Enhancer（二阶 Butterworth 高通 + 峰值电平跟随 + tanh 软饱和奇次 + 半波整流偶次，Wet/Dry） | `aural` |
+| `reverb.rs` | Dattorro 板式混响（输入 4 级 AllPass 扩散 + 双槽交叉反馈 + 14 抽头输出；`low_cut_hz` 低频瞬态保护） | `reverb` |
+| `compressor.rs` | Compressor（全声道联动 RMS 检测 + 软膝静态曲线 + dB 域 attack/release 平滑 + makeup 增益） | `compressor` |
+| `wide.rs` | Wide（线性相位 FIR 分频 + 高频 M/S 去相关 + ITD + 空气吸收 + 输出软膝限幅） | `wide` |
+| `peq_hybrid.rs` | 混合式 PEQ（IIR biquad 级联 + 最小相位 FIR；段类型 peaking/low_shelf/high_shelf/low_pass/high_pass） | `peq` |
+| `gain.rs` / `loudness.rs` | 全局增益 / 等响补偿 | `preamp` / `loudness` |
+| `model.rs` / `factory.rs` | `EffectType`/`EffectParams`/spec 指纹 / `create_from_model` 静态分派 | — |
 
-| 文件 | 效果 | 命令 |
-|------|------|------|
-| `aural.rs` | Aural Enhancer（二阶 Butterworth 高通 + 峰值电平跟随 + tanh 软饱和奇次 + 半波整流偶次，Wet/Dry） | `AuralEnhancer:` |
-| `reverb.rs` | Dattorro 板式混响（输入 4 级 AllPass 扩散 + 双槽交叉反馈 + 14 抽头输出，论文 Fig.1/Table 1/Table 2） | `Reverb:` |
-| `maximizer.rs` | Maximizer（v9.8 独立实现：自动增益 + lookahead 峰值限幅 + 多峰事件队列包络 + 16-bit 抖动量化） | `Maximizer:` |
-| `wide.rs` | Wide（200 Hz 1024 点线性相位 FIR 分频 + 高频 M/S 幂指数加宽 + tanh 软限幅，低频支路不处理） | `Wide:` |
+**引用来源**：`crate::pipeline::dsp::filter::Filter`（各 Filter 均实现该 trait）。
 
-**引用来源**：`crate::pipeline::dsp::filter::Filter`（四个 Filter 均实现该 trait）。
-
-**导出给**：`pipeline/dsp/factory.rs`（注册 `AuralEnhancerFactory` / `ReverbFactory` /
-`MaximizerFactory` / `WideFactory`）；`config/` 禁止直接引用。
+**导出给**：`pipeline/dsp/factory.rs::create_from_model`（按 `EffectType` 静态 `match` 构造）；
+`config/` 禁止直接引用具体实现。
 
 **RT 约束**：
 - `initialize` 预计算系数并分配状态/延迟线（Reverb 缓冲按「当前延迟 + 调制余量 +
   最大抽头」预留，保证小 RoomSize 下输出抽头仍有效；调制深度按论文
   EXCURSION=16 采样@29761Hz 换算）；
 - `process` 零分配、无锁、无 I/O、无 panic；输出非有限时置 0；
-- `latency()`：Aural/Reverb/Maximizer 返回 0；Wide（v9.10）与 GraphicEQ 一致，
-  按实际 FIR 延迟上报（511 采样）；
+- `latency()`：由各 Filter 内部实现；但 `pipeline/process.rs` 在初始化时把
+  `latency_frames_atomic` 置 0，**对外不上报延迟**（避免帧协商错位）；
 - 参数变更走 config 热重载（Filter 重建），不支持流内实时改写。
 
 **公开 API**：
 
-> v9.11 起各效果器 Filter 由 `pipeline/dsp/factory.rs::create_from_model`
-> 静态构造（`match EffectType`），`XxxFactory` 动态工厂已删除。
+> 各效果器 Filter 由 `pipeline/dsp/factory.rs::create_from_model` 静态构造
+> （`match EffectType`），动态工厂 `FilterFactory` / `FilterRegistry` 已删除。
+> 参数结构定义在各自文件，`config` 层负责反序列化与校验。
 
 ```rust
 pub struct AuralParams { pub tune_hz: f32, pub drive: f32, pub odd: f32,
     pub even: f32, pub wet: f32, pub dry: f32 }
-pub fn parse_aural_params(params: &str) -> Option<AuralParams>;
 pub struct AuralEnhancerFilter { ... }   // impl Filter
 
-pub struct ReverbParams { ... }
-pub fn parse_reverb_params(params: &str) -> Option<ReverbParams>;
+pub struct ReverbParams { pub room_size: f32, pub decay: f32, pub damping: f32,
+    pub bandwidth: f32, pub density: f32, pub lat5: f32, pub lat6: f32,
+    pub pre_delay_ms: f32, pub motion_rate: f32, pub motion_depth: f32,
+    pub low_cut_hz: f32, pub wet: f32, pub dry: f32 }
 pub struct ReverbFilter { ... }          // impl Filter
 
-pub enum DitherType { None, Uniform, Triangular, Shaped }
-pub struct MaximizerParams { ... }
-pub fn parse_maximizer_params(params: &str) -> Option<MaximizerParams>;
-pub struct MaximizerFilter { ... }       // impl Filter
+pub struct CompressorParams { pub threshold_db: f32, pub ratio: f32, pub knee_db: f32,
+    pub attack_ms: f32, pub release_ms: f32, pub makeup_gain_db: f32,
+    pub wet: f32, pub dry: f32 }
+pub struct CompressorFilter { ... }      // impl Filter
 
-pub struct WideParams { pub intensity: f32 }
-pub fn parse_wide_params(params: &str) -> Option<WideParams>;
+pub struct WideParams { pub gain: f32, pub air: f32, pub air_side: f32,
+    pub mix: f32, pub crossover_hz: f32 }
 pub struct WideFilter { ... }            // impl Filter
+
+pub struct HybridPeqFilter { ... }       // impl Filter（peq_hybrid.rs）
+pub struct GainFilter { ... }            // impl Filter（preamp）
+pub struct LoudnessFilter { ... }        // impl Filter（loudness）
 ```
 
-**默认值**（Aural/Maximizer 取原 Quick preset 1 精神；Reverb 数值与 v9.2 相同、
-按 Dattorro 语义映射；Wet/Dry 均可覆盖）：
-- Aural：TuneHz 1760 / Drive 1.76993 / Odd 1.5 / Even 0.0 / Wet 1.0 / Dry 0.0；
-- Reverb：RoomSize 1.0 / Decay 0.565664 / Damping 0.408290 / Bandwidth 0.350110 /
-  Density 1.0 / Lat5 0.70 / Lat6 0.50 / PreDelay 0 ms / MotionRate 0.110871 /
-  MotionDepth 0.63 ms / Wet 0.3 / Dry 0.9；
-- Maximizer：GainBoost 6 dB / MaxOutput -0.3 dB / Release 10.18 ms /
-  Target 0.32 / Lookahead 0.75 ms / Dither Shaped / Wet 1.0 / Dry 0.0。
-- Wide：Intensity 0.354331（与原 Quick preset 对齐；0 时严格直通，单声道直通）。
+**默认值**（`Default` 实现；Wet/Dry 均可覆盖）：
+- Aural：`tune_hz 1760` / `drive 1.76993` / `odd 1.5` / `even 0.25` / `wet 0.5` / `dry 0.5`；
+- Reverb：`room_size 1.0` / `decay 0.41` / `damping 0.408290` / `bandwidth 0.350110` /
+  `density 1.0` / `lat5 0.70` / `lat6 0.50` / `pre_delay_ms 0` / `motion_rate 0.110871` /
+  `motion_depth 0.63` / `low_cut_hz 100` / `wet 0.27` / `dry 0.73`；
+- Compressor：`threshold_db -18` / `ratio 4` / `knee_db 3` / `attack_ms 10` /
+  `release_ms 100` / `makeup_gain_db 6` / `wet 1.0` / `dry 0.0`；
+- Wide：`gain 0` / `air 0.354331` / `air_side 0` / `mix 0.6` / `crossover_hz 200`。
 
-**关键换算**：
-- Aural 高通：`omega = 2π·TuneHz/sr`，`tmp = 1/(4+ω²+2√2ω)`，
-  `gain = 4·tmp`，`a1 = (8-2ω²)·tmp`，`a0 = (2√2ω-4-ω²)·tmp`；
-  Aural 电平跟随：峰值瞬时 attack / 指数 release（τ≈120 ms，声道共享）；
-  `s = filt/env`，`odd = env·tanh(drive·s)`，`even = env·HP20(0.5·(y+|y|))`；
+**关键算法**：
+- Aural：二阶 Butterworth 高通（`omega = 2π·tune_hz/sr`）+ 峰值电平跟随
+  （瞬时 attack / 指数 release，τ≈120ms，声道共享）；`s = filt/env`，
+  `odd = env·tanh(drive·s)`，`even = env·HP20(0.5·(y+|y|))`，Wet/Dry 混合。
 - Reverb（Dattorro）：参考采样率 29761 Hz；输入扩散 142/107/379/277；
   槽内 672/908（正交 LFO 调制 APF，深度 16 采样@29761Hz）、4453/4217、1800/2656、3720/3163；
-  输出抽头按论文 Table 2（每项 0.6，左/右各 7 抽头）；RoomSize 只缩放槽内段长，
-  输入扩散与输出抽头按物理时间固定；LoopGain = 0.25 + 0.70·Decay；
-- Maximizer（v9.8 独立实现）：自动增益电平估计为全声道单极点 RMS（τ≈250 ms），
-  `GainBoost·rms > Target` 时有效增益 `= max(Target/rms, 1.0)`；lookahead 环形延迟
-  `N = round(sr·lookahead_ms/1000)`（输出滞后 N-1 帧）；attack 斜率
-  `(limit/peak - att)/N`，超限峰值以事件队列按触发顺序调度（参考 FFmpeg alimiter
-  多峰调度），事件后以 `(1 - limit/peak)/(sr·release_sec)` 线性回弹，输出硬钳位到
-  `limit`；抖动用独立 xorshift64* PRNG（Uniform/Triangular/Shaped），16-bit 量化。
-- Wide（v9.10）：200 Hz 1024 点线性相位 FIR 分频（Hamming 窗理想低通 + 互补
-  高通：`hp = 延迟 center 帧的原信号 − lp`，两路逐样本完美重建，无 IIR 相位
-  旋转/群延迟差）；低频支路（<200 Hz）完全不处理；高频 M/S：
-  `i' = Intensity^0.6`，`gHigh = 1 + 2.3·i'`（甜点 0.5 → ≈2.52×、满档 → 3.3×），
-  `gComp = 1 - 0.10·i'`；高频支路 tanh 软限幅
-  `headroom_db = 0.2 + 0.8·(1-Intensity)`；延迟 511 采样（`latency()` 上报）；
-  仅处理前两个选中通道，单声道直通，Intensity=0 位精确直通。
+  输出抽头按论文 Table 2；`low_cut_hz` 分频点以下逐声道旁路混响、原样直通（20 ≈ 关闭）。
+- Compressor：全声道瞬时 RMS → dBFS 检测电平；静态曲线
+  `over = level - threshold`，`slope = 1 - 1/ratio`，软膝带内二次插值；
+  增益削减在 dB 域按 attack（压缩增加）/release 平滑；输出乘 makeup 后 Wet/Dry 混合。
+- Wide：线性相位 FIR 分频（Kaiser 窗，抽头数随采样率/分频点缩放），低频支路直通；
+  Mid 走空气吸收（高频架 + 二阶 Bessel 低通）；Side 增强量由 `gain` 控制
+  （0→1×，1→+1.5×），带 10ms/120ms 动态包络与 >1.5kHz 的 ITD 去相关（左 +5 / 右 +7 采样）；
+  侧输出再过 `air_side` 空气吸收；处理增量先过截止 = 分频点的一阶高通，再 tanh 限幅、乘 `mix`；
+  输出端软膝限幅兜底。`gain/air/air_side` 全为 0 时严格直通，单声道直通。

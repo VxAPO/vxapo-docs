@@ -108,3 +108,68 @@ HKCR\AudioEngine\AudioProcessingObjects\{CLSID}
 | `ProcessingModes` contains the required mode | missing mode prevents invocation |
 | Child APO path exists | affects child delegation |
 | Administrator rights | required for install/uninstall |
+
+## 6. Stale GUID records: detect, migrate, clean up
+
+### 6.1 Why it happens
+
+Windows may re-enumerate an endpoint with a new GUID (different USB port, driver reinstall,
+Bluetooth re-pairing). The old endpoint slot keys disappear, but VxAPO's own records remain:
+
+- `HKLM\SOFTWARE\VxAPO\Child APOs\{oldGUID}` child-APO backup and install info.
+- `C:\ProgramData\VxAPO\{oldGUID}\config.toml`.
+- `C:\ProgramData\VxAPO\snapshots\{oldGUID}.json`.
+
+The new GUID then looks "not installed" while the old config and snapshot stay on disk.
+
+### 6.2 Stable identity and matching
+
+`install/device/stale.rs` uses the **device instance ID** (e.g. `BTHENUM\...`) as the stable identity
+and matches old records against active endpoints:
+
+| `target_state` | Meaning |
+|----------------|---------|
+| `matched_healthy` | Matched to an active endpoint that is already installed and healthy |
+| `matched_partial` | Matched to an active endpoint with an incomplete install (migration repairs it) |
+| `unmatched` | No active endpoint; the record can only be cleaned up |
+
+### 6.3 API and commands
+
+```rust
+pub fn list_stale_installs() -> Result<Vec<StaleInstall>>;   // scan + match (read-only)
+pub fn migrate_install(from, to, config_from, snapshot_from) -> Result<MigrationReport>;
+pub fn cleanup_orphan(guid: &str) -> Result<()>;
+pub fn fix_config_acl(guid: &str) -> Result<()>;
+```
+
+- `StaleInstall`: `guid` / `device_instance_id` / `display_name` / `config_path` /
+  `config_mtime_ms` / `snapshot_path` / `snapshot_mtime_ms` / `premix_slot` / `postmix_slot` /
+  `inferred_mode` / `has_child_backup` / `has_sysfx_backup` / `target_guid` / `target_name` / `target_state`.
+- `MigrationReport`: `success` / `target_guid` / `config_from` / `snapshot_from` /
+  `config_migrated` / `snapshot_migrated` / `install_repaired` / `removed_guids` / `warnings`.
+- CLI: `vxapo-cli stale list|migrate|cleanup|fix-acl` (see CLI Reference Specification 5.6);
+  the App surfaces the same actions through `StaleInstallBanner` on the selected device page.
+
+### 6.4 Migration flow
+
+```text
+stale migrate --from <oldGuid> --to <newGuid>
+  -> require_admin
+  -> stop audio service + taskkill audiodg
+  -> migrate_install:
+       when config_from / snapshot_from are omitted, choose the source between the old records
+       of the same device instance and the target's existing files (latest config, earliest snapshot)
+       migrate config.toml + snapshot -> repair the new GUID install state -> delete old records
+       existing target files are backed up to C:\ProgramData\VxAPO\_migration_backup\{guid}\
+  -> emit MigrationReport (JSON); on failure restart audiosrv
+```
+
+Migration runs through the elevated CLI, so the migrated `config.toml` may inherit an administrator
+ACL. When the App hits "access denied" on write, it calls `stale fix-acl` (grants the interactive
+user Modify via `icacls` SID `*S-1-5-4`) and retries.
+
+### 6.5 Uninstall fallback
+
+If the endpoint key has already been removed by Windows (`find_endpoint_path` fails) but the GUID is
+still listed as stale, `vxapo-cli uninstall` falls back to `stale cleanup` so no Child APOs key or
+config directory is left behind.
