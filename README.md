@@ -9,8 +9,6 @@ VxAPO 的项目文档仓库，按主题维护 App / CLI / Driver 三层的引用
 - `cli/` — CLI 引用规范（安装/卸载/配置/快照/验证）
 - `driver/` — Driver 架构、模块规范、配置/DSP 设计、安装排障
 - `overview/` — 项目概览（三层分离与系统组成）
-- `changelog.md` — 变更记录
-- `archive/` — 已从源码仓移除的归档文档
 
 每个主题目录下均包含 `zh/` 与 `en/` 版本。
 
@@ -48,8 +46,6 @@ the corresponding repositories.
 - `driver/` — Driver architecture, module specification, configuration/DSP design,
   installation & troubleshooting
 - `overview/` — Project overview (three-layer separation)
-- `changelog.md` — Changelog
-- `archive/` — Archived documentation removed from source repositories
 
 Each topic directory contains `zh/` and `en/` versions.
 
