@@ -2,13 +2,15 @@
 
 本目录描述 VxAPO App（`vxapo-app`）实际落地的 UI 结构与交互逻辑。以代码为基准：类名、CSS 变量、动画时长均与 `src/new.css`、`src/styles/*`、`src/components/*` 保持一致。
 
-> 修订日期：2026-08-23（样式源已由 `new.css` 单文件拆分为 `src/styles/` 分区，`new.css` 仅做 @import 汇总）。
+> 修订日期：2026-09-12（环带令牌与几何注入按当前 `theme.css` / `dark.css` /
+> `useGlassRing.ts` / `useEdgeTintLayer.ts` 回填；上一版 2026-08-23 完成
+> `new.css` → `src/styles/` 分区拆分）。
 
 ## 文件划分
 
 | 文件 | 内容 |
 |---|---|
-| `01-design-foundations.md` | 主题变量、颜色、字体、圆角、间距、阴影、层级 |
+| `01-design-foundations.md` | 主题变量、颜色、字体、圆角、间距、阴影、层级、环带（玻璃边缘）令牌 |
 | `02-shell-and-navigation.md` | 窗口骨架、TopBar、视图切换、侧边栏、设备标签页 |
 | `03-views-and-cards.md` | 预设/高级视图、组卡、滤波器卡、效果器卡、声道胶囊 |
 | `04-curve-and-device-panel.md` | 频响曲线、悬浮窗、设备属性卡、底部区 |

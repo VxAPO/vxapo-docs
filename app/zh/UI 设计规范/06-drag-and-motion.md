@@ -50,8 +50,8 @@
 
 | 动画 | 时长/曲线 |
 |---|---|
-| 视图切换平移 | `0.32s easeInOut` |
-| 视图高度收窄（锁高回弹） | `800ms cubic-bezier(0.4,0,0.2,1)`（`VIEW_COLLAPSE_MS`） |
+| 视图切换平移 | `0.32s easeInOut`（`VIEW_SLIDE_MS`） |
+| 视图高度收窄（锁高回弹） | 平移结束后立即开始，`cubic-bezier(0.22,1,0.36,1)`（先快后慢）；时长按高度差缩放 **260–800ms**（`2ms/px`，上限 `VIEW_COLLAPSE_MS`），差值 < 4px 直接对齐不播动画 |
 | 侧边栏指示条 | `0.22s cubic-bezier(0.4,0,0.2,1)` |
 | 视图滑块 thumb | `0.25s cubic-bezier(0.4,0,0.2,1)` |
 | 主题三段 thumb | `0.2s cubic-bezier(0.4,0,0.2,1)` |

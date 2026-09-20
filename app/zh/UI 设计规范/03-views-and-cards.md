@@ -7,7 +7,10 @@
   退场元素被弹出布局（absolute），进场元素占流，保证滚动条高度切换即时正确。
 - `.view-stage`：`display:flex; flex-direction:column; gap:22px`。
 - 切换编排由 `useViewAnimation` 负责：记录旧滚动位置 → 锁 `.view-stack` 高度 →
-  动画结束后恢复滚动位置并做 800ms（`VIEW_COLLAPSE_MS`）的高度收窄过渡；
+  平移结束（`VIEW_SLIDE_MS = 320ms`，按定时器对齐，不等动画回调）的那一刻立即开始
+  高度收窄过渡（`cubic-bezier(0.22,1,0.36,1)` 先快后慢；时长按高度差缩放
+  `260ms + 2ms/px`，上限 `VIEW_COLLAPSE_MS = 800ms`，差值 < 4px 直接对齐不播动画）；
+  收窄终点是**新视图的自然高度**（`min-height` 只在大于内容高度时影响渲染高度，终点给 0 会让小高度差看起来像瞬移）；
   滚动条长度在过渡期间取 max(旧内容, 新内容)，避免先变短再变长。
 
 ## 2. 卡片网格
