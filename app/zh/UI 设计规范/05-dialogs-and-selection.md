@@ -86,7 +86,10 @@
 - 高光带同样跟随：`.fx-toolbar::after`（顶/底/侧向 conic 高光）`opacity = var(--ring-op) * var(--glass-t)`
   （`--ring-op` 浅色 `0.4` / 深色 `0.8`）；`.fx-toolbar::before`（内渗模糊层）`opacity: var(--glass-t)`。
 - 退出：`usePresence()` 等 `180ms` 跑完再 `safeToRemove()` 卸载——染色 canvas 是独立图层，
-  DOM 一消失它会硬消失；绘制侧按 `--glass-t` 缩放透明度并逐帧重绘（见 `06` 动效表）。
+  DOM 一消失它会硬消失；绘制侧按 `--glass-t` 缩放透明度，并由 `driveFor()` 显式推动逐帧重绘
+  （DOM 只改 class 不产生 MutationObserver 回调，没人推就会"比 DOM 慢一截"）。
+- **滤镜要整套归零**：`blur` 之外，`saturate/contrast/brightness` 也必须乘 `--glass-t` 回到中性——
+  只缩模糊的话，浅色的 `contrast(0.55) + brightness(1.38)` 仍在生效，淡出到一半会漏出一层发白的底。
 
 ### 7.1 操作按钮
 
