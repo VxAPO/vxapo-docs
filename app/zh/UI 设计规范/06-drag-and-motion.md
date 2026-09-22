@@ -63,8 +63,11 @@
 | 拖拽阴影抬升 | `0.18s ease-out` |
 | 拖拽落位布局动画 | `320–400ms cubic-bezier(0.22,1,0.36,1)` |
 | 拖拽飞行 | `430ms` |
-| 频响悬浮窗跟随 | 每帧 8% 指数趋近 |
+| 频响悬浮窗跟随 | 临界阻尼弹簧：`FOLLOW_SETTLE_MS = 240` 视为基本停稳时间，`omega = 6.6 / (settle/1000)`；吸附即停位置 `0.5px`、速度 `40px/s` |
 | 频响悬浮窗翻侧 | `280ms ease-out` |
+| 框选工具栏玻璃淡入淡出 | `180ms ease-out`（`--glass-t` 0→1；退出同长，等它跑完再卸载） |
+| 设备页切换 | 淡出 / 淡入各 `280ms`（`DEVICE_FADE_MS`，`AnimatePresence mode="wait"` 先退后进） |
+| 染色 canvas 跟随淡入淡出 | 逐帧按「目标可见度」缩放透明度：工具栏读 `--glass-t`、页面内目标读所在 `.device-page` 的实时 opacity；淡入淡出期间逐帧重绘（`lib/edgetint/renderLoop.ts`） |
 | 曲线重算节流 | `42ms`（≈24fps，`useThrottledCompute`） |
 | 滚动条淡入淡出 | `opacity 0.25s ease`；停止滚动 `1.2s` 后自动淡出 |
 | 主题切换颜色过渡 | `0.35s cubic-bezier(0.4,0,0.2,1)`（`.theme-transition`，结束后移除） |

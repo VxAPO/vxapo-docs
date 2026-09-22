@@ -71,15 +71,22 @@
 ## 7. 框选工具栏 `.sel-toolbar`
 
 - 当有框选卡片时出现。
-- `position:absolute; transform:translateX(-50%); z-index:30`。
-- 浅色：`background: color-mix(in srgb, var(--card) 45%, transparent);
-  backdrop-filter: blur(32px) saturate(1.3);
-  border:1px solid color-mix(in srgb, var(--border) 55%, #ffffff)`，
-  顶部高光 `inset 0 1px 0 rgba(255,255,255,0.4)`。
-- 深色：`background: color-mix(in srgb, var(--card) 78%, transparent);
-  backdrop-filter: blur(28px) saturate(1.2); border:1px solid rgba(255,255,255,0.16)`，
-  顶部高光降为 `rgba(255,255,255,0.08)`。
-- 动画：`sel-toolbar-in 0.22s ease-out`（深色 `sel-toolbar-in-dark`）。
+- 结构：外层 `.fx-toolbar`（`position:absolute; left/top:0; translate:-50% 0; z-index:30`）› 玻璃面板
+  `.sel-toolbar` › 内容（`.sel-toolbar-label` + `.sel-toolbar-actions`）。浮窗位移由
+  `useMarqueeSelection` 的跟随循环写 `transform` 独占，`translate` 与入场抬升交给 CSS。
+- 玻璃（浅色）：底色交给 `.sel-toolbar::before`（`--glass-bg` =
+  `color-mix(in srgb, color-mix(in srgb, var(--card) 80%, var(--border)) 50%, transparent)`），
+  `backdrop-filter: blur(calc(var(--glass-blur) * var(--glass-t))) saturate(1.1) contrast(0.55) brightness(1.38)`
+  （`--glass-blur` 浅色 `12px`、深色 `8px`，深色另覆盖 `--glass-bg` / `--glass-shadow`）；
+  投影 `--glass-shadow` 随底衬一起淡；边框透明——描边由外侧环带承担。
+- **淡入淡出走 `--glass-t`（0→1），不用 opacity**：面板的 `backdrop-filter` 在祖先 `opacity < 1` 时会被
+  浏览器整组降级，观感是「高斯模糊等淡入结束才出现」。`--glass-t` 注册为 `<number>` 才能被 transition
+  插值：挂载后下一帧加 `.is-in`，`180ms ease-out` 渐变；模糊半径、`::before` 底衬、内容透明度全部由它驱动。
+  内容须 `position:relative; z-index:1` 压在底衬之上（伪元素是定位元素，否则会盖住文字）。
+- 高光带同样跟随：`.fx-toolbar::after`（顶/底/侧向 conic 高光）`opacity = var(--ring-op) * var(--glass-t)`
+  （`--ring-op` 浅色 `0.4` / 深色 `0.8`）；`.fx-toolbar::before`（内渗模糊层）`opacity: var(--glass-t)`。
+- 退出：`usePresence()` 等 `180ms` 跑完再 `safeToRemove()` 卸载——染色 canvas 是独立图层，
+  DOM 一消失它会硬消失；绘制侧按 `--glass-t` 缩放透明度并逐帧重绘（见 `06` 动效表）。
 
 ### 7.1 操作按钮
 
