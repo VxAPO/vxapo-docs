@@ -46,8 +46,16 @@ display:flex; gap:12px; padding:10px 12px 12px; pointer-events:none`。
 
 网格由 `CurveGrid` 绘制：
 
-- Y 网格：步长统一（跨度 >26dB 用 4dB，否则 2dB），行落在步长整数倍，
-  间距全程一致，0 线自然包含；虚线 `stroke: var(--border)`，`strokeDasharray="4 4"`。
+- Y 网格：步长由跨度定（`>26dB` 用 4dB，否则 2dB，`yStepFor`）。**量程本身由
+  `axisRange(peakGain, troughGain)` 对齐到步长整数倍**（先按 2dB 档取整并夹在软边界 6–30，
+  再对齐步长，最多迭代两次收敛）——这样网格能从 `yTop` 一路铺到 `yBottom`：首末两条正好压在
+  绘图区上下沿，0dB 也必然落在某条刻度线上。
+  行位置再经 `snapPx()` 取整：间距常带半像素（如 `180×4/32 = 22.5px`），不取整时文字落在亚像素上
+  会被渲染器取整，表现为「刻度数字有概率往下偏」。标签用 `dominantBaseline="middle"` 让垂直中心
+  正对网格行，不依赖 `+3` 这类经验偏移。
+  虚线 `stroke: var(--border)`，`strokeDasharray="4 4"`。
+  （历史弯路：曾在绘制侧用 `floor`/`ceil` 去凑步长整数倍——量程不是步长倍数时首条网格线会缩进来
+  半格，虚线便贴不住纵轴顶端、标签整体偏移。）
 - X 网格：20/50/100/200/500/1k/2k/5k/10k/20k 对数位置，虚线同上。
 - 坐标轴实线：`stroke: var(--curve-axis)`（浅色 `#b3bbc8` / 深色 `#7c7d7f`）。
 - 刻度标签与十字光标样式见 `CurveGrid` / `CurvePlot` 实现。

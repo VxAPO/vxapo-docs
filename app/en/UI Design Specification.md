@@ -45,7 +45,7 @@
 
 ## 04 Curve and device panel
 
-- Frequency response curve with `CurveGrid` (dashed Y/X grid lines; axis in `--curve-axis`), `CurvePlot` (path in `--curve-path`); coordinates via `lib/curve.ts` (`logX` / `dbY`).
+- Frequency response curve with `CurveGrid` (dashed Y/X grid lines; axis in `--curve-axis`), `CurvePlot` (path in `--curve-path`); coordinates via `lib/curve.ts` (`logX` / `dbY`). The Y range from `axisRange(peakGain, troughGain)` is **aligned to a multiple of the grid step** (2 dB, or 4 dB past a 26 dB span: rounded to 2 dB first, soft-clamped to 6–30, then aligned, converging in at most two passes), so the grid runs exactly from `yTop` to `yBottom` — the first and last lines sit on the plot edges and 0 dB always lands on a tick. Row positions are then `snapPx()`-rounded (spacing is often fractional, e.g. `180×4/32 = 22.5px`; subpixel text gets rounded by the renderer, which is the "tick numbers randomly drift downwards" bug) and labels use `dominantBaseline="middle"` rather than a hand-tuned `+3` offset. (The grid used to floor/ceil to step multiples on its own, while the range was computed elsewhere — when the range was not a step multiple the first line fell half a cell short of the top edge.)
 - Evaluation points: 20 Hz–20 kHz log sweep (481 points) + band centers + high-Q refinement + neighbor midpoints.
 - Performance: `useThrottledCompute` recomputes at 42 ms (≈24 fps) while dragging; RBJ coefficients cached.
 - Device properties card (GUID/version/mode/slots/EAPO), normalization button; glassmorphism on both bottom cards.
