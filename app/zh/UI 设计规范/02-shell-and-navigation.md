@@ -68,7 +68,8 @@
   background-color / border-color / box-shadow 过渡（主题切换插值）。
 - 选中按钮：`color: var(--brand)`；图标倾斜动画 `vx-icon-tilt-left/right 0.65s ease`
   （方向由 `data-dir` 决定）。
-- 禁用条件：语义视图按钮在 `channelOn || noDevices` 时禁用；参数视图按钮在 `noDevices` 时禁用。
+- 禁用条件：两者都只在 `noDevices` 时禁用。**打开通道选择器不再禁用语义视图、也不再强制切到参数视图**
+  ——语义视图同样按声道过滤内容（`PresetView` 的 `visible`），声道切换入口是曲线卡上的选择器，两个视图都能用。
 
 ## 3. Sidebar
 
