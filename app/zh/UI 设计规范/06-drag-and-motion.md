@@ -115,7 +115,7 @@
 
 | 动画 | 时长/曲线 |
 |---|---|
-| 视图切换平移 | `0.32s easeInOut`（`VIEW_SLIDE_MS`） |
+| 视图切换平移 | `0.32s easeInOut`（`VIEW_SLIDE_MS`）；进场只做 x 平移，**不补间整体 opacity**——淡入交给卡片错峰 |
 | 视图高度收窄（锁高回弹） | 平移结束后立即开始，`cubic-bezier(0.22,1,0.36,1)`（先快后慢）；时长按高度差缩放 **260–800ms**（`2ms/px`，上限 `VIEW_COLLAPSE_MS`），差值 < 4px 直接对齐不播动画 |
 | 侧边栏指示条 | `0.22s cubic-bezier(0.4,0,0.2,1)` |
 | 视图滑块 thumb | `0.25s cubic-bezier(0.4,0,0.2,1)` |
@@ -129,14 +129,31 @@
 | 拖拽落位布局动画 | `320–400ms`，曲线与视图收窄同源（`cubic-bezier(0.22,1,0.36,1)`，`lib/motionEase.ts`） |
 | 拖拽飞行 | `530ms = 400ms 弧线（位置段 288ms，比例 0.72）+ 100ms 停顿 + 30ms 缓冲` |
 | 拖拽落地灰条 | `0.4s ease-out`（与弧线飞行同长，副本卸载前跑完） |
+| 切换时卡片错峰淡入 | 单张 `200ms`（`STAGGER_FADE_MS`）+ 轻微上移 `6px`（`STAGGER_RISE_PX`）；按「左上 → 右下」排序，每张步进 `14ms`、延迟封顶 `200ms`（`STAGGER_MAX_DELAY_MS`，31 张卡也不会拖过 400ms）；曲线 `EASE_OUT_SOFT` |
 | 频响悬浮窗跟随 | 临界阻尼弹簧：`FOLLOW_SETTLE_MS = 240` 视为基本停稳时间，`omega = 6.6 / (settle/1000)`；吸附即停位置 `0.5px`、速度 `40px/s` |
 | 频响悬浮窗翻侧 | `280ms ease-out` |
 | 框选工具栏玻璃淡入淡出 | `180ms ease-out`（`--glass-t` 0→1；退出同长，等它跑完再卸载） |
-| 设备页切换 | 淡出 / 淡入各 `180ms easeInOut`（`DEVICE_FADE_MS`）：`AnimatePresence mode="wait"` + `key={selectedGuid}`，两段串行。退场的是**上一轮的旧元素实例**，它带着旧设备的 props 淡出——因此设备页数据（`blocks` / `effects` / `channelOn` / `activeChannel` / `channelNames`）必须由 App 经 `ViewStage` 透传进视图，**不能**让视图直连 store：store 是全局实时的，旧元素一旦订阅它，淡出途中就会渲染成新设备的内容（连页面高度都一起变），整段过渡观感就不对了 |
+| 设备页切换 | 退场 `180ms easeInOut` 淡出（`DEVICE_FADE_MS`），**进场不补间 opacity**（淡入交给卡片错峰）：`AnimatePresence mode="wait"` + `key={selectedGuid}`，两段串行。退场的是**上一轮的旧元素实例**，它带着旧设备的 props 淡出——因此设备页数据（`blocks` / `effects` / `channelOn` / `activeChannel` / `channelNames`）必须由 App 经 `ViewStage` 透传进视图，**不能**让视图直连 store：store 是全局实时的，旧元素一旦订阅它，淡出途中就会渲染成新设备的内容（连页面高度都一起变），整段过渡观感就不对了 |
 | 染色 canvas 跟随淡入淡出 | 逐帧按「目标可见度」缩放透明度：工具栏读 `--glass-t`、页面内目标读所在 `.device-page` 的实时 opacity；淡入淡出期间逐帧重绘（`lib/edgetint/renderLoop.ts`） |
 | 曲线重算节流 | `42ms`（≈24fps，`useThrottledCompute`） |
 | 滚动条淡入淡出 | `opacity 0.25s ease`；停止滚动 `1.2s` 后自动淡出 |
 | 主题切换颜色过渡 | `0.35s cubic-bezier(0.4,0,0.2,1)`（`.theme-transition`，结束后移除） |
+
+### 4.1 切换时的卡片错峰淡入
+
+`lib/staggerIn.ts` 的 `playStaggerIn(root)`：取 `root` 内 `.device-cards > *`（网格容器的直接子级，
+即卡片本体），按「左上 → 右下」排序（先 `top`，行容差 `8px` 内按 `left`）后依次播
+`opacity 0 → 1` + 上移 `6px`（`STAGGER_RISE_PX`）。
+
+- **用 WAAPI 命令式播，不重挂载卡片子树**：两套视图常驻 DOM、31 张参数卡刻意不重建
+  （见 `ViewStage` 注释），重建一次子树的首帧布局尖峰比这段动画本身贵得多。
+- **`fill: "backwards"`**：排在后面的卡片在延迟期间保持第一帧（透明）。少了它，卡片会先整张出现、
+  再被动画拉回透明淡入——就是一下可见的闪烁；调用方因此必须用 `useLayoutEffect`（绘制前开播）。
+- **整体不补间 opacity**：视图 stage 与设备页 page 进场时 `opacity` 直接到 1（`opacity: { duration: 0 }`）。
+  整体淡入与卡片淡入相乘会让卡片永远亮不满、观感发灰。退场不变（设备页仍是 180ms 淡出，
+  `AnimatePresence mode="wait"` 等它跑完再挂新页）。
+- **触发点**：视图切换看 `viewAnimating` 变 `true`；设备页切换用 rAF 等「新的 `.device-page` 出现」
+  （`mode="wait"` 先退旧页），等不到（无设备/加载失败）两秒后放弃。
 
 ## 5. 亚像素对齐
 
