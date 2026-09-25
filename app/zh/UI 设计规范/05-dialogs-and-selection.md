@@ -62,14 +62,16 @@
     `t("filters")`（「滤波器」/「Filters」）；每行 `.preset-band-row` 显示频段标签（`fc · gain`）
     + 输入框，输入框占位文字是 `preset.bandDesc`（「语义描述」/「Semantic description」），
     **默认为空**（不再预填任何内容），保存时按行写入。
-    - `padding: 12px 6px`：它是滚动容器，`overflow-y:auto` 会把横向也一并裁在 **padding box** 上，
-      而输入框是 `flex:1`、右缘正好压着这个边界——聚焦光晕会整个被裁掉（左缘前面有 110px 的
-      频段标签、本来就有余量，所以只有右侧看着"缺一节"）。左右 6px 与柔晕半径配套；
-      竖向 12px 给首/末行的光晕让开上下那 10px 的遮罩淡出。
-- 输入框聚焦 `.vx-text-input:focus-visible`：`border-color: var(--brand)` + **两层柔光**
-  （1px 细环 `color-mix(in srgb, var(--brand) 26%, transparent)`，外加 6px 模糊晕
-  `color-mix(in srgb, var(--brand) 16%, transparent)`）。原来是无模糊的 `0 0 0 3px var(--brand-soft)`
-  ——一条等宽的硬边，在浅底上像贴了圈胶带；柔晕靠 `blur` 自然衰减，边界不再生硬。
+    - `padding: 10px 0`：横向**不留余量**——焦点只用描边交代、不往外画光晕，没有会被裁到的东西。
+      留个提醒：它是滚动容器，`overflow-y:auto` 会把**横向也一并裁在 padding box 上**，而输入框是
+      `flex:1`、右缘正好压着这个边界——**一旦再给焦点加外圈，右侧就会缺一节**（左缘前面有频段标签、
+      本来就有余量，所以只有右边看得出来）。要加外圈就得同时留出等宽内缩。
+    - 频段标签 `.preset-band-tag`：`width:122px`、`font-size:12px`（与 `.vx-field-label`、输入框同级；
+      原先 11px/110px 既字小、列里又空）。列宽按最长标签 `16.00 kHz · +10.5 dB` 在该字号下留余量，
+      `tabular-nums` 让数字列对齐。
+- 输入框聚焦 `.vx-text-input:focus-visible`：**只改描边色** `border-color: var(--brand)`，**不画外圈光晕**
+  ——与 `.vx-select:focus-visible` 同套。外圈试过两种（`0 0 0 3px var(--brand-soft)` 等宽硬环、以及
+  1px 细环 + 6px 模糊晕），都不如描边本身干净；而且任何外圈都会被上面那个滚动容器裁掉。
 - 保存动作：`onSave(name, desc, color, descriptions)`；简介字段已移除。
 
 ## 6. 通用确认弹窗
