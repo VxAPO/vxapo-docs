@@ -30,7 +30,7 @@
 
 ## 02 Shell and navigation
 
-- Window skeleton with custom title bar (window controls); TopBar: logo, settings/import/export, semantic/parameter view switch, window controls.
+- Window skeleton with custom title bar (window controls); TopBar: logo, settings/import/export, semantic/parameter view switch, window controls. The view switch is wrapped in a `.view-seg-zone` "dead zone" (`padding: 8px`, carries no `data-tauri-drag-region`): a mis-aimed click next to the control lands there instead of the title-bar drag region, so it cannot trigger the title bar's double-click maximize/restore.
 - View switch `.view-seg`: centered segment with sliding thumb (`--brand-bg` + `--brand` border), 0.25 s slide; disabled rules per view.
 - Sidebar: segmented switcher (Preset | Custom | Advanced); preset/custom entries are compact pills with an 8 px accent dot, bold group name, and 12 px weak subtitle (`flex + gap` layout); advanced section uses category + pill rows.
 - Device tabs: `tab-btn` (13 px, 16 px radius), tuning dot switch (`.tab-dot`), close button, add button; per-device tuning state initialized from disk.

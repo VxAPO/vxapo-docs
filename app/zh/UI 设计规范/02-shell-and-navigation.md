@@ -44,15 +44,19 @@
 1. `.logo`：VxAPO 图标（`VxAPO_icon_v4.svg`），18×18px。
 2. 设置 / 导入 / 导出按钮：`.pill`，高 28px，padding `0 12px`，圆角 9999px。
 3. `.spacer`：可拖拽窗口区域（`data-tauri-drag-region`）。
-4. 视图切换：`.seg.view-seg`（语义视图 / 参数视图）。
+4. 视图切换：`.seg.view-seg`（语义视图 / 参数视图），外面裹着 `.view-seg-zone` 死区，见 2.1。
 5. `.spacer`
 6. 窗口控制：`.pill.winbtn`，最小化 / 最大化 / 关闭；关闭按钮 hover 使用 `--danger-soft` 底 + `--danger` 文字。
 
 ### 2.1 视图切换（语义 / 参数）
 
-类名：`.seg.view-seg`（样式在 `styles/curve.css`）。
+类名：`.seg.view-seg`（样式在 `styles/curve.css`），外层是 `.view-seg-zone`。
 
-- 绝对居中于 TopBar：`position:absolute; left:50%; top:50%; transform:translate(-50%,-50%)`。
+- **居中与死区都由 `.view-seg-zone` 负责**：`position:absolute; left:50%; top:50%;
+  transform:translate(-50%,-50%); display:inline-flex; padding:8px`。它**不挂** `data-tauri-drag-region`，
+  于是点歪到控件四周这 8px 圈上时，事件落在这个容器上而不是顶栏/`.spacer` 的拖拽区——
+  不会误触发标题栏的双击最大化/还原（死区内也不再能拖着窗口移动，这是有意的取舍）。
+- `.seg.view-seg` 自身只是 `position:relative`（给 `.seg-thumb` 当包含块）＋盒模型与配色。
 - 容器：`display:flex; align-items:center; gap:4px; height:26px;
   border:1px solid var(--border); border-radius:9999px; background:transparent`。
 - 两个按钮 `.view-seg button`：`flex:1; height:22px; padding:0 14px; gap:6px`，字号 12px，带图标。
