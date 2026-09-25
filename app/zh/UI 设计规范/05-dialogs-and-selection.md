@@ -74,6 +74,16 @@
 - 结构：外层 `.fx-toolbar`（`position:absolute; left/top:0; translate:-50% 0; z-index:30`）› 玻璃面板
   `.sel-toolbar` › 内容（`.sel-toolbar-label` + `.sel-toolbar-actions`）。浮窗位移由
   `useMarqueeSelection` 的跟随循环写 `transform` 独占，`translate` 与入场抬升交给 CSS。
+- **工具栏尺寸要参与"内缩 8px"的夹取**（与卡片同一个 `TOOLBAR_EDGE = 8`）：横向
+  `clamp(cx, 8 + w/2, bodyW − 8 − w/2)`、纵向同理。所以尺寸必须是**真实值**：`ResizeObserver`
+  之外还要在挂上时用 `getBoundingClientRect()` **同步量一次**——RO 回调要等下一次布局，
+  只靠它的话首次落位会按兜底尺寸（`280×64`）算，而通道选择器（复制到声道）把工具栏拉宽到
+  远超兜底值，右边界算得太靠右、浮窗直接顶出内缩线，下一帧才飞回来。
+  RO 也必须**盯元素本身**、不拿 `selectedIds.length > 0` 之类做 deps：工具栏要等 `selGeom`
+  算出来才挂载（`selGeom` 是被动 effect 的产物，比那一轮 layout effect 晚），按布尔量做 deps
+  会在元素还不存在时跑一次、`el` 为 null 直接 return，之后再也不会重跑，尺寸就永久停在兜底值
+  ——表现为"刷新后**首次**框选出界、取消一次再框选就正常"（退场动画期间旧元素还挂着，
+  effect 那时才补上 RO）。踩过。
 - 玻璃（浅色）：底色交给 `.sel-toolbar::before`（`--glass-bg` =
   `color-mix(in srgb, color-mix(in srgb, var(--card) 80%, var(--border)) 50%, transparent)`），
   `backdrop-filter: blur(calc(var(--glass-blur) * var(--glass-t))) saturate(1.1) contrast(0.55) brightness(1.38)`
