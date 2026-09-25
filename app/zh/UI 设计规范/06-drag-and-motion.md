@@ -20,24 +20,35 @@
 ### 1.2 拖拽副本
 
 - `.drag-fly`：飞行副本，基础类 `position:relative; width:fit-content`。
-- **两层都 portal 进滚动内容层（`.tuning-scroll`），层级与裁剪一致**：都落在 `.device-body` 这个
-  层叠上下文里（`position:relative; z-index:0`，整块被设备标签栏 `.tab-bar` 的 40 压在下面），
-  也都被 `.tuning-scroll` 的 overflow **裁在内容区边界**——两层都被标签栏那一带挡掉，标签栏上方
-  不会漏出卡片。层级只在这一层内比较：压过卡片（1）、框选盒（40）、染色层（25/26/35/36）。
-- 两层的**定位方式不同**，这是关键差别：
-  - **抓取悬浮层** `.drag-fly.overlay-fixed`：`position:fixed; top/left:0; z-index:75`，阴影
-    `0 10px 28px`（深色使用 `--shadow-ink`）。`.tuning-scroll` 带 `transform: translateZ(0)`，
-    于是这条 fixed 的包含块是**那个容器**而不是视口：悬浮层因此被容器的 overflow 裁掉，同时在容器
-    滚动时不随内容移动（跟手语义——指针不动时悬浮层在视口里也不动）。代价是坐标基准要减掉容器的
-    视口偏移（`DragSession.hostLeft/hostTop`，抓取时测一次）。
-    ⚠️ 容器上这个 transform 是整条机制的前提：去掉它，悬浮层会退回视口定位、裁剪失效。
-    ⚠️ 它同时意味着容器内任何 `position: fixed` 后代都以它为包含块——目前只有悬浮层。
-  - **飞行副本** `.drag-fly.fly-anim`：`position:absolute; z-index:70`，用**内容坐标**定位
-    （松手后没有跟手约束），滚动跟随交给浏览器合成线程（零延迟，不再抖），同样被容器裁在内容区边界。
+- **两层的挂载点不同，层级与裁剪口径相同**：
+  - **抓取悬浮层** `.drag-fly.overlay-fixed`：portal 进 `.device-body`（**不是**滚动容器），
+    `position:fixed; top/left:0; z-index:75`，阴影 `0 10px 28px`（深色使用 `--shadow-ink`）。
+    裁剪靠 `.device-body` 的 `clip-path: inset(0)`——clip-path 会连整棵子树一起裁，包括 fixed 后代。
+    它仍是视口定位、也不在滚动容器里，所以**不随内容滚动位移**：指针不动时卡片在视口里也不动
+    （光标锁定靠的就是这一点）。
+    ⚠️ 反例（踩过）：改用「给容器加 `transform`、让 fixed 以它为包含块」——若那个容器是滚动容器，
+    包含块会跟着内容跑，现象是「滚动多少、卡片就偏多少」，跟手直接废掉。
+  - **飞行副本** `.drag-fly.fly-anim`：portal 进滚动容器 `.tuning-scroll`，`position:absolute;
+    z-index:70`，用**内容坐标**定位（松手后没有跟手约束），滚动跟随由浏览器合成线程完成
+    （零延迟，不再抖），被容器的 overflow 裁在内容区边界。
+- 层级：两层都落在 `.device-body` 这个层叠上下文里（`position:relative; z-index:0`，整块被设备标签栏
+  `.tab-bar` 的 40 压在下面，所以两层都会被标签栏挡住）；在这个上下文内，它们只需压过卡片（1）、
+  框选盒（40）与染色层（25–36）。
 - **悬浮层跟手位移走 `transform`**：`left`/`top` 固定为 0 作静态基准，JS 每帧写
   `transform: translate()`。逐帧写 `left`/`top` 属于布局属性、每帧都要重新布局；`transform`
   只改视觉位置。刻意不用 `translate3d`/`will-change`——升成合成层后拖动停住时文字栅格与常规层
   不同（同飞行副本「落地交接」的理由）。
+- **悬浮层被夹在内容区矩形内**（`.content`，那个大圆角矩形），并留 `DRAG_BOUNDS_INSET_PX = 8`
+  的内缩——**不贴死边缘**（阴影与圆角要留余地）：定位时把卡片左上角 clamp 到
+  `[bounds.left + 8, bounds.right − cardW − 8] × [bounds.top + 8, bounds.bottom − cardH − 8]`
+  （`DragSession.bounds` / `cardW` / `cardH`，抓取时测一次）。指针可以继续往外移——
+  **系统光标没法被网页锁住**，能限制的是这张卡片：它到边界就停住，不再往外跑。
+  命中判定仍按真实指针位置，所以夹取只影响观感不影响语义；飞行的起点照旧取悬浮层的真实矩形。
+- **贴边带动页面滚（边缘自动滚动）**：悬浮层贴住内容区上/下界、且容器那个方向还能滚时，每帧推进
+  `EDGE_SCROLL_SPEED_PX_S = 600`（px/s，按帧时长换算，60/120Hz 观感一致；长帧夹在 64ms 内，
+  避免从后台切回来猛跳一段）。指针不动也持续滚：`flushFrame` 滚完继续排下一帧，方向不再贴边、
+  或那个方向滚到头，就自然停下。滚动本身复用既有的「槽位矩形平移 + 命中重算」，
+  悬浮层不随滚动位移（它锁的是指针）。
 - 抓取时阴影从 hover 阴影平滑扩大到拖拽阴影：`drag-shadow-lift 0.18s ease-out`。
 - 落地灰条 `drag-bar-land 0.4s ease-out`：时长与弧线飞行（`FLY_ANIM_MS`）对齐，保证副本卸载前跑完
   （原先 0.45s 超过落地总时长，尾部被硬切）。
