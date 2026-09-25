@@ -98,6 +98,11 @@
   背景 `var(--card)`，边框 `1px solid color-mix(in srgb, var(--preset-accent, var(--brand)) 55%, var(--border))`。
 - 结构：左侧 8px 圆点 `.preset-dot`（背景组色）+ `.preset-name`（组名 `.p-group` 加粗组色 +
   gap 8px + 组副标题 `.p-sub` 12px `--text-weak`）+ 右侧“已添加” `.preset-added`（12px 弱文本）。
+- **深色映射**：圆点、描边、组名三处都取 `var(--preset-accent-dark, var(--preset-accent, …))`
+  ——与调音卡片的 `--card-accent-dark` 同一口径。`presetCardStyle()` 早就把深色基础色注入
+  `--preset-accent-dark` 了，深色下必须取用，否则预设 pill 会停在亮色上、与卡片不一致（踩过）。
+  覆盖写在 `dark.css`，选择器带 `:not(.disabled)`：`.preset-pill.disabled` 那几条灰色态是浅/深
+  共用的，特异性一旦被盖过，禁用态就会重新染上彩色。自定义侧 `.preset-pill.custom` 共用同一套。
 - hover：`box-shadow: var(--hover-shadow); transform: translateY(-1px)`；圆点 `scale(1.25)`。
 - 已使用 `.disabled`：`border-color: var(--border)`，圆点/组名转 `--text-weak`，禁用 hover 浮起。
 
