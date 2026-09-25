@@ -55,8 +55,14 @@
   - 名称 `.vx-text-input`：默认取当前框选内容的推导名，可为空（保存时回退占位名）。
   - 配色 `.preset-swatches`：24 色固定色盘（`SWATCHES`）。
     - 色块 `.preset-swatch`：24×24px 圆，边框 2px transparent。
-    - 选中 `.preset-swatch.active`：`border-color: var(--swatch-hover, var(--text-primary));
-      box-shadow: 0 0 0 2px var(--card)`。**深色下这圈描边要再压深一档**（覆盖写在 `dark.css`）：
+    - 选中 `.preset-swatch.active`：**环画在盘面之外**——`--swatch-ring: var(--swatch-hover,
+      var(--text-primary))` + `box-shadow: 0 0 0 2px var(--swatch-ring)`。**不要**用点亮
+      `border-color` 的方式做环：色块是 `<button>`，UA 默认 `box-sizing: border-box`，那 2px 边框
+      画在 24px 盒**内**，不透明时会把底下的背景吃掉一圈——盘面直径 24 → 20，观感就是
+      「选中之后圆圈变小了」（踩过）。改外圈后盘面尺寸不变（实测选中/未选中盘面同为 22px）。
+      原来那圈 `0 0 0 2px var(--card)` 隔离环同时撤掉：它与弹窗底色同色，本来就不起分离作用。
+    - **深色下这圈环要再压深一档**（覆盖写在 `dark.css`，只换 `--swatch-ring` 的颜色，几何仍在
+      `cards.css`）：
       `--swatch-hover` 是 L 0.45 的加深变体，浅色下压亮底很清楚，但深色下它与填充（L 0.6）**差得不够**，
       描边读不出来。那里掺 32% 纯黑（≈L 0.35），改成靠「亮盘被切掉一圈」的**深浅差**读选中，
       填充保持原色不动、浅色规则也不动。反向方案（深色改用亮色描边）试过并弃用：与「浅色压深、
