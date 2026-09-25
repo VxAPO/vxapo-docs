@@ -58,9 +58,18 @@
     - 选中 `.preset-swatch.active`：`border-color: var(--swatch-hover, var(--text-primary));
       box-shadow: 0 0 0 2px var(--card)`。
     - 每个色块的 `--swatch-hover` 由 `accentHoverColor(c)` 在 TS 中算好注入。
-  - 每段语义描述 `.preset-band-list`（`.os-scroll` + OverlayScrollbar）：
-    每行 `.preset-band-row` 显示频段标签（`fc · gain`）+ 描述输入框；
-    描述输入框**默认为空**（不再预填任何内容），保存时按行写入。
+  - 逐行描述 `.preset-band-list`（`.os-scroll` + OverlayScrollbar）：分区标题用通用的
+    `t("filters")`（「滤波器」/「Filters」）；每行 `.preset-band-row` 显示频段标签（`fc · gain`）
+    + 输入框，输入框占位文字是 `preset.bandDesc`（「语义描述」/「Semantic description」），
+    **默认为空**（不再预填任何内容），保存时按行写入。
+    - `padding: 12px 6px`：它是滚动容器，`overflow-y:auto` 会把横向也一并裁在 **padding box** 上，
+      而输入框是 `flex:1`、右缘正好压着这个边界——聚焦光晕会整个被裁掉（左缘前面有 110px 的
+      频段标签、本来就有余量，所以只有右侧看着"缺一节"）。左右 6px 与柔晕半径配套；
+      竖向 12px 给首/末行的光晕让开上下那 10px 的遮罩淡出。
+- 输入框聚焦 `.vx-text-input:focus-visible`：`border-color: var(--brand)` + **两层柔光**
+  （1px 细环 `color-mix(in srgb, var(--brand) 26%, transparent)`，外加 6px 模糊晕
+  `color-mix(in srgb, var(--brand) 16%, transparent)`）。原来是无模糊的 `0 0 0 3px var(--brand-soft)`
+  ——一条等宽的硬边，在浅底上像贴了圈胶带；柔晕靠 `blur` 自然衰减，边界不再生硬。
 - 保存动作：`onSave(name, desc, color, descriptions)`；简介字段已移除。
 
 ## 6. 通用确认弹窗
