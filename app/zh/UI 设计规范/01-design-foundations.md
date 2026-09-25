@@ -155,7 +155,8 @@
 | 弹窗内容 | 61 | Dialog content |
 | 滚动条轨道（对话框内） | 65 | 安装/保存预设/导入预览/卸载进度 |
 | Toast | 70 | 轻提示 |
-| 拖拽飞行副本 | 75 | drag-fly |
+| 拖拽飞行副本 | 70 | `drag-fly.fly-anim`；portal 进滚动内容层，落在 `.device-body` 的层叠上下文内（该上下文 `z-index:0`，整块被标签栏的 40 压在下面），70 只与卡片(1)/框选盒(40)/染色层(25–36) 比大小 |
+| 拖拽悬浮层 | 75 | `drag-fly.overlay-fixed`；同样 portal 进滚动内容层，一起被标签栏与内容区边界挡掉；仍是 `position:fixed`，但包含块是带 `transform` 的 `.tuning-scroll`（跟手需要它不随滚动位移） |
 | 窗口缩放手柄 | 9999 | resize handles |
 
 ## 7. 颜色映射表（TS）
