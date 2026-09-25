@@ -132,7 +132,7 @@
 | 拖拽落位布局动画 | `320–400ms`，曲线与视图收窄同源（`cubic-bezier(0.22,1,0.36,1)`，`lib/motionEase.ts`） |
 | 拖拽飞行 | `530ms = 400ms 弧线（位置段 288ms，比例 0.72）+ 100ms 停顿 + 30ms 缓冲` |
 | 拖拽落地灰条 | `0.4s ease-out`（与弧线飞行同长，副本卸载前跑完） |
-| 切换时卡片错峰淡入 | 单张 `200ms`（`STAGGER_FADE_MS`）+ 轻微上移 `6px`（`STAGGER_RISE_PX`）；延迟按「行主序权重」推（行内一张一跳、跨行跨一整行），张数多时**压缩步长**铺进 `200ms` 窗口（`STAGGER_WINDOW_MS`；单位权重上限 `STAGGER_STEP_MS = 14ms`）；曲线 `EASE_OUT_SOFT` |
+| 切换时卡片错峰淡入 | 单张 `180ms`（`STAGGER_FADE_MS`）；卡片从上方 `6px`（`STAGGER_DROP_PX`）**往下落位**，曲线 `EASE_OUT_BACK = cubic-bezier(0.2, 1.5, 0.3, 1)`——过冲约 5% 后利落收回（「往下展一下再回弹」，尾形与 `EASE_OUT_SOFT` 同族，所以收尾不拖；**过冲量由 `P1.y` 定**：1.5 ≈ 5%、1.8 ≈ 12%）；延迟按「行主序权重」推（行内一张一跳、跨行跨一整行），张数多时**压缩步长**铺进 `200ms` 窗口（`STAGGER_WINDOW_MS`；单位权重上限 `STAGGER_STEP_MS = 14ms`） |
 | 频响悬浮窗跟随 | 临界阻尼弹簧：`FOLLOW_SETTLE_MS = 240` 视为基本停稳时间，`omega = 6.6 / (settle/1000)`；吸附即停位置 `0.5px`、速度 `40px/s` |
 | 频响悬浮窗翻侧 | `280ms ease-out` |
 | 框选工具栏玻璃淡入淡出 | `180ms ease-out`（`--glass-t` 0→1；退出同长，等它跑完再卸载） |
@@ -146,7 +146,11 @@
 
 `lib/staggerIn.ts` 的 `playStaggerIn(root)`：取 `root` 内 `.device-cards > *`（网格容器的直接子级，
 即卡片本体），按「左上 → 右下」排序（先 `top`，行容差 `8px` 内按 `left`）后依次播
-`opacity 0 → 1` + 上移 `6px`（`STAGGER_RISE_PX`）。
+`opacity 0 → 1` + 从上方 `6px` **往下落位**（`STAGGER_DROP_PX`；起始位移必须是**负值**——写成正值
+就成了「从下方往上收」，方向反了，曾如此），曲线 `EASE_OUT_BACK = cubic-bezier(0.2, 1.5, 0.3, 1)`：
+过冲约 5% 后利落收回。尾形刻意取 `EASE_OUT_SOFT` 那一条（只把 `P2.x` 从 0.36 收到 0.3），
+与拖拽/收窄同族——标准 ease-out-back 的尾太软，回弹收得拖沓。两个旋钮是独立的：
+**位移**看 `STAGGER_DROP_PX`，**过冲大小**看曲线里的 `P1.y`（1.5 ≈ 5%、1.8 ≈ 12%）。
 
 延迟 = **行主序权重 × 单位时间**，权重 = `行号 × 每行列数 + 行内序号`：行内一张一跳、跨行一次跨
 一整行，所以「离左上角越远越晚」全程严格单调。单位时间 = `min(14ms, 200ms / 最大权重)`——
