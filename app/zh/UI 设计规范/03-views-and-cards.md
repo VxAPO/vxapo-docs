@@ -99,7 +99,9 @@
 
 ## 6. 声道胶囊 `.ch-pill`
 
-- 参数视图头部按需显示声道胶囊组：`height:22px; padding:0 10px; border-radius:9999px`。
+- **语义视图与参数视图的滤波器分区头部都显示**声道胶囊组（通道模式开启时）：外层 `.col-head`
+  （`inline-flex` + `var(--card)` 底 + `padding: 0 12px`），胶囊 `height:24px; padding:0 16px;
+  border-radius:9999px`。两个视图共用同一套标记，切换即 `setActiveChannel`（与曲线卡的声道选择器同源）。
 - 未选中：`border:1px solid var(--border)`，文字 `var(--text-secondary)`；
   hover 边框/文字 `var(--brand-deep)`（浅色）/ `var(--brand)`（深色）。
 - 选中 `.ch-pill.active`：边框/文字 `var(--brand-deep)`（浅色）/ `var(--brand)`（深色），
