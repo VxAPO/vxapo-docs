@@ -111,8 +111,15 @@
 - `.sel-copy-btn`：复制到声道。**低对比度背景**：浅色边框/文字 `#3b3c3f`，
   背景 `var(--surface-inset)`；深色边框 `var(--border-strong)`、文字 `var(--text-primary)`；
   hover 背景 `var(--hover)`。高 32px，padding `0 14px`，圆角 9999px。
-- `.sel-copy-menu`：复制到声道菜单，背景 `var(--card)`，边框 `1px solid var(--border)`，
-  z-index 60，圆角 12px。
+- `.sel-copy-menu`：复制到声道菜单。**必须 portal 到 `document.body`**——`position: fixed`，
+  `left/top/min-width` 由 JS 按触发按钮的视口矩形写，`z-index: 70`（与 `.vx-select-content` 同档）。
+  原因：它原先留在 `.fx-toolbar` 内做绝对定位，而 `.fx-toolbar` 的 `z-index: 30` **低于**染色 canvas
+  （`Z_TOOL 35` / `Z_TOOL_SHADE 36）与 `.fx-toolbar::after` 高光环带；`.sel-toolbar` 又带
+  `backdrop-filter`、自成层叠上下文，菜单在面板内部**无论给多大 z-index 都翻不上去**，于是被那层
+  `mix-blend-mode: screen` 的染色整个盖住，看上去就像"底色是透明的"（踩过）。另外两点：位置要用
+  rAF 跟按钮（工具栏会被跟随循环写 transform 移动）；外点关闭的判断必须把 `.sel-copy-menu` 也算作
+  "内部"，否则点在菜单项上会先卸载菜单、`click` 没有元素可派（复制直接失效）。
+  背景 `var(--card)`，边框 `1px solid var(--border)`，圆角 12px。
 
 ## 8. Toast `.vx-toast`
 
