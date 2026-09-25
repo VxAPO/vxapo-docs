@@ -8,6 +8,9 @@
   `.is-exiting`（绝对定位让出文档流）演完平移，再以 `display:none` 收起。不再使用
   `AnimatePresence` 的挂载/卸载——避免反复重建 31 张参数卡 DOM 造成的首帧尖峰。
 - `.view-stage`：`display:flex; flex-direction:column; gap:22px`。
+- 两个视图的**可见块判据同源**：`lib/filters.visibleBlockFor`（通道模式开＝当前声道，无声道标识的块归
+  首声道；关＝回退首声道）。语义视图**不再是**「非通道模式全部显示」——那样关掉通道选择器时会把别的声道的
+  卡也画出来（随后又随合并消失，见 04 第 7 节）。
 - 切换编排由 `useViewAnimation` 负责：记录旧滚动位置 → 锁 `.view-stack` 高度 →
   平移结束（`VIEW_SLIDE_MS = 320ms`，按定时器对齐，不等动画回调）的那一刻立即开始
   高度收窄过渡（`cubic-bezier(0.22,1,0.36,1)` 先快后慢；时长按高度差缩放
