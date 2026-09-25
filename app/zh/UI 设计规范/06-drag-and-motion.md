@@ -20,20 +20,31 @@
 ### 1.2 拖拽副本
 
 - `.drag-fly`：飞行副本，`position:relative; width:fit-content`。
-- `.drag-fly.overlay-fixed`：`position:fixed; z-index:75; pointer-events:none`，
+- `.drag-fly.overlay-fixed`：`position:fixed; top/left:0; z-index:75; pointer-events:none`，
   阴影 `0 10px 28px`（深色使用 `--shadow-ink`）。
+- **悬浮层跟手位移走 `transform`**：`left`/`top` 固定为 0 作静态基准，JS 每帧写
+  `transform: translate()`。逐帧写 `left`/`top` 属于布局属性、每帧都要重新布局；`transform`
+  只改视觉位置。刻意不用 `translate3d`/`will-change`——升成合成层后拖动停住时文字栅格与常规层
+  不同（同飞行副本「落地交接」的理由）。
 - 抓取时阴影从 hover 阴影平滑扩大到拖拽阴影：`drag-shadow-lift 0.18s ease-out`。
+- 落地灰条 `drag-bar-land 0.3s ease-out`：时长与弧线飞行（`FLY_ANIM_MS`）对齐，保证副本卸载前跑完
+  （原先 0.45s 超过落地总时长，尾部被硬切）。
 
 ## 2. 槽位检测与避让
 
 `useDragSort.tsx` 实现自定义指针级槽位拖拽引擎（常量在 `lib/dragSortTypes.ts`）：
 
-- 进入槽位消抖 `ENTER_DEBOUNCE_MS = 500`（必须长于所有拖拽动画，避免动画未结束又触发新一轮布局）。
-- 布局动画 `LAYOUT_ANIM_MS = 400`（组外 `LAYOUT_ANIM_OUTSIDE_MS = 320`）。
-- 松手时若布局动画未结束，多等 `ANIM_SETTLE_BUFFER_MS = 80` 再落地，避免动画被硬切。
+- 进入槽位消抖 `ENTER_DEBOUNCE_MS = 500`（必须长于所有拖拽动画：下界 = `LAYOUT_ANIM_MS +
+  ANIM_SETTLE_BUFFER_MS` = 480，避免动画未结束又触发新一轮布局）。
+- 布局动画 `LAYOUT_ANIM_MS = 400`（组外 `LAYOUT_ANIM_OUTSIDE_MS = 320`），曲线 `LAYOUT_EASE`。
+- 避让中的卡片不会「先弹回原位再跳到新位」（清位移与重排同帧提交），避免“闪一下/抽搐”。
+- 松手时若布局动画未结束，多等 `ANIM_SETTLE_BUFFER_MS = 80` 再落地，避免动画被硬切。记账按
+  **本次实际使用的时长**（槽位外补位按 320ms 记，不按 400ms），否则动画早已停住、落地却还在等。
 - 距所有槽位超过 `OUTSIDE_DIST = 48` 才算真正离开卡片区（未离开原位时“槽位外=末尾”不生效）。
-- 落地动画总时长 `FLY_TOTAL_MS = 430`：0.3s 二次贝塞尔弧线飞行 + 0.1s 无阴影停顿 + 缓冲。
-- 避让中的卡片先弹回原位再跳到新位，避免“闪一下/抽搐”。
+- 落地动画总时长 `FLY_TOTAL_MS = 430 = FLY_ANIM_MS(300) + FLY_HOLD_MS(100) + FLY_TAIL_MS(30)`：
+  0.3s 二次贝塞尔弧线飞行 + 0.1s 无阴影停顿 + 副本卸载前的时序缓冲。
+- 位置段只占总时长的 `FLY_MOVE_RATIO = 0.72`（`FLY_MOVE_MS = 216`）：framer 的 `x`/`y` `times` 与
+  阴影收尾的 `times` 同源换算，阴影从位置停下那一刻才开始收，不再各记一套比例。
 - **拖拽中滚动页面**：槽位矩形按滚动增量整体平移（不重新测量——卡片上挂着布局动画的 `transform`，
   量到的是中间态），命中用最后指针位置重算。拖着的卡跟手不动，卡片区在动。
 - **落点取提交后的真实位置**：松手先同步提交「清位移 + 重排」（`flushSync`），同一任务内再量被拖卡
@@ -54,6 +65,14 @@
 - **飞行副本跟随内容滚动**：副本挂在 `fixed` 层（在滚动容器之外），落点是创建那一刻的视口坐标；
   用户一滚，整条弧线就会被内容甩掉。飞行期间监听滚动，按活动视图舞台的位移反向平移副本基准
   （命令式写 `left`/`top`，不重渲染），弧线跟着内容走，终点始终压在目标槽位上。
+- **跟手与滚动合帧**：`pointermove` / `scroll` 只记录最新状态，定位与命中在 `requestAnimationFrame`
+  里每帧结算一次（先平移槽位、再定位与命中）。高频指针（高刷触控板、游戏鼠标）一秒能发几百个
+  `move`，逐个处理等于同一帧里反复写样式、反复测矩形；飞行副本的跟随滚动补偿同样合帧（测舞台矩形
+  是强制布局，一帧最多一次）。松手前先同步结算未决帧——从悬浮层量到的飞行起点必须是指针最后停下的位置。
+- **曲线单源**：避让曲线 `LAYOUT_EASE` 与视图收窄 `COLLAPSE_EASE` 是同一个常量（`lib/motionEase.ts`
+  的 `EASE_OUT_SOFT = cubic-bezier(0.22,1,0.36,1)`），改一处即三处生效（含滚动条长度变形）。
+- 上述时长关系由 `lib/dragSortTypes.test.ts` 钉住（消抖下界、落地三段之和、位置段比例、曲线同源、
+  CSS 灰条时长 ≤ 飞行时长）。
 
 ## 3. 框选（useMarqueeSelection）
 
@@ -81,8 +100,9 @@
 | 弹窗进入 | `0.18s cubic-bezier(0.2,0.8,0.3,1)` |
 | Toast 进入 | `0.2s ease` |
 | 拖拽阴影抬升 | `0.18s ease-out` |
-| 拖拽落位布局动画 | `320–400ms cubic-bezier(0.22,1,0.36,1)` |
-| 拖拽飞行 | `430ms` |
+| 拖拽落位布局动画 | `320–400ms`，曲线与视图收窄同源（`cubic-bezier(0.22,1,0.36,1)`，`lib/motionEase.ts`） |
+| 拖拽飞行 | `430ms = 300ms 弧线（位置段 216ms，比例 0.72）+ 100ms 停顿 + 30ms 缓冲` |
+| 拖拽落地灰条 | `0.3s ease-out`（与弧线飞行同长，副本卸载前跑完） |
 | 频响悬浮窗跟随 | 临界阻尼弹簧：`FOLLOW_SETTLE_MS = 240` 视为基本停稳时间，`omega = 6.6 / (settle/1000)`；吸附即停位置 `0.5px`、速度 `40px/s` |
 | 频响悬浮窗翻侧 | `280ms ease-out` |
 | 框选工具栏玻璃淡入淡出 | `180ms ease-out`（`--glass-t` 0→1；退出同长，等它跑完再卸载） |
