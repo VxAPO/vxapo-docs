@@ -56,7 +56,11 @@
   - 配色 `.preset-swatches`：24 色固定色盘（`SWATCHES`）。
     - 色块 `.preset-swatch`：24×24px 圆，边框 2px transparent。
     - 选中 `.preset-swatch.active`：`border-color: var(--swatch-hover, var(--text-primary));
-      box-shadow: 0 0 0 2px var(--card)`。
+      box-shadow: 0 0 0 2px var(--card)`。**深色下这圈描边要再压深一档**（覆盖写在 `dark.css`）：
+      `--swatch-hover` 是 L 0.45 的加深变体，浅色下压亮底很清楚，但深色下它与填充（L 0.6）**差得不够**，
+      描边读不出来。那里掺 32% 纯黑（≈L 0.35），改成靠「亮盘被切掉一圈」的**深浅差**读选中，
+      填充保持原色不动、浅色规则也不动。反向方案（深色改用亮色描边）试过并弃用：与「浅色压深、
+      深色提亮」的直觉相反，整盘看着发散。
     - 每个色块的 `--swatch-hover` 由 `accentHoverColor(c)` 在 TS 中算好注入。
   - 逐行描述 `.preset-band-list`（`.os-scroll` + OverlayScrollbar）：分区标题用通用的
     `t("filters")`（「滤波器」/「Filters」）；每行 `.preset-band-row` 显示频段标签（`fc · gain`）
