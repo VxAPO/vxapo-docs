@@ -139,7 +139,8 @@
 | 频响悬浮窗跟随 | 临界阻尼弹簧：`FOLLOW_SETTLE_MS = 240` 视为基本停稳时间，`omega = 6.6 / (settle/1000)`；吸附即停位置 `0.5px`、速度 `40px/s` |
 | 频响悬浮窗翻侧 | `280ms ease-out` |
 | 框选工具栏玻璃淡入淡出 | `180ms ease-out`（`--glass-t` 0→1；退出同长，等它跑完再卸载） |
-| 设备页切换 | 退场 `180ms easeInOut` 淡出（`DEVICE_FADE_MS`），**进场不补间 opacity**（淡入交给卡片错峰）：`AnimatePresence mode="wait"` + `key={selectedGuid}`，两段串行。退场的是**上一轮的旧元素实例**，它带着旧设备的 props 淡出——因此设备页数据（`blocks` / `effects` / `channelOn` / `activeChannel` / `channelNames`）必须由 App 经 `ViewStage` 透传进视图，**不能**让视图直连 store：store 是全局实时的，旧元素一旦订阅它，淡出途中就会渲染成新设备的内容（连页面高度都一起变），整段过渡观感就不对了 |
+| 设备页切换 | 退场 `180ms easeInOut` 淡出（`DEVICE_FADE_MS`），**进场不补间 opacity**（淡入交给卡片错峰，**含底部双卡**——错峰选择器是
+`.device-cards > *, .bottom-row > *`；底部双卡不是网格子级，漏掉它们就会「双卡先蹦出来、卡片随后才扫过去」）：`AnimatePresence mode="wait"` + `key={selectedGuid}`，两段串行。退场的是**上一轮的旧元素实例**，它带着旧设备的 props 淡出——因此设备页数据（`blocks` / `effects` / `channelOn` / `activeChannel` / `channelNames`）必须由 App 经 `ViewStage` 透传进视图，**不能**让视图直连 store：store 是全局实时的，旧元素一旦订阅它，淡出途中就会渲染成新设备的内容（连页面高度都一起变），整段过渡观感就不对了 |
 | 染色 canvas 跟随淡入淡出 | 逐帧按「目标可见度」缩放透明度：工具栏读 `--glass-t`、页面内目标读所在 `.device-page` 的实时 opacity；淡入淡出期间逐帧重绘（`lib/edgetint/renderLoop.ts`） |
 | 曲线重算节流 | `42ms`（≈24fps，`useThrottledCompute`） |
 | 滚动条淡入淡出 | `opacity 0.25s ease`；停止滚动 `1.2s` 后自动淡出 |

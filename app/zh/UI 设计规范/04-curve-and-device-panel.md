@@ -22,6 +22,10 @@ display:flex; gap:12px; padding:10px 12px 12px; pointer-events:none`。
 - `flex:none; min-width:240px; border-radius:16px; padding:10px 18px 12px;
   border:1px solid var(--border); box-shadow: var(--card-shadow)`。
 - 内容：设备名、采样率/通道/位深、当前增益、段数统计、归一化按钮。
+- 峰值增益与归一化提示里的 dB 一律走 `lib/format.fmtDb1`：**先四舍五入到 1 位小数，再定符号**。
+  写成 `(v >= 0 ? "+" : "") + v.toFixed(1)` 会在 |v| < 0.05 时留下负号——`(-0.04).toFixed(1)` 是
+  `"-0.0"`，而归一化恰好把峰值压到 0 附近，界面于是显示「-0.0 dB」（踩过）。数值侧的 `-0` 由
+  `planNormalize` 里的 `+ 0` 归一掉，否则数字输入框会显示 "-0"。
 - 按钮 `.dev-prop-btn`：高 20px，padding `0 8px`，圆角 9999px，
   边框 `1px solid var(--border)`，文字 `var(--text-secondary)`；
   hover 边框/文字 `var(--brand-deep)`（浅色）/ `var(--brand)`（深色），背景 `var(--brand-soft)`。
