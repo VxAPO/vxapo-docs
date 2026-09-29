@@ -33,7 +33,8 @@ display:flex; gap:12px; padding:10px 12px 12px; pointer-events:none`。
 ## 3. 频响曲线卡 `.curve-wrap`
 
 - `flex:1; min-width:0; border-radius:16px; padding:10px 18px 14px;
-  border:1px solid var(--border); box-shadow: var(--card-shadow); overflow:hidden`。
+  border:0; box-shadow: 0 6px 14px -4px rgba(15,23,42,.18); overflow:hidden`
+  （描边/边缘交给外侧环带，见 §2）。
 - 标题行 `.curve-head`：高度 32px，标题“频响曲线”16px 700 + 声道选择器。
 - SVG 左移 `margin-left:-10px`，CSS 宽度 `calc(100% + 28px)`；`viewBox` 的宽度 `curveW` 由 `CurvePanel`
   按容器**内容盒**宽度算出（`widthFor`，最小 660px）。**布局 effect 与 ResizeObserver 必须量同一个盒模型**：
@@ -78,6 +79,9 @@ display:flex; gap:12px; padding:10px 12px 12px; pointer-events:none`。
 - **量程与曲线路径必须取自同一份快照**：`App` 里 `curveSnap = deferredCurve ?? liveCurve`，
   评估频点与峰值/谷值一次算完；`yTop/yBottom`（`axisRange`）与交给 `CurvePlot` 的
   `blocks` / `evalFreqs` 全部来自它——绘制侧不再自行按当前 blocks 算评估点。
+  快照里还带**基准电平** `preamp`（`preampGainDb`）：它是曲线路径的纵向偏移，量程也按它算；漏掉它
+  就会在切设备（尤其「关通道 → 开通道」，基准电平从全局 preamp 换成该声道的）那一档画出
+  「旧设备的链 + 新设备的基准电平」这条并不存在的曲线，过渡中间是错的（踩过）。
   两者档位一旦不一致就会露馅：曾经是「量程走节流（按设计**滞后一档**）、路径按当前 blocks 现算」，
   于是关掉通道选择器那一帧里路径已是整条链、量程还是单声道的旧值，曲线先按错量程补间一档、
   下一档才回正——现象是「过渡第一次取到错误值，随后恢复」（形状一直是对的，错的是坐标轴，踩过）。
@@ -136,6 +140,16 @@ display:flex; gap:12px; padding:10px 12px 12px; pointer-events:none`。
   关＝无声道标识或首声道的块）。两个视图的 `visible`、`App` 的曲线取块都用它；`CurvePanel` 不再自行过滤
   ——它拿到的是 App 那份**曲线快照**里的块（见第 5 节），再按当前声道过一遍会在切声道那一档把曲线滤空。
   判据一旦各写一份，就会出现「参数视图关了、语义视图还全部显示」这类分歧（踩过）。
+- **逐设备记忆通道态**（`stores/channelStore`）：切设备时把上一台的 `channelOn` / `activeChannel` 存下、
+  恢复新设备的。**必须等新设备的配置到位再恢复**（`useConfigStore.loadedGuid === selectedGuid`，
+  `load()` 开始时清空、解析完成后写回），且在**绘制前**生效（`useChannelState` 与 App 里同步
+  `configChannelMode` 的 effect 都用 `useLayoutEffect`）。
+  `load()` 是异步的，切设备后有一小段 store 里还是上一台的 `blocks`：这段窗口里若先恢复新设备的通道态，
+  就等于用**新设备的通道态**过滤**上一台的链** —— 从「开了通道选择器（preamp 按声道分成两张基准电平卡）」
+  的设备切到「没开」的设备时，会先闪一下「上一台左右声道卡片并成一份」的视图，再跳到新设备（踩过）。
+  等配置到位再恢复，这段窗口里通道态与屏上的上一台数据自洽，整页只在新数据到位那一刻换一次。
+  另外**新设备没有记忆时保持当前值**、不回落成「关 + 左声道」（同因：回落也会在那段窗口里画出上一台的链
+  按左声道过滤的版本；设备页改硬切后没有淡入遮挡，这一帧会直接露出来）。
 - 曲线卡在两个视图里都存在，所以**语义视图下同样可以切换声道**（旧文档写的「语义视图下显示全部声道且不可用」
   已废弃：那时通道模式会强制落在参数视图，现在不再限制视图）。语义视图的滤波器分区头部也有同一套
   声道胶囊（见 03 第 6 节），两处入口同源。
