@@ -1,0 +1,5 @@
+# 行尾统一：索引与工作区都按 LF（覆盖全局 core.autocrlf=true）。
+# 这样编辑器/工具写 LF 时 git 不会判成「已修改」，不必再手动删除 + checkout 洗工作区。
+* text=auto eol=lf
+*.cmd text eol=crlf
+*.bat text eol=crlf
