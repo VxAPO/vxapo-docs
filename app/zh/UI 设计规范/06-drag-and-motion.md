@@ -140,8 +140,13 @@
 | 频响悬浮窗翻侧 | `280ms ease-out` |
 | 框选工具栏玻璃淡入淡出 | `180ms ease-out`（`--glass-t` 0→1；退出同长，等它跑完再卸载） |
 | 设备页切换 | 退场 `180ms easeInOut` 淡出（`DEVICE_FADE_MS`），**进场不补间 opacity**（淡入交给卡片错峰）——错峰**只覆盖网格卡片**（`.device-cards > *`）；
-底部双卡（设备卡 / 曲线卡）**不参加错峰**，由 `.bottom-row` 自己一段**纯淡入**（`vx-bottom-fade`，
-`0.18s` = `DEVICE_FADE_MS`）负责。它们不是内容卡片，跟着卡片去「下落 + 过冲」会像抖一下（踩过）：`AnimatePresence mode="wait"` + `key={selectedGuid}`，两段串行。退场的是**上一轮的旧元素实例**，它带着旧设备的 props 淡出——因此设备页数据（`blocks` / `effects` / `channelOn` / `activeChannel` / `channelNames`）必须由 App 经 `ViewStage` 透传进视图，**不能**让视图直连 store：store 是全局实时的，旧元素一旦订阅它，淡出途中就会渲染成新设备的内容（连页面高度都一起变），整段过渡观感就不对了 |
+底部双卡（设备卡 / 曲线卡）**不参加错峰**，由 `.bottom-row` 自己一段淡入负责（`vx-bottom-in`，
+`0.18s` = `DEVICE_FADE_MS`）。它们不是内容卡片，跟着卡片去「下落 + 过冲」会像抖一下（踩过）。
+**这段淡入只能动 `--glass-t`（玻璃进度），绝不能动 opacity**：祖先 `opacity < 1` 会让面板自身的
+`backdrop-filter` 整组降级，下一瞬被这两张卡遮住的调音卡片就「完全透过、没被模糊」（踩过，规则见
+`drag.css` 的 `--glass-t` 注释）。所以底衬（`color-mix` 里的百分比 × `--glass-t`）、投影（颜色的
+alpha × `--glass-t`）与卡内内容都按进度淡，**面板本体的 `backdrop-filter` 保持常开**——
+淡入期间背后始终是糊的，不会露馅。染色 canvas 走同一进度（`targetVisibility` 读 `--glass-t`）：`AnimatePresence mode="wait"` + `key={selectedGuid}`，两段串行。退场的是**上一轮的旧元素实例**，它带着旧设备的 props 淡出——因此设备页数据（`blocks` / `effects` / `channelOn` / `activeChannel` / `channelNames`）必须由 App 经 `ViewStage` 透传进视图，**不能**让视图直连 store：store 是全局实时的，旧元素一旦订阅它，淡出途中就会渲染成新设备的内容（连页面高度都一起变），整段过渡观感就不对了 |
 | 染色 canvas 跟随淡入淡出 | 逐帧按「目标可见度」缩放透明度：工具栏读 `--glass-t`、页面内目标读所在 `.device-page` 的实时 opacity；淡入淡出期间逐帧重绘（`lib/edgetint/renderLoop.ts`） |
 | 曲线重算节流 | `42ms`（≈24fps，`useThrottledCompute`） |
 | 滚动条淡入淡出 | `opacity 0.25s ease`；停止滚动 `1.2s` 后自动淡出 |
