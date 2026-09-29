@@ -35,7 +35,12 @@ display:flex; gap:12px; padding:10px 12px 12px; pointer-events:none`。
 - `flex:1; min-width:0; border-radius:16px; padding:10px 18px 14px;
   border:1px solid var(--border); box-shadow: var(--card-shadow); overflow:hidden`。
 - 标题行 `.curve-head`：高度 32px，标题“频响曲线”16px 700 + 声道选择器。
-- SVG 左移 `margin-left:-10px`，宽度由 `CurvePanel` 根据容器宽度动态计算，最小 660px。
+- SVG 左移 `margin-left:-10px`，CSS 宽度 `calc(100% + 28px)`；`viewBox` 的宽度 `curveW` 由 `CurvePanel`
+  按容器**内容盒**宽度算出（`widthFor`，最小 660px）。**布局 effect 与 ResizeObserver 必须量同一个盒模型**：
+  前者曾经用 `getBoundingClientRect().width`（**含 padding**，而 `.curve-wrap` 左右各 18px）、后者用
+  `contentRect.width`，两者差 36px —— 每次设备页重挂载都是「先按大 36px 的 viewBox 画一帧 → RO 报回小
+  36px → 所有 x 坐标整体重新缩放」，表现为坐标轴（x=40 那条纵轴与刻度）**细微水平抖动**（踩过）。
+  `widthFor` 里的 `+20` 与 `<svg>` 的 `+28` 有 8px 出入，只影响整体缩放约 1%，与稳定性无关。
 - 曲线内 `path/circle/line` 描边色过渡 `stroke 0.32s cubic-bezier(0.4,0,0.2,1)`（主题切换插值）。
 
 ## 4. 曲线绘制（CurvePlot + CurveGrid）
@@ -60,7 +65,9 @@ display:flex; gap:12px; padding:10px 12px 12px; pointer-events:none`。
   虚线 `stroke: var(--border)`，`strokeDasharray="4 4"`。
   （历史弯路：曾在绘制侧用 `floor`/`ceil` 去凑步长整数倍——量程不是步长倍数时首条网格线会缩进来
   半格，虚线便贴不住纵轴顶端、标签整体偏移。）
-- X 网格：20/50/100/200/500/1k/2k/5k/10k/20k 对数位置，虚线同上。
+- X 网格：20/50/100/200/500/1k/2k/5k/10k/20k 对数位置（`logX`），位置同样经 `snapPx()` 取整——
+  `curveW` 一变映射就整体缩放，不取整时竖线落在亚像素上、由渲染器自行取整，相邻两档取整结果不同
+  就抖一下（与纵轴同一条原因）。虚线同纵轴。
 - 坐标轴实线：`stroke: var(--curve-axis)`（浅色 `#b3bbc8` / 深色 `#7c7d7f`）。
 - 刻度标签与十字光标样式见 `CurveGrid` / `CurvePlot` 实现。
 
