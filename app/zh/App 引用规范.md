@@ -366,7 +366,7 @@ export interface MigrationReport {
 | 效果器 | 中文名 | 参数 | 默认值 |
 |--------|--------|------|--------|
 | `preamp` | 基准电平 | `gain_db` | `0` |
-| `wide` | 声场处理 | `gain`(高频补偿) / `air`(中置空气) / `air_side`(侧向空气) / `mix`(干湿) / `crossover_hz`(分频点 200–1000) | `0.05 / 0.3543 / 0 / 0.6 / 200` |
+| `wide` | 声场处理 | `gain`(高频补偿→低频深度) / `air`(中置空气) / `side_itd`(侧向时间差) / `crossover_hz`(分频点 200–1000) | `0.05 / 0.3543 / 0.6 / 200` |
 | `aural` | 谐波激励器 | `tune_hz` / `drive` / `odd` / `even` / `wet` / `dry` | `1760 / 1.7699 / 1.5 / 0.25 / 0.5 / 0.5` |
 | `reverb` | 板式混响 | `room_size` / `decay` / `damping` / `pre_delay_ms` / `low_cut_hz` / `wet` / `dry` | `1 / 0.41 / 0.4083 / 0 / 100 / 0.27 / 0.73` |
 | `compressor` | 压缩器 | `threshold_db` / `ratio` / `knee_db` / `attack_ms` / `release_ms` / `makeup_gain_db` / `wet` / `dry` | `-18 / 4 / 3 / 10 / 100 / 6 / 1 / 0` |

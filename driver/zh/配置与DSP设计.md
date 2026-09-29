@@ -61,7 +61,7 @@ q = 1.0
 | `aural` | `tune_hz`(500..10000)、`drive`(0..4.25)、`odd`(0..1.5)、`even`(0..0.75)、`wet`/`dry`(0..1) | 见下表 |
 | `reverb` | `room_size`(0.5..1.5)、`decay`/`damping`/`bandwidth`/`density`/`lat5`/`lat6`(0..1)、`pre_delay_ms`(0..100)、`motion_rate`(0.05..2)、`motion_depth`(0..2，旧键 `motion_depth_ms`)、`low_cut_hz`(20..250)、`wet`/`dry`(0..1) | 见下表 |
 | `compressor` | `threshold_db`(-60..0)、`ratio`(1..20)、`knee_db`(0..12)、`attack_ms`(0.1..100)、`release_ms`(10..1000)、`makeup_gain_db`(0..24)、`wet`/`dry`(0..1) | 见下表 |
-| `wide` | `gain`/`air`/`air_side`/`mix`(0..1)、`crossover_hz`(200..1000) | 见下表 |
+| `wide` | `gain`/`air`/`side_itd`(0..1)、`crossover_hz`(200..1000) | 见下表 |
 | `loudness` | `phon`(0..120，必填)、`reference_phon`(0..120) | 见下表 |
 
 各效果器缺省值（`pipeline/dsp/*.rs` 的 `Default`）：
@@ -71,7 +71,7 @@ q = 1.0
 | `aural` | `tune_hz 1760` / `drive 1.76993` / `odd 1.5` / `even 0.25` / `wet 0.5` / `dry 0.5` |
 | `reverb` | `room_size 1.0` / `decay 0.41` / `damping 0.408290` / `bandwidth 0.350110` / `density 1.0` / `lat5 0.70` / `lat6 0.50` / `pre_delay_ms 0` / `motion_rate 0.110871` / `motion_depth 0.63` / `low_cut_hz 100` / `wet 0.27` / `dry 0.73` |
 | `compressor` | `threshold_db -18` / `ratio 4` / `knee_db 3` / `attack_ms 10` / `release_ms 100` / `makeup_gain_db 6` / `wet 1.0` / `dry 0.0` |
-| `wide` | `gain 0` / `air 0.354331` / `air_side 0` / `mix 0.6` / `crossover_hz 200` |
+| `wide` | `gain 0` / `air 0.354331` / `side_itd 0.6` / `crossover_hz 200` |
 | `loudness` | `reference_phon 80`（`phon` 必填） |
 
 PEQ 段类型（`bands[].type`，缺省 `peaking`）：
@@ -88,8 +88,12 @@ PEQ 段类型（`bands[].type`，缺省 `peaking`）：
   原样直通（`20` ≈ 关闭），分频点以上进混响。
 - `compressor`：全声道联动 RMS 检测 + 含软膝静态曲线 + dB 域 attack/release 平滑 + makeup 增益；
   取代原 `maximizer` / `leveler`。
-- `wide`：线性相位 FIR 分频后只处理高频支路；`gain` 控制侧通道增强量，`air` 为中置空气吸收，
-  `air_side` 为侧通道空气吸收（默认 0 = 关闭），`mix` 为处理增量干湿比。
+- `wide`：线性相位 FIR 分频；`gain`（高频补偿）只决定**低频降低**的深度——RBJ 低架，
+  Q 固定 0.707、拐点 = `crossover_hz`、深度 = 6dB × `gain`，且加在**重建后的干声和**上
+  （只在低通支路做会破坏分频两路对称，让线性相位的前后振铃露出来）；`air` 为中置空气吸收；
+  `side_itd`（侧向时间差）是侧通道 1.5kHz 以上时间差去相关的干湿比（0 = 完全不动相位，
+  1 = 全额左 +5 / 右 +7 采样）。侧通道不提升、也不被单独衰减；处理增量过截止 = 分频点的
+  一阶高通，输出端软膝限幅兜底。
 - `aural`：二阶 Butterworth 高通 + 电平跟随 + tanh 奇次软饱和 + 半波整流偶次，Wet/Dry 混合。
 
 ## 2. 配置指纹与热重载

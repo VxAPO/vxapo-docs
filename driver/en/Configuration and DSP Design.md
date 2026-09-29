@@ -61,7 +61,7 @@ q = 1.0
 | `aural` | `tune_hz` (500..10000), `drive` (0..4.25), `odd` (0..1.5), `even` (0..0.75), `wet`/`dry` (0..1) | `1760 / 1.76993 / 1.5 / 0.25 / 0.5 / 0.5` |
 | `reverb` | `room_size` (0.5..1.5), `decay`/`damping`/`bandwidth`/`density`/`lat5`/`lat6` (0..1), `pre_delay_ms` (0..100), `motion_rate` (0.05..2), `motion_depth` (0..2, legacy `motion_depth_ms`), `low_cut_hz` (20..250), `wet`/`dry` (0..1) | `1.0 / 0.41 / 0.408290 / 0.350110 / 1.0 / 0.70 / 0.50 / 0 / 0.110871 / 0.63 / 100 / 0.27 / 0.73` |
 | `compressor` | `threshold_db` (-60..0), `ratio` (1..20), `knee_db` (0..12), `attack_ms` (0.1..100), `release_ms` (10..1000), `makeup_gain_db` (0..24), `wet`/`dry` (0..1) | `-18 / 4 / 3 / 10 / 100 / 6 / 1 / 0` |
-| `wide` | `gain`/`air`/`air_side`/`mix` (0..1), `crossover_hz` (200..1000) | `0 / 0.354331 / 0 / 0.6 / 200` |
+| `wide` | `gain`/`air`/`side_itd` (0..1), `crossover_hz` (200..1000) | `0 / 0.354331 / 0.6 / 200` |
 | `loudness` | `phon` (0..120, required), `reference_phon` (0..120) | `reference_phon 80` |
 
 PEQ band types (`bands[].type`, default `peaking`):
@@ -78,9 +78,14 @@ Implementation notes:
   (content below it bypasses the reverb per channel, `20` ~ off).
 - `compressor`: all-channel linked RMS detection + soft-knee static curve + dB-domain attack/release
   smoothing + makeup gain; replaces the former `maximizer` / `leveler`.
-- `wide`: linear-phase FIR crossover processing only the high band; `gain` drives side gain,
-  `air` is center air absorption, `air_side` is side air absorption (default 0 = off), `mix` is the
-  processed-increment dry/wet ratio.
+- `wide`: linear-phase FIR crossover; `gain` (HF compensation) only sets the depth of the
+  **low-end reduction** — an RBJ low shelf with Q fixed at 0.707, corner = `crossover_hz`, depth =
+  6 dB x `gain`, applied to the **reconstructed dry sum** (applying it to the low-pass branch alone
+  breaks the symmetry of the crossover and exposes the linear-phase ringing); `air` is the center
+  air absorption; `side_itd` (Side ITD) is the dry/wet ratio of the time-difference decorrelation
+  applied to the side channel above 1.5 kHz (0 = phase untouched, 1 = full left +5 / right +7
+  samples). The side channel is neither boosted nor separately attenuated; the processed increment
+  passes a first-order high-pass at the crossover, and the output has a soft-knee limiter.
 - `aural`: 2nd-order Butterworth high-pass + level follower + tanh odd-order soft saturation +
   half-wave rectified even-order term, wet/dry mixed.
 

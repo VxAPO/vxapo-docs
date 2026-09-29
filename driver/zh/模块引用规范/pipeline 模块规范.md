@@ -1560,8 +1560,8 @@ pub struct CompressorParams { pub threshold_db: f32, pub ratio: f32, pub knee_db
     pub wet: f32, pub dry: f32 }
 pub struct CompressorFilter { ... }      // impl Filter
 
-pub struct WideParams { pub gain: f32, pub air: f32, pub air_side: f32,
-    pub mix: f32, pub crossover_hz: f32 }
+pub struct WideParams { pub gain: f32, pub air: f32, pub side_itd: f32,
+    pub crossover_hz: f32, pub low_shelf_depth_db: f32 }
 pub struct WideFilter { ... }            // impl Filter
 
 pub struct HybridPeqFilter { ... }       // impl Filter（peq_hybrid.rs）
@@ -1576,7 +1576,7 @@ pub struct LoudnessFilter { ... }        // impl Filter（loudness）
   `motion_depth 0.63` / `low_cut_hz 100` / `wet 0.27` / `dry 0.73`；
 - Compressor：`threshold_db -18` / `ratio 4` / `knee_db 3` / `attack_ms 10` /
   `release_ms 100` / `makeup_gain_db 6` / `wet 1.0` / `dry 0.0`；
-- Wide：`gain 0` / `air 0.354331` / `air_side 0` / `mix 0.6` / `crossover_hz 200`。
+- Wide：`gain 0` / `air 0.354331` / `side_itd 0.6` / `crossover_hz 200` / `low_shelf_depth_db 6`。
 
 **关键算法**：
 - Aural：二阶 Butterworth 高通（`omega = 2π·tune_hz/sr`）+ 峰值电平跟随
@@ -1588,8 +1588,10 @@ pub struct LoudnessFilter { ... }        // impl Filter（loudness）
 - Compressor：全声道瞬时 RMS → dBFS 检测电平；静态曲线
   `over = level - threshold`，`slope = 1 - 1/ratio`，软膝带内二次插值；
   增益削减在 dB 域按 attack（压缩增加）/release 平滑；输出乘 makeup 后 Wet/Dry 混合。
-- Wide：线性相位 FIR 分频（Kaiser 窗，抽头数随采样率/分频点缩放），低频支路直通；
-  Mid 走空气吸收（高频架 + 二阶 Bessel 低通）；Side 增强量由 `gain` 控制
-  （0→1×，1→+1.5×），带 10ms/120ms 动态包络与 >1.5kHz 的 ITD 去相关（左 +5 / 右 +7 采样）；
-  侧输出再过 `air_side` 空气吸收；处理增量先过截止 = 分频点的一阶高通，再 tanh 限幅、乘 `mix`；
-  输出端软膝限幅兜底。`gain/air/air_side` 全为 0 时严格直通，单声道直通。
+- Wide：线性相位 FIR 分频（Kaiser 窗，抽头数随采样率/分频点缩放）；低频降低在**重建后的
+  干声和**上做（RBJ 低架，Q 固定 0.707，拐点 = 分频点，深度 = `low_shelf_depth_db`（默认 6dB）
+  × `gain`；只加在低通支路会破坏两路对称、暴露线性相位振铃）；
+  Mid 走空气吸收（高频架 + 二阶 Bessel 低通）；Side 做 1.5kHz 以上的侧向时间差去相关
+  （`side_itd` 为干湿比：0 = 不动相位，1 = 全额左 +5 / 右 +7 采样），侧通道不提升也不单独衰减；
+  处理增量先过截止 = 分频点的一阶高通；输出端软膝限幅兜底。
+  `gain`/`air`/`side_itd` 全为 0 时严格直通，单声道直通。
