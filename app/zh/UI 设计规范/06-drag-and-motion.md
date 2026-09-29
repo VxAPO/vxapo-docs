@@ -138,7 +138,7 @@
 | 频响悬浮窗跟随 | 临界阻尼弹簧：`FOLLOW_SETTLE_MS = 240` 视为基本停稳时间，`omega = 6.6 / (settle/1000)`；吸附即停位置 `0.5px`、速度 `40px/s` |
 | 频响悬浮窗翻侧 | `280ms ease-out` |
 | 框选工具栏玻璃淡入淡出 | `180ms ease-out`（`--glass-t` 0→1；退出同长，等它跑完再卸载） |
-| 设备页切换 | 退场与进场都是 `180ms easeInOut`（`DEVICE_FADE_MS`，两段串行）：`AnimatePresence mode="wait"` + `key={selectedGuid}`。退场的是**上一轮的旧元素实例**，它带着旧设备的 props 淡出——因此设备页数据（`blocks` / `effects` / `channelOn` / `activeChannel` / `channelNames`）必须由 App 经 `ViewStage` 透传进视图，**不能**让视图直连 store：store 是全局实时的，旧元素一旦订阅它，淡出途中就会渲染成新设备的内容（连页面高度都一起变），整段过渡观感就不对了 |
+| 设备页切换 | 退场 `180ms easeInOut` 淡出（`DEVICE_FADE_MS`），**进场不补间 opacity**（硬切，`opacity: { duration: 0 }`）——进场淡入会把整棵子树提升为**合成图层**，图层上的文字丢掉次级像素（LCD）抗锯齿、`1px` 描边的栅格落点也变了；薄元素（章节标题的字形、卡片组色描边）上表现为闪一下，实心填充的控件（滑杆/开关/数值）看不出差别（实机确认：只有章节标题与卡片描边闪）。`AnimatePresence mode="wait"` + `key={selectedGuid}`，两段串行。退场的是**上一轮的旧元素实例**，它带着旧设备的 props 淡出——因此设备页数据（`blocks` / `effects` / `channelOn` / `activeChannel` / `channelNames`）必须由 App 经 `ViewStage` 透传进视图，**不能**让视图直连 store：store 是全局实时的，旧元素一旦订阅它，淡出途中就会渲染成新设备的内容（连页面高度都一起变），整段过渡观感就不对了 |
 | 染色 canvas 跟随淡入淡出 | 逐帧按「目标可见度」缩放透明度：工具栏读 `--glass-t`、页面内目标读所在 `.device-page` 的实时 opacity；淡入淡出期间逐帧重绘（`lib/edgetint/renderLoop.ts`） |
 | 曲线重算节流 | `42ms`（≈24fps，`useThrottledCompute`） |
 | 滚动条淡入淡出 | `opacity 0.25s ease`；停止滚动 `1.2s` 后自动淡出 |
@@ -146,17 +146,22 @@
 
 ### 4.1 切换时的卡片淡入
 
-卡片错峰淡入（`lib/staggerIn.ts` + `STAGGER_*` 常量 + 它带来的两处 `opacity: { duration: 0 }`）
-**已整体删除**：视图切换与设备页切换都回到「整体淡入淡出」，卡片跟着页面一起淡。
+卡片错峰淡入（`lib/staggerIn.ts` + `STAGGER_*` 常量 + 它带来的两处补丁）**已整体删除**：
+视图切换回到「平移 + 整体淡入淡出」，设备页切换是「退场 180ms 淡出 + 进场硬切」。
 
-留下两条结论备查（都是当时踩过的）：
+留下几条结论备查（都是踩过的）：
 
-- 给祖先加 `opacity < 1` 的淡入，会让面板自身的 `backdrop-filter` **整组降级**（模糊要等淡入结束
-  才出现）——底部双卡那种玻璃面板尤其明显（规则见 `drag.css` 的 `--glass-t` 注释）。
+- **不要为了淡入去动祖先的 `opacity`**：它会把整棵子树提升为**合成图层**——图层上的文字丢掉次级像素
+  （LCD）抗锯齿、`1px` 描边的栅格落点也变了；薄元素（章节标题的字形、卡片组色描边）会闪一下，
+  而实心填充的控件（滑杆/开关/数值）看不出差别。设备页进场因此改回硬切（退场淡出不受影响，
+  反正整页在离场）。
+- 同一条原因的另一面：祖先 `opacity < 1` 还会让面板自身的 `backdrop-filter` **整组降级**
+  （模糊要等淡入结束才出现），底部双卡那种玻璃面板尤其明显（规则见 `drag.css` 的 `--glass-t` 注释）。
 - 错峰的「下落 + 过冲」在大卡片上读起来像抖一下；纯淡入的错峰又会让页面里别的元素被落下。
   切换观感交给页面自己的 `DEVICE_FADE_MS` / `VIEW_SLIDE_MS` 就够。
-- **触发点**：视图切换看 `viewAnimating` 变 `true`；设备页切换用 rAF 等「新的 `.device-page` 出现」
-  （`mode="wait"` 先退旧页），等不到（无设备/加载失败）两秒后放弃。
+- 染色画布那类**独立图层**必须与页面同帧开重绘窗口（`driveFor` 走 `useLayoutEffect`）：
+  晚一帧就是「新页面已经在淡入、画布还停在上一轮的染色」，薄元素上同样是闪一下。
+- 错峰原来的触发方式（`viewAnimating` / rAF 等新的 `.device-page` 出现）随之作废，不再需要。
 
 ### 4.2 频响曲线的形状过渡
 
