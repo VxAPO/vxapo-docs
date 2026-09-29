@@ -126,7 +126,9 @@
 | 标签 hover/active | `0.15s ease` |
 | 卡片 hover 阴影 | `0.18s ease` |
 | 加号（无设备页/标签页）/ 安装按钮 hover | `0.18s ease` |
-| 弹窗进入 | `0.18s cubic-bezier(0.2,0.8,0.3,1)` |
+| 弹窗进入 | `0.18s cubic-bezier(0.2,0.8,0.3,1)`（`vx-pop`：自下方 2% 抬上来） |
+| 弹窗退场 | `0.15s cubic-bezier(0.4,0,0.2,1)`（`vx-pop-out`：镜像沉回下方 2%）。比进场短，收得利落 |
+| 弹窗压暗层进出场 | `0.15s ease`（`vx-overlay-in` / `vx-overlay-out`：`opacity` 0↔1 与 `backdrop-filter` `blur(0px)`↔`blur(2px)` 一起补间——只补 `opacity` 会「先糊再暗」）。**必须写成 CSS 动画**：Radix 的 Presence 靠 `animationend` 拖住卸载，若用 `transition`、或 closed 状态下没有动画名，元素会被立刻卸载，退场根本看不到 |
 | Toast 进入 | `0.2s ease` |
 | 拖拽阴影抬升 | `0.18s ease-out` |
 | 拖拽落位布局动画 | `320–400ms`，曲线与视图收窄同源（`cubic-bezier(0.22,1,0.36,1)`，`lib/motionEase.ts`） |

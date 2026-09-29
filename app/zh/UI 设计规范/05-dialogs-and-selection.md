@@ -4,9 +4,22 @@
 
 使用 Radix Dialog。基础类名：
 
-- `.vx-dialog-overlay`：`position:fixed; inset:0; background:rgba(10,13,18,0.45); z-index:60`。
+- `.vx-dialog-overlay`：`position:fixed; inset:0; background:rgba(10,13,18,0.45); z-index:60`，
+  **再压一层 `backdrop-filter: blur(2px)`**（含 `-webkit-` 前缀）：背后的曲线/卡片退成色块，视线落到
+  弹窗上。2px 只求「脱焦」，不要往上加——再大就把底下的界面糊成一团。
+  **进出场都走 CSS 动画**（`[data-state="open"]` / `[data-state="closed"]`，时长见 06 动效表）：
+  这两段动画是 Radix 退场的唯一支点，改成 `transition`、或在 closed 状态下不给动画，
+  元素会被立刻卸载，退场就看不见了。
 - `.vx-dialog-content`：居中，`width:min(420px, calc(100vw - 48px))`，背景 `var(--card)`，
-  边框 `1px solid var(--border)`，圆角 20px，阴影 `0 12px 40px`（深色用 `--shadow-ink` 阴影）。
+  边框 `1px solid var(--border)`，圆角 20px，阴影取 `var(--modal-shadow)`，四层：
+  `inset 0 0 0 1px var(--dsw-alias-border-inverted)`、`0 0 1px 0 rgba(0,0,0,.2)`、
+  `0 0 4px 0 rgba(0,0,0,.02)`、`0 12px 32px 0 rgba(0,0,0,.08)`。设计稿写的是
+  `inset 1px solid …`——`solid` 是 border 的语法，box-shadow 里没有它；该 token 当前值为 `transparent`，
+  所以那圈内描边不显形，留着是为了跟设计稿的 token 对齐（改 token 就能显出来）。
+  深浅两套取值都放在 `theme.css` 的 `:root` 里（深色换 `--shadow-ink` 并提权：浅色那 0.08 的黑在深底上
+  看不见），`dark.css` 不再单独写一套几何，避免两处各写一份。
+  **`theme-transition` 里的透明版必须与它逐层同构**（层数/偏移/模糊一致、只有颜色透明），
+  否则 `box-shadow` 无法插值，主题切换时阴影会跳变而不是淡入。
 - 头部 `.vx-dialog-head`、标题 `.vx-dialog-title`、关闭 `.vx-dialog-close`、正文 `.vx-dialog-body`。
 
 ## 2. 设置弹窗
