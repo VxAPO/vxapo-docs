@@ -1576,7 +1576,7 @@ pub struct LoudnessFilter { ... }        // impl Filter（loudness）
   `motion_depth 0.63` / `low_cut_hz 100` / `wet 0.27` / `dry 0.73`；
 - Compressor：`threshold_db -18` / `ratio 4` / `knee_db 3` / `attack_ms 10` /
   `release_ms 100` / `makeup_gain_db 6` / `wet 1.0` / `dry 0.0`；
-- Wide：`gain 0` / `air 0.354331` / `side_itd 0.6` / `crossover_hz 200` / `low_shelf_depth_db 6`。
+- Wide：`gain 0.05` / `air 0.2` / `side_itd 0.2` / `crossover_hz 200` / `low_shelf_depth_db 6`。
 
 **关键算法**：
 - Aural：二阶 Butterworth 高通（`omega = 2π·tune_hz/sr`）+ 峰值电平跟随
@@ -1591,7 +1591,9 @@ pub struct LoudnessFilter { ... }        // impl Filter（loudness）
 - Wide：线性相位 FIR 分频（Kaiser 窗，抽头数随采样率/分频点缩放）；低频降低在**重建后的
   干声和**上做（RBJ 低架，Q 固定 0.707，拐点 = 分频点，深度 = `low_shelf_depth_db`（默认 6dB）
   × `gain`；只加在低通支路会破坏两路对称、暴露线性相位振铃）；
-  Mid 走空气吸收（高频架 + 二阶 Bessel 低通）；Side 做 1.5kHz 以上的侧向时间差去相关
-  （`side_itd` 为干湿比：0 = 不动相位，1 = 全额左 +5 / 右 +7 采样），侧通道不提升也不单独衰减；
-  处理增量先过截止 = 分频点的一阶高通；输出端软膝限幅兜底。
+  Mid 走空气吸收（高频架 + 二阶 Bessel 低通）；Side 做 1.5kHz 以上的侧向去相关
+  （`side_itd` = 高通段的分数延迟长度：0 = 不动相位，1 = 最大 0.10 / 0.15 ms，
+  Δτ = 0.05 ms 按采样率折算）。干路取该 1.5kHz 分离器的低通段（与高通段同延迟，避免
+  x[n]−x[n−D2] 残余），中置参照与干声各平移其群延迟 D2 ⇒ 链路总延迟比主分频多 D2；
+  侧通道不提升也不单独衰减；处理增量先过截止 = 分频点的一阶高通；输出端软膝限幅兜底。
   `gain`/`air`/`side_itd` 全为 0 时严格直通，单声道直通。

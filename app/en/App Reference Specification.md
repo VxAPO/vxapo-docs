@@ -359,7 +359,7 @@ Built-in effects: `preamp`, `wide`, `aural`, `reverb`, `compressor`, `loudness`.
 | Effect | Name | Params | Defaults |
 |--------|------|--------|----------|
 | `preamp` | Preamp | `gain_db` | `0` |
-| `wide` | Stereo Field | `gain` (HF compensation, drives low-end depth) / `air` (center air) / `side_itd` (Side ITD) / `crossover_hz` (200–1000) | `0.05 / 0.3543 / 0.6 / 200` |
+| `wide` | Stereo Field | `gain` (HF compensation, drives low-end depth) / `air` (center air) / `side_itd` (Side ITD) / `crossover_hz` (200–1000) | `0.05 / 0.2 / 0.2 / 200` |
 | `aural` | Aural Exciter | `tune_hz` / `drive` / `odd` / `even` / `wet` / `dry` | `1760 / 1.7699 / 1.5 / 0.25 / 0.5 / 0.5` |
 | `reverb` | Plate Reverb | `room_size` / `decay` / `damping` / `pre_delay_ms` / `low_cut_hz` / `wet` / `dry` | `1 / 0.41 / 0.4083 / 0 / 100 / 0.27 / 0.73` |
 | `compressor` | Compressor | `threshold_db` / `ratio` / `knee_db` / `attack_ms` / `release_ms` / `makeup_gain_db` / `wet` / `dry` | `-18 / 4 / 3 / 10 / 100 / 6 / 1 / 0` |

@@ -71,7 +71,7 @@ q = 1.0
 | `aural` | `tune_hz 1760` / `drive 1.76993` / `odd 1.5` / `even 0.25` / `wet 0.5` / `dry 0.5` |
 | `reverb` | `room_size 1.0` / `decay 0.41` / `damping 0.408290` / `bandwidth 0.350110` / `density 1.0` / `lat5 0.70` / `lat6 0.50` / `pre_delay_ms 0` / `motion_rate 0.110871` / `motion_depth 0.63` / `low_cut_hz 100` / `wet 0.27` / `dry 0.73` |
 | `compressor` | `threshold_db -18` / `ratio 4` / `knee_db 3` / `attack_ms 10` / `release_ms 100` / `makeup_gain_db 6` / `wet 1.0` / `dry 0.0` |
-| `wide` | `gain 0` / `air 0.354331` / `side_itd 0.6` / `crossover_hz 200` |
+| `wide` | `gain 0.05` / `air 0.2` / `side_itd 0.2` / `crossover_hz 200` |
 | `loudness` | `reference_phon 80`（`phon` 必填） |
 
 PEQ 段类型（`bands[].type`，缺省 `peaking`）：
@@ -91,8 +91,10 @@ PEQ 段类型（`bands[].type`，缺省 `peaking`）：
 - `wide`：线性相位 FIR 分频；`gain`（高频补偿）只决定**低频降低**的深度——RBJ 低架，
   Q 固定 0.707、拐点 = `crossover_hz`、深度 = 6dB × `gain`，且加在**重建后的干声和**上
   （只在低通支路做会破坏分频两路对称，让线性相位的前后振铃露出来）；`air` 为中置空气吸收；
-  `side_itd`（侧向时间差）是侧通道 1.5kHz 以上时间差去相关的干湿比（0 = 完全不动相位，
-  1 = 全额左 +5 / 右 +7 采样）。侧通道不提升、也不被单独衰减；处理增量过截止 = 分频点的
+  `side_itd`（侧向去相关）控制 1.5kHz 以上高通段的**分数延迟长度**（纯延迟，不改幅度）：
+  0 = 不动相位，1 = 最大时间差 0.10 / 0.15 ms（Δτ = 0.05 ms，按采样率折算，换采样率时间量恒定）。
+  侧通道不提升、也不单独衰减；干路取该分离器的低通段，中置参照与干声各平移其群延迟
+  （48k 下 127 采样），因此链路总延迟比主分频多 D2 ≈ 2.6 ms；处理增量过截止 = 分频点的
   一阶高通，输出端软膝限幅兜底。
 - `aural`：二阶 Butterworth 高通 + 电平跟随 + tanh 奇次软饱和 + 半波整流偶次，Wet/Dry 混合。
 
