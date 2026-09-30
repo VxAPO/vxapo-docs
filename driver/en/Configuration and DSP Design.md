@@ -80,12 +80,15 @@ Implementation notes:
   smoothing + makeup gain; replaces the former `maximizer` / `leveler`.
 - `wide`: linear-phase FIR crossover; `gain` (HF compensation) only sets the depth of the
   **low-end reduction** — an RBJ low shelf with Q fixed at 0.707, corner = `crossover_hz`, depth =
-  6 dB x `gain`, applied to the **reconstructed dry sum** (applying it to the low-pass branch alone
-  breaks the symmetry of the crossover and exposes the linear-phase ringing); `air` is the center
-  air absorption; `side_itd` (Side ITD) is the dry/wet ratio of the time-difference decorrelation
-  applied to the side channel above 1.5 kHz (0 = phase untouched, 1 = full left +5 / right +7
-  samples). The side channel is neither boosted nor separately attenuated; the processed increment
-  passes a first-order high-pass at the crossover, and the output has a soft-knee limiter.
+  6 dB x `gain`, applied to the **reconstructed dry sum**; `air` is the center air absorption;
+  `side_itd` (Side ITD) sets the **fractional delay length** of the side channel above 1.5 kHz
+  (0 = phase untouched, 1 = 0.10 / 0.15 ms, dtau = 0.05 ms, scaled by sample rate so the time
+  amount is sample-rate independent). The side dry branch uses that splitter's low-pass branch
+  (same group delay as the high band, avoiding an x[n]-x[n-D2] residual), and the mid references
+  plus the dry signal are shifted by the splitter's group delay D2 — total latency is therefore
+  D2 (~2.6 ms at 48k) above the main crossover. The side channel is neither boosted nor separately
+  attenuated; the processed increment passes a first-order high-pass at the crossover, and the
+  output has a soft-knee limiter.
 - `aural`: 2nd-order Butterworth high-pass + level follower + tanh odd-order soft saturation +
   half-wave rectified even-order term, wet/dry mixed.
 
