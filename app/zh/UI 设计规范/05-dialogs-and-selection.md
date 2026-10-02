@@ -90,8 +90,20 @@
     - 每个色块的 `--swatch-hover` 由 `accentHoverColor(c)` 在 TS 中算好注入。
   - 逐行描述 `.preset-band-list`（`.os-scroll` + OverlayScrollbar）：分区标题用通用的
     `t("filters")`（「滤波器」/「Filters」）；每行 `.preset-band-row` 显示频段标签（`fc · gain`）
-    + 输入框，输入框占位文字是 `preset.bandDesc`（「语义描述」/「Semantic description」），
-    **默认为空**（不再预填任何内容），保存时按行写入。
+    + 输入框，输入框占位文字是 `preset.bandDesc`（「语义描述」/「Semantic description」）。
+    **默认预填语义视图的默认映射**（`perceptualName(b)` = 该段首段频率对应的感知标签，
+    经 `displayBandName` 按当前语言显示）——即「这张卡不改名时语义视图会显示什么」，
+    打开弹窗就能直接看到、可直接改。留空的行不写 `name`。
+    - **留空也照样反查**：留空段在 config 里没有 `name`，语义视图由 `semanticName`
+      回退到按 `fc` 推出的感知标签（`perceptualName` 的同一套映射），再由
+      `displayBandName` 翻成当前语言——所以留空段切语言同样跟着变，不会残留旧语言。
+      `applyPreset` **不得**用预设名给段名兜底（历史上是 `b.name ?? nameBase`）：
+      那样段卡会显示预设名，既不是默认映射、也无从翻译，留空段就永远卡在应用时语言。
+    - 保存时按行判定（`customBandNameFields`）：**没改过的默认映射成对写入**
+      `name` + `name_en`（`zh`/`en` 两侧都能反查，切语言后显示对应语言）；
+      **用户自己写的文字原样保留、不补译名**——切语言不篡改用户输入。
+    - 上面「默认映射」的清单只源自 `PERCEPTUAL_LABELS`（`blocks.ts` 的 `PERCEPTUAL_RANGES` 派生），
+      译名只源自 i18n 词条（键是中文字面量），**不手抄第二份标签表**。
     - `padding: 10px 0`：横向**不留余量**——焦点只用描边交代、不往外画光晕，没有会被裁到的东西。
       留个提醒：它是滚动容器，`overflow-y:auto` 会把**横向也一并裁在 padding box 上**，而输入框是
       `flex:1`、右缘正好压着这个边界——**一旦再给焦点加外圈，右侧就会缺一节**（左缘前面有频段标签、
