@@ -27,7 +27,8 @@ GPL-2.0）；本项目为独立实现，不包含其代码。
 
 ## 许可证
 
-GPL-3.0-or-later
+GPL-3.0-or-later（全文见 [`LICENSE`](LICENSE)）。
+Copyright (C) 2026 VxAPO。本程序**不提供任何担保**，详见 GPL-3.0 第 15、16 条。
 
 ---
 
@@ -66,4 +67,6 @@ GPL-2.0); this project is an independent implementation with no Equalizer APO co
 
 ## License
 
-GPL-3.0-or-later
+GPL-3.0-or-later (full text in [`LICENSE`](LICENSE)).
+Copyright (C) 2026 VxAPO. This program comes with **absolutely no warranty**; see
+sections 15 and 16 of GPL-3.0.
