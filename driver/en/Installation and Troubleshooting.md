@@ -30,6 +30,25 @@ Supported install modes:
 6. Verify by `CoCreateInstance`.
 7. Restart/refresh the audio service.
 
+> **Why the audio service must be restarted after install** (measured root cause — do not
+> delete): the engine caches each endpoint's APO chain, so **editing the registry alone
+> does not reload it** — newly started streams still load the old APO. AudioSrv must be
+> restarted to make the engine **re-enumerate endpoints and rebuild the audio graph**, so
+> the newly installed DLL enters `audiodg`.
+>
+> EAPO does the same: after installing it runs `DeviceSelector.exe /i` →
+> `ServiceHelper::restartService(L"AudioSrv")` (DeviceTestThread.cpp:74/254). After that
+> restart, `audiodg` was measured loading 47 modules (including EqualizerAPO.dll).
+>
+> **A failure mode seen before**: early VxAPO installed by writing the registry only,
+> without restarting the service → `audiodg` kept the old graph → the new DLL was never
+> loaded.
+>
+> Current implementation: `restart_audio_service_wait(stop_timeout_secs, start_timeout_secs)`
+> (dependency-aware whole-service restart, reused by `--verify` and uninstall finalisation);
+> for step-by-step use, `stop_audio_service_with_dependents` /
+> `start_audio_service_with_dependents`.
+
 ### 1.3 Uninstall flow
 
 `uninstall_endpoint` removes only VxAPO-owned parts:
