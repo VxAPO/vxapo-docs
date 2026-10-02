@@ -467,7 +467,8 @@ pub struct LockConfig {
 
 **职责**：初始化。解析 `APOInitSystemEffects`（提取子 APO CLSID + 设备 GUID），
 确定 per-device 配置路径并确保 `C:\ProgramData\VxAPO\{GUID}\config.toml` 存在
-（v8.9 方案 A：系统级路径——audiodg 是 SYSTEM 服务，用户级 Documents 链路断裂）。
+（v8.9 方案 A：系统级路径——audiodg 跑在**服务账户（`NT AUTHORITY\LOCAL SERVICE`，令牌带
+`NT SERVICE\Audiosrv` 服务 SID）**，没有用户级 Documents，链路断裂）。
 
 ```rust
 fn Initialize(&self, cb_data_size: u32, pby_data: *mut u8) -> HRESULT {
@@ -497,9 +498,9 @@ fn Initialize(&self, cb_data_size: u32, pby_data: *mut u8) -> HRESULT {
     //     绝不覆盖第三方 APO；同时删除 DisableEnhancements / Disable_SysFx 强制启用
     //     增强链。失败仅降级日志，不阻塞初始化（控制线程，非 RT）。
     // 5. 确定 per-device 配置路径（load_device_config，v8.9 方案 A——系统级 CONFIG_ROOT）：
-    //    a. CONFIG_ROOT = `C:\ProgramData\VxAPO`（全用户共享，SYSTEM + 当前用户都可读写；
-    //       **不用用户级 Documents**——APO 真实运行在 audiodg（SYSTEM 服务），它调
-    //       documents_folder()（v8.9 前实现，已移除）拿到的是 SYSTEM 的 Documents，读不到 CLI（用户进程）写入
+    //    a. CONFIG_ROOT = `C:\ProgramData\VxAPO`（全用户共享，服务账户 + 当前用户都可读写；
+    //       **不用用户级 Documents**——APO 真实运行在 audiodg（LOCAL SERVICE + Audiosrv 服务 SID），
+    //       它调 documents_folder()（v8.9 前实现，已移除）拿到的是服务账户的 Documents，读不到 CLI（用户进程）写入
     //       的文件，导致「改 Documents 的 config 没效果」；ProgramData 与快照目录同根）
     //    b. 设备 GUID → 大写格式字符串（guid_to_string：{XXXXXXXX-...}）
     //    c. 拼接：{CONFIG_ROOT}\{GUID}\  → config_path
@@ -539,10 +540,14 @@ fn Initialize(&self, cb_data_size: u32, pby_data: *mut u8) -> HRESULT {
 C:\ProgramData\VxAPO\{GUID}\config.toml
 ```
 
-- **为什么系统级（v8.9，2026-08-04 确认）**：`{Documents}\VxAPO\{GUID}` 是**用户级路径**——
-  APO 真实运行在 **audiodg（SYSTEM 服务）**，它调 `documents_folder()`（v8.9 前实现，已移除）拿到的是 **SYSTEM 的
-  Documents**，读不到 CLI（用户进程）写入的文件，导致「改 Documents 的 config 没效果」。
-  `C:\ProgramData\VxAPO` **全用户共享**（SYSTEM + 当前用户都可读写），与快照目录同根。
+- **为什么系统级（v8.9，2026-08-04 确认；身份口径 2026-10-02 更正）**：`{Documents}\VxAPO\{GUID}` 是**用户级路径**——
+  APO 真实运行在 **audiodg**，其进程账户是 **`NT AUTHORITY\LOCAL SERVICE`**（`Audiosrv` 服务的登录账户；
+  令牌还带 `NT SERVICE\Audiosrv` 服务 SID——MMDevices `FxProperties` 的 ACL 正是据此授予
+  `SetValue/CreateSubKey/Delete`），**不是 SYSTEM**。实测：APO 自建的
+  `C:\ProgramData\VxAPO\{guid}\config.toml` 属主即 `NT AUTHORITY\LOCAL SERVICE`。
+  它调 `documents_folder()`（v8.9 前实现，已移除）拿到的是服务账户的 Documents，读不到 CLI（用户进程）
+  写入的文件，导致「改 Documents 的 config 没效果」。
+  `C:\ProgramData\VxAPO` **全用户共享**（服务账户 + 当前用户都可读写），与快照目录同根。
 - `{GUID}`：从 `APOInitSystemEffects.pAPOSystemEffectsProperties`（`IPropertyStore`）取
   `PKEY_AudioEndpoint_GUID`（PROPVARIANT VT_CLSID 的 `puuid`）获得端点 GUID（v7.6 修订），
   经 `sys/com/prelude::guid_to_string` 格式化为大写 `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`
