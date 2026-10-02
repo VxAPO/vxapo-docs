@@ -130,7 +130,7 @@ impl std::error::Error for ConfigError {}
 ### 6.1 `config/parser.rs`
 
 **职责**：配置文件解析器（v9.11 TOML）。读取 `config.toml` → `toml::from_str::<FileModel>`
-→ `into_chain_model`（校验）→ `factory::create_from_model` 构造 Filter 链，并产出配置指纹
+→ `to_chain_model`（校验）→ `factory::create_from_model` 构造 Filter 链，并产出配置指纹
 （`EffectConfig::spec()` 序列——供 object 层热重载判定配置是否实质变化）。
 
 **引用来源**：
@@ -151,7 +151,7 @@ impl std::error::Error for ConfigError {}
 > `split_command_value`、`produce_spec`、`is_known_dsp_command` 以及 `XxxFactory` 动态注册表——
 > **这些符号现均不存在**（全仓搜索为 0 处）。现行解析器 API 见 `config/parser.rs`：
 > `ConfigParser::parse_file_with_spec(path, ctx) -> (Vec<Box<dyn Filter>>, SpecChain)`，流程为
-> `toml::from_str::<FileModel>` → `FileModel::into_chain_model` → `factory::create_from_model`。
+> `toml::from_str::<FileModel>` → `FileModel::to_chain_model` → `factory::create_from_model`。
 > 本节保留的 v7.9 / v7.11 / v8.3 沿革与 EAPO 对比注记属**历史依据**，仍然有效；旧文本格式的
 > 转换入口在 CLI（`vxapo-cli/src/commands/convert.rs`，EAPO txt → TOML）。
 

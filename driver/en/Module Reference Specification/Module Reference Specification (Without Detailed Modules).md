@@ -226,7 +226,7 @@ object/apo.rs::LockForProcess
   -> pipeline/format.rs (extract format from IAudioMediaType)
   -> build DspContext (pure data, read-only)
   -> config/parser.rs::ConfigParser.parse_file(path, &dsp_ctx)
-      -> toml::from_str::<FileModel> -> into_chain_model
+      -> toml::from_str::<FileModel> -> to_chain_model
           -> factory::create_from_model (static match, construct Filter chain)
   -> pipeline/chain.rs::Chain::new() + add_filter x N + initialize(...)
   -> pipeline/context.rs (save PipelineContext)
