@@ -10,19 +10,25 @@
 
 ```
 utils/
-├── align.rs       # SIMD 对齐工具
 ├── guid.rs        # GUID 纯解析工具（字节/字符串 → GUID）
+├── ring.rs        # SPSC 无锁环形缓冲
 └── vx_error.rs    # VxApoError 业务错误
 ```
 
-### 8.1 `utils/align.rs`
+### 8.1 （原 `utils/align.rs`：已删除）
 
-```rust
-pub const SIMD_ALIGN: usize = 16;
-pub const SIMD_ALIGN_AVX: usize = 32;
-pub fn align_offset(ptr: usize, align: usize) -> usize;
-pub fn is_aligned(ptr: *const f32, align: usize) -> bool;
-```
+> **2026-10-02 删除。** 原 `align.rs` 提供 `AlignedBuffer` / `SIMD_ALIGN` 的自定义
+> 对齐分配。删除理由（实测）：
+>
+> 1. **生产路径零消费者**——`AlignedBuffer` / `SIMD_ALIGN` 仅出现在其自身 `mod tests`；
+>    `pipeline/**` 对它的引用数为 0。
+> 2. **真正的 SIMD 路径不需要它**——`pipeline/dsp/fir.rs` 的 AVX2 FMA 点积
+>    （`dot_avx2_fma`）使用的是 **`_mm256_loadu_ps`（非对齐加载）**，全仓对齐加载
+>    （`_mm256_load_ps` / `_mm_load_ps`）出现 **0 次**。即对齐并非本项目的性能前提。
+> 3. **本节原先描述的 API 与代码早已不符**（`SIMD_ALIGN = 16` 对实际的 32；
+>    `align_offset` / `is_aligned` 两个函数在全仓**不存在**）——说明该模块长期无人维护。
+>
+> 本删除是一个独立提交，可用 `git revert` 单独恢复。
 
 ### 8.2 `utils/vx_error.rs`
 

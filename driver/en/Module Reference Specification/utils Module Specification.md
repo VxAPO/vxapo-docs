@@ -10,19 +10,27 @@
 
 ```
 utils/
-├── align.rs       # SIMD alignment helpers
 ├── guid.rs        # Pure GUID parsing helpers (bytes/string -> GUID)
+├── ring.rs        # SPSC lock-free ring buffer
 └── vx_error.rs    # VxApoError business error type
 ```
 
-## 8.1 `utils/align.rs`
+## 8.1 (former `utils/align.rs`: removed)
 
-```rust
-pub const SIMD_ALIGN: usize = 16;
-pub const SIMD_ALIGN_AVX: usize = 32;
-pub fn align_offset(ptr: usize, align: usize) -> usize;
-pub fn is_aligned(ptr: *const f32, align: usize) -> bool;
-```
+> **Removed 2026-10-02.** The former `align.rs` provided a custom aligned allocator
+> (`AlignedBuffer` / `SIMD_ALIGN`). Removal rationale (measured):
+>
+> 1. **Zero production consumers** — `AlignedBuffer` / `SIMD_ALIGN` appeared only in the
+>    module's own `mod tests`; `pipeline/**` referenced them 0 times.
+> 2. **The real SIMD path does not need it** — the AVX2 FMA dot product
+>    (`dot_avx2_fma` in `pipeline/dsp/fir.rs`) uses **`_mm256_loadu_ps` (unaligned
+>    load)**; aligned loads (`_mm256_load_ps` / `_mm_load_ps`) appear **0 times**
+>    repository-wide. Alignment is therefore not a performance premise of this project.
+> 3. **This section already disagreed with the code** (`SIMD_ALIGN = 16` vs the actual
+>    32; `align_offset` / `is_aligned` do not exist anywhere in the repository) —
+>    the module had long been unmaintained.
+>
+> The removal is a standalone commit and can be restored on its own with `git revert`.
 
 ## 8.2 `utils/vx_error.rs`
 

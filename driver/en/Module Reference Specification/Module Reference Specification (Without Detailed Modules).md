@@ -111,8 +111,8 @@ src/
 │   └── panic.rs
 │
 └── utils/
-    ├── align.rs
     ├── guid.rs
+    ├── ring.rs
     └── vx_error.rs
 ```
 
@@ -169,7 +169,6 @@ App and CLI reference specifications are under `app/` and `cli/` respectively.
 | `object/ref_count.rs` | core | none |
 | `object/vx_reg_props.rs` | prelude, apo_types, apo_interfaces | none |
 | `object/dll_exports.rs` | object/*, prelude, sys/registry, utils, telemetry | none |
-| `utils/align.rs` | none | all others |
 | `utils/guid.rs` | core | all others |
 | `utils/vx_error.rs` | windows-core | all others |
 | `telemetry/logger.rs` | pipeline/realtime/ring | install/config/object |

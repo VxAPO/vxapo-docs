@@ -13,7 +13,7 @@ src/
 ├── config/         # config file parsing (TOML model)
 ├── object/         # COM glue: ApoObject, class factory, DLL exports
 ├── telemetry/      # lock-free logging and panic hook
-└── utils/          # alignment, GUID, error types
+└── utils/          # GUID, ring buffer, error types
 ```
 
 Dependency direction is one-way:
@@ -94,8 +94,8 @@ COM glue layer called directly by the Windows audio engine.
 
 - `telemetry/logger.rs`: lock-free ring log, zero heap allocation on RT.
 - `telemetry/panic.rs`: panic hook.
-- `utils/align.rs`: SIMD alignment.
 - `utils/guid.rs`: GUID reverse parsing.
+- `utils/ring.rs`: SPSC lock-free ring buffer.
 - `utils/vx_error.rs`: unified error type and HRESULT mapping.
 
 ## 3. Dependency rules
