@@ -180,16 +180,27 @@ The three Rust repositories pin the same version; update their `rust-toolchain.t
 
 | Repository | `cargo test` | clippy |
 |---|---|---|
-| `vxapo-driver` | 491 passed / 0 failed / 1 ignored (release 483) | **exit 0** (the 222 → 0 cleanup must not regress) |
+> Numbers evolve with the code; they **must not regress** across a change. Current values
+> (2026-10):
+
+| Repository | `cargo test` | clippy |
+|---|---|---|
+| `vxapo-driver` | 481 passed / 0 failed / 1 ignored (release 471) | **exit 0** (the 222 → 0 cleanup must not regress) |
 | `vxapo-cli` | 22 passed / 0 failed | exit 101 (**pre-existing**, not caused by formatting) |
 | `vxapo-app` | passes (0 tests) | exit 101 (**pre-existing**, not caused by formatting) |
+
+> **The driver figures were once 491 / release 483.** They fell to 481 / 471 after the
+> unused `utils/align.rs` module was deleted (taking its 12 self-contained tests with it) —
+> **a deliberate removal, not lost coverage**. Neither the subsequent removal of 10
+> `cfg(test)` dead items nor that of 12 obsolete functions changed the test count again
+> (proof that those items were not used by any test).
 
 The `vxapo-cli` and `vxapo-app` clippy failures predate the format change: verified by
 stashing back to the pre-fmt state, where the error sets are **identical**. Cleaning them
 up is a separate task and must not be mixed into formatting.
 
 The driver `1 ignored` is the real-machine test
-`active_dependents_enumerates_active_dependents`, which needs
+`install::audiodg::tests::active_dependents_enumerates_active_dependents`, which needs
 `cargo test -- --ignored`.
 
 ---
@@ -208,3 +219,66 @@ anti-pattern** — it recreates the inconsistency this work removed.
 > `clippy::undocumented_unsafe_blocks` (denied in driver's `lib.rs`). The fix moves the
 > SAFETY comment directly above the `unsafe` block — **without** `#[rustfmt::skip]`. That
 > fix is a separate commit, not part of the formatting commit.
+
+---
+
+## 10. Policy for `#[allow(dead_code)]`
+
+driver carries roughly **45** `#[allow(dead_code)]` attributes. Every one has a justifying
+comment, and they were empirically shown to be honest (stripping all of them still leaves
+`cargo check` at exit 0, reporting exactly those items). **Do not remove them in bulk.**
+
+### 10.1 Why driver has more dead code than a typical library (**easily misread**)
+
+**Not** because "the DLL exports only 5 functions" — the `dead_code` lint **never looks at**
+the `.def` file or at `cdylib`. The real mechanism is **intra-crate visibility
+reachability** (verified with a minimal experiment):
+
+| form in `lib.rs` | an uncalled `pub fn` inside |
+|---|---|
+| `pub(crate) mod inner;` | **reported** (unreachable outside → `pub` grants no exemption) |
+| `pub mod inner;` | **not reported** (module is publicly reachable → public API) |
+
+Every driver module is **`pub(crate)`** (commit `8e941f9`, "narrow the `pub` surface"), with
+a facade in `lib.rs` as the only public entry. **The narrowing is what surfaced all the
+previously-masked unused items** — it is the by-product of a correct visibility change,
+not a defect.
+
+Corollary: under a `pub(crate) mod`, the keyword `pub` merely means "visible within the
+crate"; **public reachability is decided by the facade, not by `pub`.**
+
+### 10.2 Where the dead code comes from
+
+| Cause | Example | Handling |
+|---|---|---|
+| COM interfaces must be implemented **as a complete set** | the 9 delegated methods on `ChildApo` (`Reset`, `GetRegistrationProperties`, …) | interface contract — keep |
+| A large migration **removed a whole feature**, leaving scaffolding | `WatchEvent` in `watcher.rs`, `restore` in `audiodg.rs` | removable (one batch already removed) |
+| **Deliberately kept** reserves | `BandPass`/`Notch`/`AllPass` in `biquad.rs` (implemented **and tested**, unused in production) | keep — deleting them loses test coverage |
+| Specification lookup tables | `APOERR_*` in `sys/consts.rs`, `*_SIGNATURE` in `sys/com/*` | **deliberately kept** (cross-checking against the Windows SDK) |
+| Public API promised by the spec | `RtSafe`/`RtCopy`/`rt_index*` in `pipeline/realtime/contract.rs` | keep (spec 4.7) |
+
+### 10.3 Three rules before deleting dead code
+
+1. **`never constructed` ≠ unused.** A flagged variant may be **implemented and tested**,
+   merely not constructed in production. Deleting from the rustc list wholesale **takes the
+   test coverage with it.**
+2. **Name collisions cause wrongful deletion.** e.g. `MAX_FRAME_COUNT` (a const) vs
+   `max_frame_count` (a field/method); `RegKey::value_exists` (a method with **live
+   callers**) vs the free function `value_exists(root, ..)`. **Confirm each occurrence with
+   a `\b` whole-word match first.**
+3. **Only rustc can tell you whether something is used — not grep.** A `.method(` count
+   misleads badly: one method measured 102 "call sites" repository-wide, while that type's
+   method had zero.
+
+**Also**: `#[cfg(test)]` items are **not reported** by `cargo check --lib` (they are not
+compiled at all); you must use `--all-targets` to see the whole picture.
+
+### 10.4 Never destroy knowledge along with code
+
+Before deleting dead code that carries a **root-cause explanation**, confirm that knowledge
+survives elsewhere. Example: the doc comment on `audiodg.rs`'s `restart_audio_service`
+recorded the measured root cause "the engine caches APO chains → a registry edit alone does
+not reload them → AudioSrv must be restarted to trigger re-enumeration", while
+*Installation and Troubleshooting* merely said "restart the audio service" **without saying
+why** — so the knowledge was moved into the document first, and only then was the function
+deleted.
