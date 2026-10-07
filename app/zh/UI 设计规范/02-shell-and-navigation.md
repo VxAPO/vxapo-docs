@@ -13,7 +13,7 @@
 │   └── .content                 主内容
 │       ├── .tab-bar             设备标签页
 │       ├── .device-body
-│       │   ├── .device-page（按数据归属重挂载：key=pageGuid=displayGuid，配置到位才换页 + AnimatePresence mode="wait"）
+│       │   ├── .device-page（按数据归属重挂载：key=pageGuid=displayGuid，配置到位才换页；单提交硬切，无 AnimatePresence）
 │       │   │   ├── .no-device   空态（无设备）
 │       │   │   └── .tuning-scroll.os-scroll
 │       │   │       ├── .view-stack > .view-stage（语义/参数视图）
