@@ -60,7 +60,7 @@ q = 1.0
 | `preamp` | `gain_db`（-120..48） | 必填 |
 | `aural` | `tune_hz`(500..10000)、`drive`(0..4.25)、`odd`(0..1.5)、`even`(0..0.75)、`wet`/`dry`(0..1) | 见下表 |
 | `reverb` | `room_size`(0.5..1.5)、`decay`/`damping`/`bandwidth`/`density`/`lat5`/`lat6`(0..1)、`pre_delay_ms`(0..100)、`motion_rate`(0.05..2)、`motion_depth`(0..2，旧键 `motion_depth_ms`)、`low_cut_hz`(20..250)、`wet`/`dry`(0..1) | 见下表 |
-| `compressor` | `threshold_db`(-60..0)、`ratio`(1..20)、`knee_db`(0..12)、`attack_ms`(0.1..100)、`release_ms`(10..1000)、`makeup_gain_db`(0..24)、`wet`/`dry`(0..1) | 见下表 |
+| `compressor` | `threshold_db`(-48..0)、`ratio`(1..20)、`attack_ms`(1..100)、`release_ms`(10..1000)、`mix`(0..1) | 见下表 |
 | `wide` | `gain`/`air`/`side_itd`(0..1)、`crossover_hz`(200..1000) | 见下表 |
 | `loudness` | `phon`(0..120，必填)、`reference_phon`(0..120) | 见下表 |
 
@@ -70,7 +70,7 @@ q = 1.0
 |------|--------|
 | `aural` | `tune_hz 1760` / `drive 1.76993` / `odd 1.5` / `even 0.25` / `wet 0.5` / `dry 0.5` |
 | `reverb` | `room_size 1.0` / `decay 0.41` / `damping 0.408290` / `bandwidth 0.350110` / `density 1.0` / `lat5 0.70` / `lat6 0.50` / `pre_delay_ms 0` / `motion_rate 0.110871` / `motion_depth 0.63` / `low_cut_hz 100` / `wet 0.27` / `dry 0.73` |
-| `compressor` | `threshold_db -18` / `ratio 4` / `knee_db 3` / `attack_ms 10` / `release_ms 100` / `makeup_gain_db 6` / `wet 1.0` / `dry 0.0` |
+| `compressor` | `threshold_db -12` / `ratio 3` / `attack_ms 10` / `release_ms 100` / `mix 1.0` |
 | `wide` | `gain 0.05` / `air 0.2` / `side_itd 0.2` / `crossover_hz 200` |
 | `loudness` | `reference_phon 80`（`phon` 必填） |
 
@@ -86,8 +86,11 @@ PEQ 段类型（`bands[].type`，缺省 `peaking`）：
 
 - `reverb`：Dattorro 板式混响；`low_cut_hz` 为低频瞬态保护分频点，分频点以下逐声道旁路混响、
   原样直通（`20` ≈ 关闭），分频点以上进混响。
-- `compressor`：全声道联动 RMS 检测 + 含软膝静态曲线 + dB 域 attack/release 平滑 + makeup 增益；
-  取代原 `maximizer` / `leveler`。
+- `compressor`：全声道联动**峰值包络检测**（瞬时 attack + 30dB/s 线性释放，低频照常参与
+  触发、稳态纹波停在掩蔽区）+ 固定 3dB 软膝静态曲线 + dB 域 attack/release 平滑 +
+  **纯负增益输出**（无 makeup，恒有 `|out| ≤ |in|`，本效果器不可能制造削波；干湿由
+  `mix` 等比混合，`dry = 1 - mix`）；取代原 `maximizer` / `leveler`，旧
+  `knee_db` / `makeup_gain_db` / `wet` / `dry` 键静默忽略。
 - `wide`：线性相位 FIR 分频；`gain`（高频补偿）只决定**低频降低**的深度——RBJ 低架，
   Q 固定 0.707、拐点 = `crossover_hz`、深度 = 6dB × `gain`，且加在**重建后的干声和**上
   （只在低通支路做会破坏分频两路对称，让线性相位的前后振铃露出来）；`air` 为中置空气吸收；
