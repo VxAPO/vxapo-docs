@@ -1518,7 +1518,7 @@ FIR 目标 = 总目标 − IIR 频响（级联精确拟合）。
 |------|------|--------|
 | `aural.rs` | Aural Enhancer（二阶 Butterworth 高通 + 峰值电平跟随 + tanh 软饱和奇次 + 半波整流偶次，Wet/Dry） | `aural` |
 | `reverb.rs` | Dattorro 板式混响（输入 4 级 AllPass 扩散 + 双槽交叉反馈 + 14 抽头输出；`low_cut_hz` 低频瞬态保护） | `reverb` |
-| `compressor.rs` | Compressor（全声道联动峰值包络检测：瞬时 attack + 30dB/s 线性释放；固定 3dB 软膝静态曲线 + dB 域 attack/release 平滑 + 纯负增益输出，`mix` 等比干湿混合） | `compressor` |
+| `compressor.rs` | Compressor（全声道联动峰值包络检测：瞬时 attack + 30dB/s 线性释放；固定 3dB 软膝静态曲线：`ratio` 压大 / `lift` 放小、Hermite C1 连续 + dB 域 attack/release 平滑 + 有界输出（lift=0 负增益恒成立、lift>0 恒不过阈值），`mix` 等比干湿混合） | `compressor` |
 | `wide.rs` | Wide（线性相位 FIR 分频 + 高频 M/S 去相关 + ITD + 空气吸收 + 输出软膝限幅） | `wide` |
 | `peq_hybrid.rs` | 混合式 PEQ（IIR biquad 级联 + 最小相位 FIR；段类型 peaking/low_shelf/high_shelf/low_pass/high_pass） | `peq` |
 | `gain.rs` / `loudness.rs` | 全局增益 / 等响补偿 | `preamp` / `loudness` |
