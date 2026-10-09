@@ -60,7 +60,7 @@ q = 1.0
 | `preamp` | `gain_db`（-120..48） | 必填 |
 | `aural` | `tune_hz`(500..10000)、`drive`(0..4.25)、`odd`(0..1.5)、`even`(0..0.75)、`wet`/`dry`(0..1) | 见下表 |
 | `reverb` | `room_size`(0.5..1.5)、`decay`/`damping`/`bandwidth`/`density`/`lat5`/`lat6`(0..1)、`pre_delay_ms`(0..100)、`motion_rate`(0.05..2)、`motion_depth`(0..2，旧键 `motion_depth_ms`)、`low_cut_hz`(20..250)、`wet`/`dry`(0..1) | 见下表 |
-| `compressor` | `threshold_db`(-48..0)、`ratio`(1..20)、`lift`(0..1)、`attack_ms`(1..100)、`release_ms`(0..1000，0=自动)、`mix`(0..1) | 见下表 |
+| `compressor` | `threshold_db`(-48..0)、`ratio`(1..20)、`lift`(0..1)、`attack_ms`(1..100)、`mix`(0..1) | 见下表 |
 | `wide` | `gain`/`air`/`side_itd`(0..1)、`crossover_hz`(200..1000) | 见下表 |
 | `loudness` | `phon`(0..120，必填)、`reference_phon`(0..120) | 见下表 |
 
@@ -70,7 +70,7 @@ q = 1.0
 |------|--------|
 | `aural` | `tune_hz 1760` / `drive 1.76993` / `odd 1.5` / `even 0.25` / `wet 0.5` / `dry 0.5` |
 | `reverb` | `room_size 1.0` / `decay 0.41` / `damping 0.408290` / `bandwidth 0.350110` / `density 1.0` / `lat5 0.70` / `lat6 0.50` / `pre_delay_ms 0` / `motion_rate 0.110871` / `motion_depth 0.63` / `low_cut_hz 100` / `wet 0.27` / `dry 0.73` |
-| `compressor` | `threshold_db -12` / `ratio 3` / `lift 0` / `attack_ms 10` / `release_ms 0`（自动）/ `mix 1.0` |
+| `compressor` | `threshold_db -12` / `ratio 3` / `lift 0` / `attack_ms 10` / `mix 1.0` |
 | `wide` | `gain 0.05` / `air 0.2` / `side_itd 0.2` / `crossover_hz 200` |
 | `loudness` | `reference_phon 80`（`phon` 必填） |
 
@@ -89,12 +89,13 @@ PEQ 段类型（`bands[].type`，缺省 `peaking`）：
 - `compressor`：全声道联动**峰值包络检测**（瞬时 attack + 30dB/s 线性释放，低频照常参与
   触发、稳态纹波停在掩蔽区）+ 固定 3dB 软膝静态曲线（阈值右侧按 `ratio` 压大、左侧按
   `lift` 朝阈值抬升 `u × min(阈值-电平, 24dB)`，恒不过阈值，膝区 Hermite C1 连续、
-  `lift=0` 逐位退化为原插值）+ dB 域 attack/release 平滑（**释放默认自动**：
-  `release_ms = 0` 走双极点程序依赖释放——100ms 头部 + 600ms 尾巴按 0.3/0.7 混合，
-  瞬态松得快、持续不泵浦；指定毫秒数（10..1000）为手动单极点）+
+  `lift=0` 逐位退化为原插值）+ dB 域 attack/release 平滑（**释放固定自动、无参数**：
+  双极点程序依赖释放——100ms 头部 + 600ms 尾巴按 0.3/0.7 混合，
+  瞬态松得快、持续不泵浦）+
   **有界输出**（无 makeup：lift=0 恒 `|out| ≤ |in|`；lift>0 输出电平恒 ≤ 阈值，
   两种情况都不可能削波；干湿由 `mix` 等比混合，`dry = 1 - mix`）；
-  取代原 `maximizer` / `leveler`，旧 `knee_db` / `makeup_gain_db` / `wet` / `dry` 键静默忽略。
+  取代原 `maximizer` / `leveler`，旧 `knee_db` / `makeup_gain_db` / `wet` / `dry` 键静默忽略；
+  `release_ms` 已随手动释放一并移除（未知键，出现即拒载）。
 - `wide`：线性相位 FIR 分频；`gain`（高频补偿）只决定**低频降低**的深度——RBJ 低架，
   Q 固定 0.707、拐点 = `crossover_hz`、深度 = 6dB × `gain`，且加在**重建后的干声和**上
   （只在低通支路做会破坏分频两路对称，让线性相位的前后振铃露出来）；`air` 为中置空气吸收；

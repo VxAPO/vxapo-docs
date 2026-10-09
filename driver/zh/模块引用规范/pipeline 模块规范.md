@@ -1555,9 +1555,8 @@ pub struct ReverbParams { pub room_size: f32, pub decay: f32, pub damping: f32,
     pub low_cut_hz: f32, pub wet: f32, pub dry: f32 }
 pub struct ReverbFilter { ... }          // impl Filter
 
-pub struct CompressorParams { pub threshold_db: f32, pub ratio: f32, pub knee_db: f32,
-    pub attack_ms: f32, pub release_ms: f32, pub makeup_gain_db: f32,
-    pub wet: f32, pub dry: f32 }
+pub struct CompressorParams { pub threshold_db: f32, pub ratio: f32, pub lift: f32,
+    pub attack_ms: f32, pub mix: f32 }
 pub struct CompressorFilter { ... }      // impl Filter
 
 pub struct WideParams { pub gain: f32, pub air: f32, pub side_itd: f32,
@@ -1574,8 +1573,8 @@ pub struct LoudnessFilter { ... }        // impl Filter（loudness）
 - Reverb：`room_size 1.0` / `decay 0.41` / `damping 0.408290` / `bandwidth 0.350110` /
   `density 1.0` / `lat5 0.70` / `lat6 0.50` / `pre_delay_ms 0` / `motion_rate 0.110871` /
   `motion_depth 0.63` / `low_cut_hz 100` / `wet 0.27` / `dry 0.73`；
-- Compressor：`threshold_db -18` / `ratio 4` / `knee_db 3` / `attack_ms 10` /
-  `release_ms 100` / `makeup_gain_db 6` / `wet 1.0` / `dry 0.0`；
+- Compressor：`threshold_db -12` / `ratio 3` / `lift 0` / `attack_ms 10` / `mix 1.0`
+  （释放固定自动，无参数）；
 - Wide：`gain 0.05` / `air 0.2` / `side_itd 0.2` / `crossover_hz 200` / `low_shelf_depth_db 6`。
 
 **关键算法**：
@@ -1585,9 +1584,10 @@ pub struct LoudnessFilter { ... }        // impl Filter（loudness）
 - Reverb（Dattorro）：参考采样率 29761 Hz；输入扩散 142/107/379/277；
   槽内 672/908（正交 LFO 调制 APF，深度 16 采样@29761Hz）、4453/4217、1800/2656、3720/3163；
   输出抽头按论文 Table 2；`low_cut_hz` 分频点以下逐声道旁路混响、原样直通（20 ≈ 关闭）。
-- Compressor：全声道瞬时 RMS → dBFS 检测电平；静态曲线
-  `over = level - threshold`，`slope = 1 - 1/ratio`，软膝带内二次插值；
-  增益削减在 dB 域按 attack（压缩增加）/release 平滑；输出乘 makeup 后 Wet/Dry 混合。
+- Compressor：全声道峰值包络检测（瞬时 attack + 30dB/s 线性释放）；静态曲线
+  固定 3dB 软膝，`ratio` 压大 / `lift` 放小（膝区 Hermite C1 连续）；
+  增益削减在 dB 域按 attack/release 平滑（释放固定自动：双极点 100ms/600ms 按 0.3/0.7 混合）；
+  负增益有界输出，`mix` 等比干湿混合。
 - Wide：线性相位 FIR 分频（Kaiser 窗，抽头数随采样率/分频点缩放）；低频降低在**重建后的
   干声和**上做（RBJ 低架，Q 固定 0.707，拐点 = 分频点，深度 = `low_shelf_depth_db`（默认 6dB）
   × `gain`；只加在低通支路会破坏两路对称、暴露线性相位振铃）；

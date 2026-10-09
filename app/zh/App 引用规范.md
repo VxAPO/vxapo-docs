@@ -369,7 +369,7 @@ export interface MigrationReport {
 | `wide` | 声场处理 | `gain`(高频补偿→低频深度) / `air`(中置空气) / `side_itd`(侧向去相关) / `crossover_hz`(分频点 200–1000) | `0.05 / 0.2 / 0.2 / 200` |
 | `aural` | 谐波激励器 | `tune_hz` / `drive` / `odd` / `even` / `wet` / `dry` | `1760 / 1.7699 / 1.5 / 0.25 / 0.5 / 0.5` |
 | `reverb` | 板式混响 | `room_size` / `decay` / `damping` / `pre_delay_ms` / `low_cut_hz` / `wet` / `dry` | `1 / 0.41 / 0.4083 / 0 / 100 / 0.27 / 0.73` |
-| `compressor` | 压缩器 | `threshold_db` / `ratio` / `knee_db` / `attack_ms` / `release_ms` / `makeup_gain_db` / `wet` / `dry` | `-18 / 4 / 3 / 10 / 100 / 6 / 1 / 0` |
+| `compressor` | 压缩器 | `threshold_db` / `ratio` / `lift` / `attack_ms` / `mix` | `-12 / 3 / 0 / 10 / 1` |
 | `loudness` | 等响补偿 | `phon`(目标响度) / `reference_phon`(参考响度) | `80 / 80` |
 
 语义强度往返（`semanticStrength` / `applySemanticStrength`）：
