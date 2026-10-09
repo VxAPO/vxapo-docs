@@ -224,6 +224,17 @@ UI 操作（增删频段/改参数/切换 enabled/应用预设/语义强度）
 
 - `buildToml`：输出 `version = 1` / `enabled` / `[meta]` / `[[effects]]`（type="peq" 或非 PEQ
   效果器）；PEQ 块额外写 `crossover_hz = 200` 与通道模式下的 `channels`。
+  **写盘收口**：数值写出前按 driver 范围夹取——band 三键（fc/gain_db/q）经
+  `clampBandParam`（与 `finite_range` 同口径：NaN/非法回默认，越界含 ±Infinity 夹到边界），
+  效果器数值参数经 `clampToSpec`（按 `EFFECT_PARAM_SPECS` min/max 夹取、非有限回 spec 默认，
+  compressor.ratio 仍先 `toDriverParam` 换算再夹）。driver `finite_range` 对单值越界是
+  **拒收整份配置**（降级 passthrough、EQ 整体失效），故输入框失焦收口之外写盘再兜一层，
+  覆盖去抖保存中途、语义写回、归一化写 preamp（`-filterPeak` 可超出 +48）与手改回写等
+  所有落盘路径；范围内值原样写出。未知键原样带出（去留由 driver `check_keys` 决定）。
+- **输入框收口**：调音卡片的数字输入框键入过程中允许临时越界（不打断输入），失焦
+  （或回车触发 blur）时把越界/非法值夹回 driver 范围（band 走 `clampBandParam`，
+  效果器通用参数用显示域 `clamped` 回写）；`poll()` 在数字输入框聚焦期间跳过回读——
+  写盘夹取后磁盘值可能暂与输入中的半截值不同，回读会打断键入，失焦收口后再恢复。
 - `parseConfigWithTail`：解析 PEQ 块与非 PEQ 效果器；首个未知效果器起保留为 `tail`，
   保存时原样拼回。
 - `applyPreset`：检查 31 频段上限后按当前语言/声道插入预设频段。
