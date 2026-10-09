@@ -372,6 +372,12 @@ export interface MigrationReport {
 | `compressor` | 压缩器 | `threshold_db` / `ratio` / `lift` / `attack_ms` / `mix` | `-12 / 3 / 0 / 10 / 1` |
 | `loudness` | 等响补偿 | `phon`(目标响度) / `reference_phon`(参考响度) | `80 / 80` |
 
+> `compressor.ratio` 是**显示域例外**（`UI_PARAM_RANGES`，决策 2 的显式豁免）：App 内存与
+> UI（滑杆值、数字输入框、语义强度）统一存/显 **0~1 增益削减斜率 `v = 1 − 1/ratio`**
+> （如 3:1 → `0.67`、20:1 → `0.95`，到不了 1）；只在读/写 config.toml 时各换算一次为
+> driver 的 x:1（读 `v = 1 − 1/ratio`，写 `ratio = 1/(1−v)`，>20 → 20），渲染时不从
+> ratio 反推滑杆位置。0.95~1.0 段写盘一律 20:1，不弹回。
+
 语义强度往返（`semanticStrength` / `applySemanticStrength`）：
 
 | 效果器 | 语义强度 = | 写回 |
@@ -379,7 +385,7 @@ export interface MigrationReport {
 | `wide` | `air`（中置距离 = 空气吸收深度） | `air = s`（高频补偿由参数视图手动调） |
 | `aural` | `wet / 0.9` | 干湿交叉淡化：`wet = 0.9s`、`dry = 1 - wet`（和 ≤ 1） |
 | `reverb` | `wet / 0.9` | `wet = 0.9s`、`dry = 1 - wet`、`decay = 0.2 + 0.7s`、`damping = 0.15 + 0.63·decay`、`pre_delay_ms = clamp(s-0.3,0,0.7)·50`、`room_size = 0.85 + 0.5s` |
-| `compressor` | `(ratio - 1) / 19` | `ratio = 1 + 19s`（1:1 → 20:1） |
+| `compressor` | 内部 0~1 斜率值 `v = 1 − 1/ratio`（参数视图/语义视图/内存同一份值） | 写回即 `v = s`；写 TOML 换算 `ratio = 1/(1−v)`（>20 → 20，`v = 1` 取 20） |
 | `loudness` | `(ref - phon) / 40` | `phon = ref - 40s` |
 | `preamp` | `(gain_db + 24) / 48` | `gain_db = 48s - 24` |
 

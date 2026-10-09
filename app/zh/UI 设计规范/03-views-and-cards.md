@@ -46,7 +46,9 @@
 
 - 标签 `.band-param-label`：`var(--text-weak)`，12px。
 - 滑块 `.gs-root`（Radix Slider 封装，圆头 `--thumb` + 描边 `--gs-thumb-border`；
-  禁用态 `--gs-thumb-disabled`）。
+  禁用态 `--gs-thumb-disabled`）带 `margin-right:2px`：满值时 16px thumb 的圆心在
+  轨道右缘、向外探出 8px，正好吃掉行 gap 会贴住输入框——补这 2px 只拉大
+  「进度条右端 → 输入框」的间距，label 侧不动。
 - 输入框 `.gain-input`：宽 56px，高 22px，圆角 8px，边框 `1px solid var(--border)`，
   背景 `var(--card)`，文字 `var(--text-primary)`，右对齐。
 - focus-visible：`border-color: var(--brand); box-shadow: 0 1px 3px rgba(15,23,42,0.1)`。
@@ -85,7 +87,8 @@
 - 头部 `.effect-head`：启用圆点 `.effect-dot`（规则同 `.enable-dot`）+ `.effect-name` +
   删除 `.close-x`。
 - `.effect-desc`：描述文字，`var(--text-weak)`。
-- 参数行 `.effect-param-row`：标签 + 控件（滑块/下拉/输入框）。
+- 参数行 `.effect-param-row`：标签 + 控件（滑块/下拉/输入框）；滑块同样带
+  `margin-right:2px`（与 `.band-param-row` 同因：满值 thumb 外探 8px 防贴输入框）。
 - 语义视图强度行 `.effect-strength-row`：强度百分比 `.g-val`，文字 `var(--text-weak)`。
 
 ### 5.1 内置效果器（语义视图强度映射见 `App 引用规范` 第六章）
@@ -96,7 +99,7 @@
 - `wide`：强度 = 中置空气（距离感），高频补偿留在参数视图手动调。
 - `aural` / `reverb`：强度 = 湿声（`wet = 0.9s`、`dry = 1 - wet`，和 ≤ 1）；reverb 额外联动
   decay / damping / pre_delay / room_size。
-- `compressor`：强度 = 压缩比（1:1 → 20:1）。
+- `compressor`：强度 = 内部 0~1 斜率值本身（增益削减斜率 `1 − 1/ratio`，与参数视图同一份值；写盘换算 x:1）。
 - `loudness`：强度 = 目标响度相对参考响度的下探量。
 - `preamp`：强度 = 增益（-24dB → +24dB）。
 

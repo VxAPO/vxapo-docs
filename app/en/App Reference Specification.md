@@ -365,6 +365,13 @@ Built-in effects: `preamp`, `wide`, `aural`, `reverb`, `compressor`, `loudness`.
 | `compressor` | Compressor | `threshold_db` / `ratio` / `lift` / `attack_ms` / `mix` | `-12 / 3 / 0 / 10 / 1` |
 | `loudness` | Loudness EQ | `phon` (target) / `reference_phon` (reference) | `80 / 80` |
 
+> `compressor.ratio` is a **display-domain exception** (`UI_PARAM_RANGES`, an explicit exemption from
+> decision 2): memory and UI (slider value, number input, semantic strength) all store/show the
+> **0..1 gain-reduction slope `v = 1 − 1/ratio`** (e.g. 3:1 → `0.67`, 20:1 → `0.95` — it never
+> reaches 1); it converts to/from the driver's x:1 exactly once at config.toml read/write
+> (read `v = 1 − 1/ratio`, write `ratio = 1/(1−v)`, >20 → 20) and is never used to re-derive
+> the slider position at render. The 0.95~1.0 band always writes 20:1 — no snap-back.
+
 Semantic strength round-trip (`semanticStrength` / `applySemanticStrength`):
 
 | Effect | Strength = | Write-back |
@@ -372,7 +379,7 @@ Semantic strength round-trip (`semanticStrength` / `applySemanticStrength`):
 | `wide` | `air` (center distance = air absorption depth) | `air = s` (HF boost stays manual) |
 | `aural` | `wet / 0.9` | crossfade: `wet = 0.9s`, `dry = 1 - wet` (sum ≤ 1) |
 | `reverb` | `wet / 0.9` | `wet = 0.9s`, `dry = 1 - wet`, `decay = 0.2 + 0.7s`, `damping = 0.15 + 0.63·decay`, `pre_delay_ms = clamp(s-0.3,0,0.7)·50`, `room_size = 0.85 + 0.5s` |
-| `compressor` | `(ratio - 1) / 19` | `ratio = 1 + 19s` (1:1 → 20:1) |
+| `compressor` | internal 0..1 slope `v = 1 − 1/ratio` (one shared value across param view / semantic view / memory) | write-back is `v = s`; on TOML write convert `ratio = 1/(1−v)` (>20 → 20, `v = 1` → 20) |
 | `loudness` | `(ref - phon) / 40` | `phon = ref - 40s` |
 | `preamp` | `(gain_db + 24) / 48` | `gain_db = 48s - 24` |
 
