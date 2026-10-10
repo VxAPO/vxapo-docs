@@ -1518,7 +1518,7 @@ FIR 目标 = 总目标 − IIR 频响（级联精确拟合）。
 |------|------|--------|
 | `aural.rs` | Aural Enhancer（二阶 Butterworth 高通 + 峰值电平跟随 + tanh 软饱和奇次 + 半波整流偶次，Wet/Dry） | `aural` |
 | `reverb.rs` | Dattorro 板式混响（输入 4 级 AllPass 扩散 + 双槽交叉反馈 + 14 抽头输出；`low_cut_hz` 低频瞬态保护） | `reverb` |
-| `compressor.rs` | Compressor（全声道联动峰值包络检测：瞬时 attack + 30dB/s 线性释放；固定 3dB 软膝静态曲线：`ratio` 压大 / `lift` 放小、Hermite C1 连续 + dB 域 attack/release 平滑 + 有界输出（lift=0 负增益恒成立、lift>0 恒不过阈值），`mix` 等比干湿混合） | `compressor` |
+| `compressor.rs` | Compressor（全声道联动峰值包络检测：瞬时 attack + 深度加权速率释放（深压 30dB/s、浅压 180dB/s）；固定 3dB 软膝静态曲线：`ratio` 压大 / `lift` 放小、Hermite C1 连续 + dB 域 attack/release 平滑（双极点 100ms/600ms，慢权重随压制深度立方退到 0）+ 有界输出（lift=0 负增益恒成立、lift>0 恒不过阈值），`mix` 等比干湿混合） | `compressor` |
 | `wide.rs` | Wide（线性相位 FIR 分频 + 高频 M/S 去相关 + ITD + 空气吸收 + 输出软膝限幅） | `wide` |
 | `peq_hybrid.rs` | 混合式 PEQ（IIR biquad 级联 + 最小相位 FIR；段类型 peaking/low_shelf/high_shelf/low_pass/high_pass） | `peq` |
 | `gain.rs` / `loudness.rs` | 全局增益 / 等响补偿 | `preamp` / `loudness` |
@@ -1584,9 +1584,10 @@ pub struct LoudnessFilter { ... }        // impl Filter（loudness）
 - Reverb（Dattorro）：参考采样率 29761 Hz；输入扩散 142/107/379/277；
   槽内 672/908（正交 LFO 调制 APF，深度 16 采样@29761Hz）、4453/4217、1800/2656、3720/3163；
   输出抽头按论文 Table 2；`low_cut_hz` 分频点以下逐声道旁路混响、原样直通（20 ≈ 关闭）。
-- Compressor：全声道峰值包络检测（瞬时 attack + 30dB/s 线性释放）；静态曲线
-  固定 3dB 软膝，`ratio` 压大 / `lift` 放小（膝区 Hermite C1 连续）；
-  增益削减在 dB 域按 attack/release 平滑（释放固定自动：双极点 100ms/600ms 按 0.3/0.7 混合）；
+- Compressor：全声道峰值包络检测（瞬时 attack + 深度加权速率释放：深压 30dB/s、
+  浅压 180dB/s）；静态曲线固定 3dB 软膝，`ratio` 压大 / `lift` 放小（膝区 Hermite C1 连续）；
+  增益削减在 dB 域按 attack/release 平滑（释放固定自动：双极点 100ms/600ms，
+  慢极点权重随压制深度立方退到 0——深压 0.3/0.7 保尾巴、浅压纯走快极点）；
   负增益有界输出，`mix` 等比干湿混合。
 - Wide：线性相位 FIR 分频（Kaiser 窗，抽头数随采样率/分频点缩放）；低频降低在**重建后的
   干声和**上做（RBJ 低架，Q 固定 0.707，拐点 = 分频点，深度 = `low_shelf_depth_db`（默认 6dB）

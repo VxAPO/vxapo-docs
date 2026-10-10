@@ -76,15 +76,18 @@ Implementation notes:
 
 - `reverb`: Dattorro plate reverb; `low_cut_hz` is the low-frequency transient protection crossover
   (content below it bypasses the reverb per channel, `20` ~ off).
-- `compressor`: all-channel linked **peak-envelope detection** (instant attack + linear
-  30 dB/s release — low frequencies still trigger it, and the steady-state ripple stays in
-  the masking region) + a fixed 3 dB soft-knee static curve (`ratio` squashes above the
-  threshold, `lift` raises quiet content toward it by `u × min(threshold − level, 24 dB)`
-  and never past it; C1-continuous Hermite knee that degenerates bit-exactly to the old
-  interpolation at `lift = 0`) + dB-domain attack/release smoothing (**release is fixed
-  automatic, no parameter**: a dual-pole program-dependent release — a 100 ms head
-  blended 0.3/0.7 with a 600 ms tail, so transients let go fast while sustained material
-  does not pump) +
+- `compressor`: all-channel linked **peak-envelope detection** (instant attack +
+  **depth-weighted release rate** — 30 dB/s baseline when deep, accelerated to 180 dB/s
+  when shallow; low frequencies still trigger it, and deep material's steady-state ripple
+  stays in the masking region) + a fixed 3 dB soft-knee static curve (`ratio` squashes
+  above the threshold, `lift` raises quiet content toward it by `u × min(threshold −
+  level, 24 dB)` and never past it; C1-continuous Hermite knee that degenerates
+  bit-exactly to the old interpolation at `lift = 0`) + dB-domain attack/release
+  smoothing (**release is fixed automatic, no parameter**: dual-pole 100 ms / 600 ms
+  whose slow-pole weight scales with the **cube** of reduction depth — deep reductions
+  keep the 0.3/0.7 blend and its 600 ms tail (sustained material and bass do not pump),
+  shallow ones lean fully on the fast pole so fast material recovers between hits
+  instead of accumulating) +
   **bounded output**
   (no makeup: `|out| ≤ |in|` always holds at `lift = 0`, and with `lift > 0` the output
   level never exceeds the threshold — no clipping either way; `mix` blends with the dry

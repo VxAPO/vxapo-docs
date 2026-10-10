@@ -185,7 +185,7 @@ The three Rust repositories pin the same version; update their `rust-toolchain.t
 
 | Repository | `cargo test` | clippy |
 |---|---|---|
-| `vxapo-driver` | 481 passed / 0 failed / 1 ignored (release 471) | **exit 0** (the 222 → 0 cleanup must not regress) |
+| `vxapo-driver` | 492 passed / 0 failed / 1 ignored (release 482) | **exit 0** (the 222 → 0 cleanup must not regress) |
 | `vxapo-cli` | 22 passed / 0 failed | exit 101 (**pre-existing**, not caused by formatting) |
 | `vxapo-app` | passes (0 tests) | exit 101 (**pre-existing**, not caused by formatting) |
 
