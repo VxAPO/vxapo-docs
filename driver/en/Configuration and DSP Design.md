@@ -76,23 +76,32 @@ Implementation notes:
 
 - `reverb`: Dattorro plate reverb; `low_cut_hz` is the low-frequency transient protection crossover
   (content below it bypasses the reverb per channel, `20` ~ off).
-- `compressor`: all-channel linked **peak-envelope detection** (instant attack +
-  **depth-weighted release rate** — 30 dB/s baseline when deep, accelerated to 180 dB/s
-  when shallow; low frequencies still trigger it, and deep material's steady-state ripple
-  stays in the masking region) + a fixed 3 dB soft-knee static curve (`ratio` squashes
-  above the threshold, `lift` raises quiet content toward it by `u × min(threshold −
-  level, 24 dB)` and never past it; C1-continuous Hermite knee that degenerates
-  bit-exactly to the old interpolation at `lift = 0`) + dB-domain attack/release
-  smoothing (**release is fixed automatic, no parameter**: dual-pole 100 ms / 600 ms
-  whose slow-pole weight scales with the **cube** of reduction depth — deep reductions
-  keep the 0.3/0.7 blend and its 600 ms tail (sustained material and bass do not pump),
-  shallow ones lean fully on the fast pole so fast material recovers between hits
-  instead of accumulating) +
+- `compressor`: all-channel linked **two-stage detection**. The primary detector is a
+  **slow loudness axis** (mean-square pole, τ = 0.5 s, plus 10 dB crest compensation
+  that aligns with the former peak scale so the threshold knob's trigger point stays
+  roughly put; material whose crest deviates from the typical value shifts it by a few
+  dB): gain stays nearly constant at the note/transient scale, so peaks travel with
+  their bodies as a **uniform translation** and the crest is preserved — the old
+  peak-envelope drive let attack leak the spike while the body took the full cut
+  (per-hit spike/body offset gap up to 9 dB, crest inflated), the source of the
+  "forced down, unnatural" feel. The **peak envelope** (instant attack plus
+  depth-weighted release, 30 dB/s deep / 180 dB/s shallow) is demoted to **lift
+  capping only**: `lift = u × min(max(threshold − peak envelope, 0), 24 dB)` never
+  crosses the threshold, and a sudden loud transient drops the boost instantly (no
+  boosting of momentary large signals). The curve is a fixed 3 dB soft-knee static
+  curve (**branching decided by the axis reading**: `ratio` cuts above the threshold,
+  `lift` raises below it; C1-continuous Hermite knee that degenerates bit-exactly to
+  the old interpolation at `lift = 0`) + dB-domain attack/release smoothing
+  (**release is fixed automatic, no parameter**: dual-pole 100 ms / 600 ms whose
+  slow-pole weight scales with the **cube** of reduction depth — deep reductions keep
+  the 0.3/0.7 blend and its 600 ms tail (sustained material and bass do not pump),
+  shallow ones lean fully on the fast pole) +
   **bounded output**
-  (no makeup: `|out| ≤ |in|` always holds at `lift = 0`, and with `lift > 0` the output
-  level never exceeds the threshold — no clipping either way; `mix` blends with the dry
-  signal, `dry = 1 - mix`); replaces the former `maximizer` / `leveler`, legacy
-  `knee_db` / `makeup_gain_db` / `wet` / `dry` keys are silently ignored;
+  (no makeup: `|out| ≤ |in|` always holds at `lift = 0`, and with `lift > 0` the boost
+  is capped by the peak envelope so the output level never exceeds the threshold — no
+  clipping either way; `mix` blends with the dry signal, `dry = 1 - mix`); replaces
+  the former `maximizer` / `leveler`, legacy `knee_db` / `makeup_gain_db` / `wet` /
+  `dry` keys are silently ignored;
   `release_ms` was removed together with manual release (now an unknown key — its
   presence rejects the config).
 - `wide`: linear-phase FIR crossover; `gain` (HF compensation) only sets the depth of the
