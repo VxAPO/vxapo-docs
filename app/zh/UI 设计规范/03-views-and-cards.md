@@ -46,9 +46,10 @@
 
 - 标签 `.band-param-label`：`var(--text-weak)`，12px。
 - 滑块 `.gs-root`（Radix Slider 封装，圆头 `--thumb` + 描边 `--gs-thumb-border`；
-  禁用态 `--gs-thumb-disabled`）带 `margin-right:2px`：满值时 16px thumb 的圆心在
-  轨道右缘、向外探出 8px，正好吃掉行 gap 会贴住输入框——补这 2px 只拉大
-  「进度条右端 → 输入框」的间距，label 侧不动。
+  禁用态 `--gs-thumb-disabled`）带 `margin-right:4px`：满值时 16px thumb 的圆心在
+  轨道右缘、向外探出 8px，正好吃掉行 gap 会贴住输入框——补 4px 只拉大
+  「进度条右端 → 输入框」的间距，label 侧不动（2px 时 thumb 的 hover 描边
+  仍会外扩压到输入框，故加到 4px）。
 - 输入框 `.gain-input`：宽 56px，高 22px，圆角 8px，边框 `1px solid var(--border)`，
   背景 `var(--card)`，文字 `var(--text-primary)`，右对齐。
   **值保护（`NumInput`，非受控）**：键入期间不回写 DOM、不入 store——type=number 的
@@ -93,7 +94,7 @@
   删除 `.close-x`。
 - `.effect-desc`：描述文字，`var(--text-weak)`。
 - 参数行 `.effect-param-row`：标签 + 控件（滑块/下拉/输入框）；滑块同样带
-  `margin-right:2px`（与 `.band-param-row` 同因：满值 thumb 外探 8px 防贴输入框）。
+  `margin-right:4px`（与 `.band-param-row` 同因：满值 thumb 外探 8px 防贴输入框）。
   通用数字输入框（`NumInput`）store 存原始键入值、非聚焦时显示收口值
   （`display={clamped}`；中间态不入 store），失焦时把收口值回写 store
   （与 band 输入同为「失焦收口 + 写盘夹取」两层，见 §3.2）。
