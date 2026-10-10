@@ -77,9 +77,12 @@ Implementation notes:
 - `reverb`: Dattorro plate reverb; `low_cut_hz` is the low-frequency transient protection crossover
   (content below it bypasses the reverb per channel, `20` ~ off).
 - `compressor`: all-channel linked **two-stage detection**. The primary detector is a
-  **slow loudness axis** (mean-square pole, τ = 0.5 s, plus 10 dB crest compensation
-  that aligns with the former peak scale so the threshold knob's trigger point stays
-  roughly put; material whose crest deviates from the typical value shifts it by a few
+  **slow loudness axis** (asymmetric mean-square pole: 0.5 s rise keeps the
+  note-scale translation, 0.2 s fall keeps post-passage recovery snappy — symmetric
+  0.5 s needed 1.5 s+ to recover from deep reduction, the source of the "sluggish
+  muffle"; plus 10 dB crest compensation that aligns with the former peak scale so
+  the threshold knob's trigger point stays roughly put; material whose crest
+  deviates from the typical value shifts it by a few
   dB): gain stays nearly constant at the note/transient scale, so peaks travel with
   their bodies as a **uniform translation** and the crest is preserved — the old
   peak-envelope drive let attack leak the spike while the body took the full cut
