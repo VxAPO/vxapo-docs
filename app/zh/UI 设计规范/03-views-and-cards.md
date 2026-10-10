@@ -51,9 +51,11 @@
   「进度条右端 → 输入框」的间距，label 侧不动。
 - 输入框 `.gain-input`：宽 56px，高 22px，圆角 8px，边框 `1px solid var(--border)`，
   背景 `var(--card)`，文字 `var(--text-primary)`，右对齐。
-  **值保护**：键入过程中允许临时越界（不打断输入），失焦/回车时把越界值夹回 driver
-  范围（fc 20..20000、gain −30..30、q 0.1..12，非有限回默认）；写盘前还有一层夹取兜底
-  （见 `App 引用规范` §4.3）。语义视图头部的频率输入框 `.fc-num` 同口径。
+  **值保护（`NumInput`，非受控）**：键入期间不回写 DOM、不入 store——type=number 的
+  中间态（"-"、清空）浏览器读出为空串，受控回写会把 `Number("")=0` 顶进框里，负号打不
+  进来；失焦/回车时把值夹回 driver 范围（fc 20..20000、gain −30..30、q 0.1..12）并回显，
+  仅与 store 不一致才回写，空/非法输入退回原值；聚焦期间外部值不同步。写盘前还有一层
+  夹取兜底（见 `App 引用规范` §4.3）。语义视图头部的频率输入框 `.fc-num` 同口径。
 - focus-visible：`border-color: var(--brand); box-shadow: 0 1px 3px rgba(15,23,42,0.1)`。
 
 ## 4. 组卡（语义视图 / 预设视图）
@@ -92,8 +94,9 @@
 - `.effect-desc`：描述文字，`var(--text-weak)`。
 - 参数行 `.effect-param-row`：标签 + 控件（滑块/下拉/输入框）；滑块同样带
   `margin-right:2px`（与 `.band-param-row` 同因：满值 thumb 外探 8px 防贴输入框）。
-  通用数字输入框显示层实时 clamp（`value={clamped}`）、键入原始值入 store，
-  失焦时把收口值回写 store（与 band 输入同为「失焦收口 + 写盘夹取」两层，见 §3.2）。
+  通用数字输入框（`NumInput`）store 存原始键入值、非聚焦时显示收口值
+  （`display={clamped}`；中间态不入 store），失焦时把收口值回写 store
+  （与 band 输入同为「失焦收口 + 写盘夹取」两层，见 §3.2）。
 - 语义视图强度行 `.effect-strength-row`：强度百分比 `.g-val`，文字 `var(--text-weak)`。
 
 ### 5.1 内置效果器（语义视图强度映射见 `App 引用规范` 第六章）

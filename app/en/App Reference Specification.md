@@ -45,7 +45,7 @@ vxapo-app/
     ├── styles/             # theme/topbar/sidebar/cards/tabs/device/curve/dialogs/
     │                       # toast/drag/overlay-scroll/dark (dark last)
     ├── assets/             # VxAPO_icon_v4.svg etc.
-    ├── components/         # 28 UI components (see 3.3)
+    ├── components/         # 33 UI components (see 3.3)
     ├── data/library.ts     # preset library data
     ├── hooks/              # 15 hooks (see 3.4)
     └── lib/                # api/model/toml/effects/blocks/channels/curve/rbj/...
@@ -75,7 +75,7 @@ src/
 ├── components/                # TopBar, Sidebar, PresetDeck, PresetView, AdvancedView,
 │                              # CurvePanel, CurvePlot, CurveGrid, DeviceTabs, DevicePropsCard,
 │                              # EffectCard, EffectSemanticCard, SemanticUnitCard, BandParamCard,
-│                              # GainSlider, SelectionToolbar, DragCard, DragLayer,
+│                              # GainSlider, NumInput, SelectionToolbar, DragCard, DragLayer,
 │                              # InstallDialog, UninstallDialog, ImportDialog, SavePresetDialog,
 │                              # SettingsDialog, ConfirmDialog, OverlayScrollbar,
 │                              # StaleInstallBanner, Toast, VxSelect
@@ -142,6 +142,7 @@ src/
 | `DeviceTabs` / `DevicePropsCard` | device tabs (with tuning switch) / device properties |
 | `EffectCard` / `EffectSemanticCard` / `SemanticUnitCard` | effect param card / semantic strength card / semantic unit card |
 | `BandParamCard` / `GainSlider` | band param card / gain slider |
+| `NumInput` | uncontrolled number input: typing intermediates ("-", cleared field) never write back to the DOM or enter the store; clamped and committed on blur/Enter; effect cards store the raw typed value and display the clamped one |
 | `SelectionToolbar` | marquee batch toolbar (save/delete/copy to channel) |
 | `DragCard` / `DragLayer` | drag-sort card / flying copy layer |
 | `OverlayScrollbar` | custom overlay scrollbar (no layout width, fade in/out, survives device switch) |
@@ -221,7 +222,7 @@ Curve preview (independent path):
 
 - `buildToml` emits `version = 1` / `enabled` / `[meta]` / `[[effects]]` (`type="peq"` or non-PEQ effects); PEQ blocks also emit `crossover_hz = 200` and `channels` in channel mode.
   **Write-time clamp**: numeric values are clamped to the driver ranges before emitting — band keys (`fc`/`gain_db`/`q`) via `clampBandParam` (same ranges as `finite_range`; NaN/invalid falls back to the per-key default, out-of-range including ±Infinity clamps to the bound), effect params via `clampToSpec` (clamped to `EFFECT_PARAM_SPECS` min/max, non-finite falls back to the spec default; `compressor.ratio` still goes through `toDriverParam` first, then clamps). The driver's `finite_range` **rejects the whole config** on a single out-of-range value (falls back to passthrough, all EQ lost), so beyond input-blur clamping the write path adds a backstop covering debounced mid-typing saves, semantic write-back, normalize writing preamp (`-filterPeak` can exceed +48) and hand-edited write-backs; in-range values are written unchanged. Unknown keys pass through as-is (the driver's `check_keys` decides).
-- **Input clamping**: number inputs on tuning cards allow transient out-of-range values while typing (typing is never interrupted); on blur (or Enter, which triggers blur) out-of-range/invalid values are clamped back into the driver range (bands via `clampBandParam`, generic effect params by writing back the displayed `clamped` value). `poll()` skips re-reading while a number input is focused — after write-clamping the on-disk value may temporarily differ from the half-typed value in the input, and a re-read would interrupt typing; polling resumes after blur converges the two.
+- **Input clamping**: number inputs on tuning cards are **uncontrolled** (`NumInput`: defaultValue + sync on blur). A `type=number` typing intermediate ("-", an emptied field) reads back as an empty string in the browser, and a controlled write-back would push `Number("")` = 0 into the input — the minus sign could never be typed and clearing would zero the field. So while typing, nothing is written back to the DOM and no value enters the store (unparseable intermediates are dropped; transient out-of-range values are allowed, typing is never interrupted). On blur (or Enter, which triggers blur) the value is clamped into the driver range using the input's min/max (same ranges as `BAND_LIMITS`/`clampBandParam`), echoed into the input, and committed to the store only if it differs — invalid/empty input reverts to the previous value (effect cards revert to the displayed `clamped` and commit it), and untouched fields don't mark dirty. External value changes (slider drags, re-reads) are not synced into the input while it is focused; `poll()` likewise skips re-reading while a number input is focused — after write-clamping the on-disk value may temporarily differ from the half-typed value in the input, and a re-read would interrupt typing; polling resumes after blur converges the two.
 - `parseConfigWithTail` parses PEQ blocks and non-PEQ effects; the first unknown effect onward is kept as `tail` and appended unchanged on save.
 - `applyPreset` checks the 31-band limit and inserts preset bands according to current language/channel.
 - Channel mode: `ChannelCtx { mode, first, active }` controls `channels` emission and block filtering; outside channel mode only first-channel blocks are written.

@@ -49,7 +49,7 @@ vxapo-app/
     ├── styles/             # theme/topbar/sidebar/cards/tabs/device/curve/dialogs/
     │                       # toast/drag/overlay-scroll/dark（dark 最后级联）
     ├── assets/             # VxAPO_icon_v4.svg 等图标
-    ├── components/         # 28 个 UI 组件（见 3.3）
+    ├── components/         # 33 个 UI 组件（见 3.3）
     ├── data/library.ts     # 预设库数据
     ├── hooks/              # 15 个 hooks（见 3.4）
     └── lib/                # api/model/toml/effects/blocks/channels/curve/rbj/...
@@ -78,7 +78,7 @@ src/
 ├── components/                # TopBar, Sidebar, PresetDeck, PresetView, AdvancedView,
 │                              # CurvePanel, CurvePlot, CurveGrid, DeviceTabs, DevicePropsCard,
 │                              # EffectCard, EffectSemanticCard, SemanticUnitCard, BandParamCard,
-│                              # GainSlider, SelectionToolbar, DragCard, DragLayer,
+│                              # GainSlider, NumInput, SelectionToolbar, DragCard, DragLayer,
 │                              # InstallDialog, UninstallDialog, ImportDialog, SavePresetDialog,
 │                              # SettingsDialog, ConfirmDialog, OverlayScrollbar,
 │                              # StaleInstallBanner, Toast, VxSelect
@@ -145,6 +145,7 @@ src/
 | `DeviceTabs.tsx` / `DevicePropsCard.tsx` | 设备标签页（含调音开关）/ 设备属性卡 |
 | `EffectCard.tsx` / `EffectSemanticCard.tsx` / `SemanticUnitCard.tsx` | 效果器参数卡 / 语义强度卡 / 语义单元卡 |
 | `BandParamCard.tsx` / `GainSlider.tsx` | 频段参数卡与增益滑条 |
+| `NumInput.tsx` | 非受控数字输入框：键入中间态（"-"、清空）不回写 DOM 也不入 store，失焦/回车夹取回写；效果器卡存原始键入值、显示收口值 |
 | `SelectionToolbar.tsx` | 框选批量工具栏（保存/删除/复制到声道） |
 | `DragCard.tsx` / `DragLayer.tsx` | 拖拽排序卡 / 飞行副本层 |
 | `OverlayScrollbar.tsx` | 自绘 overlay 滚动条（不占布局宽度、淡入淡出、跨设备存活） |
@@ -231,10 +232,15 @@ UI 操作（增删频段/改参数/切换 enabled/应用预设/语义强度）
   **拒收整份配置**（降级 passthrough、EQ 整体失效），故输入框失焦收口之外写盘再兜一层，
   覆盖去抖保存中途、语义写回、归一化写 preamp（`-filterPeak` 可超出 +48）与手改回写等
   所有落盘路径；范围内值原样写出。未知键原样带出（去留由 driver `check_keys` 决定）。
-- **输入框收口**：调音卡片的数字输入框键入过程中允许临时越界（不打断输入），失焦
-  （或回车触发 blur）时把越界/非法值夹回 driver 范围（band 走 `clampBandParam`，
-  效果器通用参数用显示域 `clamped` 回写）；`poll()` 在数字输入框聚焦期间跳过回读——
-  写盘夹取后磁盘值可能暂与输入中的半截值不同，回读会打断键入，失焦收口后再恢复。
+- **输入框收口**：调音卡片的数字输入框为**非受控**（`NumInput`：defaultValue +
+  失焦同步）。type=number 的键入中间态（"-"、清空）在浏览器里读出为空串，受控回写会把
+  `Number("")=0` 顶进输入框——负号打不进来、清空会归零；因此键入期间不回写 DOM、不提交
+  store（解析失败的中间态一律丢弃），键入过程中允许临时越界（不打断输入）。失焦
+  （或回车触发 blur）时按输入框 min/max（与 `BAND_LIMITS`/`clampBandParam` 同口径）把值
+  夹回 driver 范围并回显，仅与 store 不一致才回写——非法/空输入退回原值（效果器卡退回
+  显示域 `clamped` 并回写 store），未改动的字段不触发 markDirty。聚焦期间外部值（滑块、
+  回读）不同步进输入框；`poll()` 在数字输入框聚焦期间跳过回读——写盘夹取后磁盘值可能暂
+  与输入中的半截值不同，回读会打断键入，失焦收口后再恢复。
 - `parseConfigWithTail`：解析 PEQ 块与非 PEQ 效果器；首个未知效果器起保留为 `tail`，
   保存时原样拼回。
 - `applyPreset`：检查 31 频段上限后按当前语言/声道插入预设频段。
