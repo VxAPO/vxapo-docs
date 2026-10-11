@@ -826,8 +826,9 @@ fn apo_process_inner(&self, input_props, output_props, params: &ProcessParams) {
     //    每帧一次作用于输入缓冲（就地或写 temp_buffer_child）；其输出即 VxAPO 链输入。
     //    child 不在 current/outgoing 任一链内（独立持有），双链共享同一份 child 输出。
     //    无 child（降级模式）→ 跳过此步，纯 VxAPO 处理。
+    //    （不再每帧调 childRT->CalcInputFrames——那是引擎按需调用的纯查询 COM 方法，
+    //    每帧预调结果被丢弃，徒增一次跨 vtable 调用；伪代码已同步删除。）
     if let Some(ref child) = self.child_apo {
-        child.calc_input_frames(params.valid_frame_count);  // 委托帧数计算（RT 无锁）
         child_rt_process(child, input_slice, params);       // childRT->APOProcess（实现端具体化）
     }
 
