@@ -241,6 +241,9 @@ UI 操作（增删频段/改参数/切换 enabled/应用预设/语义强度）
   显示域 `clamped` 并回写 store），未改动的字段不触发 markDirty。聚焦期间外部值（滑块、
   回读）不同步进输入框；`poll()` 在数字输入框聚焦期间跳过回读——写盘夹取后磁盘值可能暂
   与输入中的半截值不同，回读会打断键入，失焦收口后再恢复。
+  **显示精度**：显示与失焦收口都按 `precision` 收敛——Hz 类频率（`fc` / `tune_hz` /
+  `crossover_hz` / `low_cut_hz`）一律整数（失焦四舍五入入 store），其余参数至多 2 位
+  小数（driver 全精度默认值如 1.76993 不会暴露在输入框里，首次失焦即规整落盘）。
 - `parseConfigWithTail`：解析 PEQ 块与非 PEQ 效果器；首个未知效果器起保留为 `tail`，
   保存时原样拼回。
 - `applyPreset`：检查 31 频段上限后按当前语言/声道插入预设频段。
@@ -384,8 +387,8 @@ export interface MigrationReport {
 |--------|--------|------|--------|
 | `preamp` | 基准电平 | `gain_db` | `0` |
 | `wide` | 声场处理 | `gain`(高频补偿→低频深度) / `air`(中置空气) / `side_itd`(侧向去相关) / `crossover_hz`(分频点 200–1000) | `0.05 / 0.2 / 0.2 / 200` |
-| `aural` | 谐波激励器 | `tune_hz` / `drive` / `odd` / `even` / `wet` / `dry` | `1760 / 1.7699 / 1.5 / 0.25 / 0.5 / 0.5` |
-| `reverb` | 板式混响 | `room_size` / `decay` / `damping` / `pre_delay_ms` / `low_cut_hz` / `wet` / `dry` | `1 / 0.41 / 0.4083 / 0 / 100 / 0.27 / 0.73` |
+| `aural` | 谐波激励器 | `tune_hz` / `drive` / `odd` / `even` / `wet` / `dry` | `1760 / 1.77 / 1 / 0.2 / 0.5 / 0.5` |
+| `reverb` | 板式混响 | `room_size` / `decay` / `damping` / `pre_delay_ms` / `low_cut_hz` / `wet` / `dry` | `1 / 0.41 / 0.41 / 0 / 100 / 0.27 / 0.73` |
 | `compressor` | 压缩器 | `threshold_db` / `ratio` / `lift` / `attack_ms` / `mix` | `-12 / 3 / 0 / 10 / 1` |
 | `loudness` | 等响补偿 | `phon`(目标响度) / `reference_phon`(参考响度) | `80 / 80` |
 

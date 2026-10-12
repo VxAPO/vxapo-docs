@@ -68,7 +68,7 @@ q = 1.0
 
 | type | 缺省值 |
 |------|--------|
-| `aural` | `tune_hz 1760` / `drive 1.76993` / `odd 1.5` / `even 0.25` / `wet 0.5` / `dry 0.5` |
+| `aural` | `tune_hz 1760` / `drive 1.76993` / `odd 1` / `even 0.2` / `wet 0.5` / `dry 0.5`（odd/even 原 1.5/0.25，odd 即量程上限、谐波过量已收紧） |
 | `reverb` | `room_size 1.0` / `decay 0.41` / `damping 0.408290` / `bandwidth 0.350110` / `density 1.0` / `lat5 0.70` / `lat6 0.50` / `pre_delay_ms 0` / `motion_rate 0.110871` / `motion_depth 0.63` / `low_cut_hz 100` / `wet 0.27` / `dry 0.73` |
 | `compressor` | `threshold_db -12` / `ratio 3` / `lift 0` / `attack_ms 10` / `mix 1.0` |
 | `wide` | `gain 0.05` / `air 0.2` / `side_itd 0.2` / `crossover_hz 200` |

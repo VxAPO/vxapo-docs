@@ -1569,7 +1569,7 @@ pub struct LoudnessFilter { ... }        // impl Filter（loudness）
 ```
 
 **默认值**（`Default` 实现；Wet/Dry 均可覆盖）：
-- Aural：`tune_hz 1760` / `drive 1.76993` / `odd 1.5` / `even 0.25` / `wet 0.5` / `dry 0.5`；
+- Aural：`tune_hz 1760` / `drive 1.76993` / `odd 1` / `even 0.2` / `wet 0.5` / `dry 0.5`；
 - Reverb：`room_size 1.0` / `decay 0.41` / `damping 0.408290` / `bandwidth 0.350110` /
   `density 1.0` / `lat5 0.70` / `lat6 0.50` / `pre_delay_ms 0` / `motion_rate 0.110871` /
   `motion_depth 0.63` / `low_cut_hz 100` / `wet 0.27` / `dry 0.73`；
