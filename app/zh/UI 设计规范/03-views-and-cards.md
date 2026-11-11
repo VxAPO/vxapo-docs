@@ -59,7 +59,10 @@
   **精度**：显示与失焦收口按 `precision` 收敛——Hz 频率（fc/tune_hz/crossover/low_cut）
   一律整数，其余至多 2 位小数（输入框不暴露长浮点默认值）。写盘前还有一层
   夹取兜底（见 `App 引用规范` §4.3）。语义视图头部的频率输入框 `.fc-num` 同口径。
-- focus-visible：`border-color: var(--brand); box-shadow: 0 1px 3px rgba(15,23,42,0.1)`。
+- focus-visible：`border-color: var(--card-accent, var(--brand)); box-shadow: 0 1px 3px rgba(15,23,42,0.1)`。
+  描边色**跟随卡片组色**（与 `.band-card.enabled.sem-group` 的外圈同一套 token），
+  无组卡回落 `--brand`；深色下换成 `--card-accent-dark`（见 `dark.css`）。
+  原先写死 `--brand`（默认青），组卡里一聚焦就跳出组主题色，看着像别处来的控件。
 
 ## 4. 组卡（语义视图 / 预设视图）
 
