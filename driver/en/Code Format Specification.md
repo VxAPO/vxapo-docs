@@ -15,13 +15,14 @@ Formatting is decided **only by `cargo fmt`**.
 | Item | Value |
 |---|---|
 | Line-breaking strategy | **rustfmt defaults** (no custom width settings) |
-| `style_edition` | `2021` (pinned explicitly) |
+| `style_edition` | `2024` (pinned explicitly) |
 | `newline_style` | `Unix` |
 | Toolchain | `channel = "1.100.0"` (pinned via `rust-toolchain.toml`) |
 
-`style_edition` is pinned so that a crate `edition` bump (2021 → 2024) does **not**
-force another whole-repo reflow. `newline_style = "Unix"` matches `.gitattributes`
-`eol=lf`.
+`style_edition` is pinned explicitly so that rustfmt's default-style drift cannot
+silently reflow the whole repository; the 2024 restyle (use-item ordering etc.) was
+applied once as standalone `style:` commits recorded in `.git-blame-ignore-revs`.
+`newline_style = "Unix"` matches `.gitattributes` `eol=lf`.
 
 Config file locations:
 
