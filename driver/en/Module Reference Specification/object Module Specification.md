@@ -374,7 +374,7 @@ the child APO, and run the sysfx self-heal.
 4. If a child GUID exists, create `ChildApo::create(clsid)` (failure degrades to no child;
    never blocks initialization).
 5. Runtime self-heal (v9.4): after Windows re-enumeration the driver template may re-install
-   Microsoft CAPX into `MSFX\N` alongside VxAPO ( stuttering/slow playback). By endpoint
+   Microsoft CAPX into `MSFX\N` alongside VxAPO (stuttering/slow playback). By endpoint
    GUID, locate the MMDevices path and call
    `install/device/sysfx::ensure_takeover_for_endpoint`: acts only when the endpoint's
    FxProperties already has VxAPO installed; replaces/deletes only Microsoft CAPX CLSIDs,
@@ -723,7 +723,7 @@ const _: () = {
 };
 ```
 
-### 7.2 `object/apo/child.rs` — child APO COM lifetime management
+## 7.2 `object/apo/child.rs` — child APO COM lifetime management
 
 **Responsibility**: hold the child APO's COM interfaces and delegate calls.
 
@@ -797,7 +797,7 @@ impl ChildApo {
 }
 ```
 
-### 7.3 `object/factory.rs` — ClassFactory
+## 7.3 `object/factory.rs` — ClassFactory
 
 **Responsibility**: `IClassFactory` implementation + `LOCK_COUNT` management.
 
@@ -842,7 +842,7 @@ impl IClassFactory_Impl for ClassFactory_Impl {
 pub fn create_factory(clsid: &GUID) -> Option<IClassFactory>;
 ```
 
-### 7.4 `object/ref_count.rs`
+## 7.4 `object/ref_count.rs`
 
 **Responsibility**: `INST_COUNT` — the number of live APO COM object instances.
 
@@ -865,7 +865,7 @@ pub fn reset_for_test();
 > `crate::object::ref_count::serial_lock()` as their first statement (a per-module lock
 > still raced cross-module in release — measured).
 
-### 7.5 `object/vx_reg_props.rs`
+## 7.5 `object/vx_reg_props.rs`
 
 **Responsibility**: APO registration properties, query helpers and COM registration entries. The CLSIDs themselves are **defined once in `sys/consts.rs`** (code-verified single source; the zh sibling's local `pub const CLSID_VXAPO_*:` definitions are historical):
 
@@ -909,7 +909,7 @@ pub fn unregistration_order() -> Vec<ClsidEntry>;
 
 **Registry layout**: `HKCR\CLSID\{GUID}\InprocServer32` → `(Default) = "C:\...\vxapo.dll"`, `ThreadingModel = "Both"`.
 
-### 7.6 `object/dll_exports.rs`
+## 7.6 `object/dll_exports.rs`
 
 **Responsibility**: the DLL export functions. All are `#[unsafe(no_mangle)]` (edition-2024 attribute form; the zh `#[no_mangle]` spelling is the pre-2024 form).
 
@@ -948,7 +948,7 @@ pub fn register_apo_with_path(dll_path: &str) -> HRESULT;
 
 **Internal helpers**: `get_dll_path()`, `register_com_class(entry, dll_path)`, `unregister_com_class(entry)`, `to_registry_bytes(s)` (null-terminated UTF-16).
 
-### 7.7 `object/apo/aggregate.rs` — COM aggregation shell
+## 7.7 `object/apo/aggregate.rs` — COM aggregation shell
 
 **Responsibility** (code-verified; not covered by the zh sibling beyond a tree line): the engine **always** creates APOs aggregated (`pUnkOuter` non-null). windows-rs `#[implement]`'s self-contained IUnknown does not delegate, so aggregation would silently fail (object discarded → no sound). `NApo` implements the EAPO aggregation semantics with a hand-written multi-interface offset layout:
 

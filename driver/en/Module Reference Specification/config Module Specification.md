@@ -137,7 +137,7 @@ impl From<ConfigError> for crate::utils::vx_error::VxApoError { /* -> VxApoError
 
 **Responsibility**: config file parser (v9.11 TOML). Reads `config.toml` →
 `toml::from_str::<FileModel>` → `to_chain_model` (validation) → `factory::create_from_model`
-to build the Filter chain, and produces the config fingerprint (`EffectConfig::spec()`
+to build the Filter chain, and produces the spec fingerprint (`EffectConfig::spec()`
 series — used by the object layer for hot-reload change detection).
 
 **References**:
@@ -163,12 +163,12 @@ series — used by the object layer for hot-reload change detection).
 > the old text format lives in the CLI (`vxapo-cli/src/commands/convert.rs`, EAPO txt → TOML).
 
 ```rust
-/// Config fingerprint (v9.11): stable serialization of `EffectConfig::spec()`
+/// Spec fingerprint (v9.11): stable serialization of `EffectConfig::spec()`
 /// (DSP fields; `name`/`group`/`meta` do not participate). The ordered spec chain is
 /// compared item by item for hot-reload decisions.
 pub type FilterSpec = String;
 
-/// Config fingerprint (spec chain): the ordered sequence of filter_specs produced by one
+/// Spec fingerprint (spec chain): the ordered sequence of filter_specs produced by one
 /// full parse (the `[[effects]]` array order is the processing order).
 pub type SpecChain = Vec<FilterSpec>;
 
@@ -181,7 +181,7 @@ pub struct ConfigParser;
 impl ConfigParser {
     pub fn new() -> Self;
 
-    /// Parses the config file and produces the config fingerprint.
+    /// Parses the config file and produces the spec fingerprint.
     /// Missing file = passthrough (empty chain, v9.12); syntax/model validation failure
     /// → whole-file failure (callers degrade per scenario: Lock → passthrough,
     /// hot reload → keep old chain). Files above MAX_CONFIG_FILE_SIZE (128 KiB) → IoError.
@@ -222,10 +222,10 @@ do not participate (APP metadata changes do not trigger hot reload).
 > Unit tokens are DSP knowledge; stripping them would violate "the spec is produced by the
 > parser with zero DSP knowledge". A unit difference (`-6.0 dB` vs `-6.0`) triggered one
 > transition — manual file edits are an edge case, the transition uses a raised cosine and
-> is inaudible (overview/项目概览.md).
+> is inaudible (overview/Project Overview.md).
 
 **Bare-command reachability reversal (v7.11, execution-side issue ② → product decision)**:
-> Lines without a colon must not be parsed (overview/项目概览.md "syntax strictness": the
+> Lines without a colon must not be parsed (overview/Project Overview.md, "syntax strictness": the
 > string before the colon decides the parse target and must be a strict keyword).
 > **EAPO behavior fact (v8.3 note, S5)**: EAPO silently skips colon-less lines
 > (FilterEngine.cpp 329-330: `pos = line.find(':')`; when `pos == -1` the whole line is

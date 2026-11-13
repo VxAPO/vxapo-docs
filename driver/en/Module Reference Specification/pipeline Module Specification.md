@@ -859,7 +859,7 @@ impl Filter for BiquadFilter { /* processes only its channel slots (channel_indi
 > factory filter fir gain loudness math model peq_hybrid reverb specs transition wide`
 > (15 files).
 
-### 4.13 ~~`pipeline/dsp/peq.rs`~~ (deleted)
+## 4.13 ~~`pipeline/dsp/peq.rs`~~ (deleted)
 
 **Responsibility**: parametric EQ (cascaded biquads). **References**: Filter + biquad. **Exports to**: only the old `graphic_eq.rs`.
 
@@ -872,7 +872,7 @@ impl PeqFilter {
 impl Filter for PeqFilter { ... }
 ```
 
-### 4.14 ~~`pipeline/dsp/hp_lp.rs`~~ (deleted)
+## 4.14 ~~`pipeline/dsp/hp_lp.rs`~~ (deleted)
 
 **Responsibility**: high-pass / low-pass filters. **References**: Filter + biquad. **Exports to**: only `pipeline/dsp/` internally.
 
@@ -914,7 +914,7 @@ pub fn db_to_linear(db: f32) -> f32;
 pub fn linear_to_db(linear: f32) -> f32;
 ```
 
-### 4.16 ~~`pipeline/dsp/delay.rs`~~ (deleted)
+## 4.16 ~~`pipeline/dsp/delay.rs`~~ (deleted)
 
 **Responsibility**: delay line (ring-buffer implementation). **References**: Filter. **Exports to**: only `pipeline/dsp/` internally.
 
@@ -928,7 +928,7 @@ impl DelayFilter {
 impl Filter for DelayFilter { ... }
 ```
 
-### 4.17 ~~`pipeline/dsp/copy.rs`~~ (deleted)
+## 4.17 ~~`pipeline/dsp/copy.rs`~~ (deleted)
 
 **Responsibility**: channel copy / mixdown. **References**: Filter + interleave. **Exports to**: only `pipeline/dsp/` internally.
 
@@ -948,7 +948,7 @@ pub struct ChannelMapping {
 pub fn parse_copy_ops(spec: &str, channel_names: &[String]) -> Option<Vec<ChannelMapping>>;
 ```
 
-### 4.18 ~~`pipeline/dsp/graphic_eq.rs`~~ (deleted)
+## 4.18 ~~`pipeline/dsp/graphic_eq.rs`~~ (deleted)
 
 > **Obsolete since v9.11**: the `GraphicEQ:` command and `graphic_eq.rs` were removed,
 > replaced by `pipeline/dsp/peq_hybrid.rs` (hybrid PEQ, TOML `[[effects]] type = "peq"`).
@@ -988,7 +988,7 @@ pub struct EqBand { pub frequency: f32, pub gain_db: f32 }
 pub fn parse_graphic_eq_params(spec: &str) -> Option<Vec<EqBand>>;
 ```
 
-### 4.19 ~~`pipeline/dsp/convolution.rs`~~ (deleted)
+## 4.19 ~~`pipeline/dsp/convolution.rs`~~ (deleted)
 
 > **Obsolete since v9.11**: `convolution.rs` was deleted (no IR convolution; the SIMD dot /
 > block FFT moved to `fir.rs`). Kept as historical reference.
@@ -1022,7 +1022,7 @@ pub fn parse_convolution_params(spec: &str) -> Result<(String, f32), ParseError>
 > `ParseError` is wrapped by the config layer into `ConfigError::SyntaxError` (file + line)
 > and written to the `log/` diagnostics.
 
-### 4.20 ~~`pipeline/dsp/vst.rs`~~ (deleted entirely)
+## 4.20 ~~`pipeline/dsp/vst.rs`~~ (deleted entirely)
 
 > **Since v9.11 `vst.rs` and the VST host were removed entirely**: `FACTORY_COUNT`,
 > `index::VST_PLUGIN`, `register_builtin_filters`, `VstFactory`,

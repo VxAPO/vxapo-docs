@@ -46,7 +46,7 @@ Processes audio only; does not know install, config, or COM objects.
 - `interleave.rs`: deinterleave/interleave.
 - `chain.rs`: `Chain` holds `Vec<Box<dyn Filter>>` and total latency.
 - `process.rs`: normal and transition processing.
-- `realtime/`: `RealtimeContext` compile-time marker, lock-free ring buffer.
+- `realtime/`: RT-safety contract — `RealtimeContext` compile-time marker, `RtGuard`, `rt_assert_in_rt!` / `rt_require_non_rt!` (the SPSC lock-free ring buffer lives in `utils/ring.rs`).
 - `dsp/`: `Filter` trait, factory, concrete filters (biquad/FIR/PEQ/gain/loudness/reverb, etc.).
 
 `pipeline` must not depend on `install`, `config`, or `object`.
@@ -107,7 +107,7 @@ COM glue layer called directly by the Windows audio engine.
 | `install/` | `sys/`, `utils/`, `object/vx_reg_props.rs` | `pipeline/`, `config/` |
 | `config/` | `sys/`, `utils/`, `pipeline/dsp/{filter,model,factory}` | `install/`, `object/`, `pipeline/{process,chain,context}`, concrete DSP implementations |
 | `object/` | all modules | none |
-| `telemetry/` | `pipeline/realtime/ring` | `install/`, `config/`, `object/` |
+| `telemetry/` | `utils/` (`ring`) | `install/`, `config/`, `object/` |
 | `utils/` | `windows-core` | all others |
 
 Third-party dependencies:

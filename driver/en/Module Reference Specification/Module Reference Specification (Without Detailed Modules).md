@@ -92,7 +92,7 @@ src/
 │   │   └── stale/          # detect.rs / migrate.rs / matching.rs / acl.rs
 │   │
 │   └── selector/
-│       └── operation.rs
+│       ├── operation.rs
 │       └── operation/      # execute.rs / helpers.rs / capx.rs
 │
 ├── config/
@@ -370,8 +370,8 @@ transition mode and then mixed.
 ### config/ does not operate Chain directly
 
 `config/parser.rs` returns `Vec<Box<dyn Filter>>`; `object/apo.rs` adds them to the Chain.
-A `Channel:` command triggers channel selection through `Filter::initialize()` returning
-`Some(channel_names)`; it never touches Chain's channel-management interface directly.
+Channel selection is requested through `Filter::initialize()` returning
+`Some(channel_names)`; config never touches Chain's channel-management interface directly.
 
 ### Thread-safety model
 
@@ -430,9 +430,9 @@ strip = "debuginfo"  # recommended: production DLL size
 ## 16. Change and feedback governance
 
 - New features or spec changes are recorded first in the current-status section of
-  `overview/zh/项目概览.md`.
-- Spec issues found during implementation are recorded in `driver/zh/代码审查摘要.md` or
-  `overview/zh/项目概览.md`, and this document is revised in sync.
+  the project overview (`overview/zh/项目概览.md` / `overview/en/Project Overview.md`).
+- Spec issues found during implementation are recorded in the code-review summary or
+  the project overview (`driver/zh/代码审查摘要.md` / `driver/en/Code Review Summary.md`; `overview/zh/项目概览.md` / `overview/en/Project Overview.md`), and this document is revised in sync.
 - The state machine stays: `Backlog -> Spec-Drafting -> Spec-Finalized -> Implementing -> Done`.
 - Hard gate: only `Spec-Finalized` may enter `Implementing`.
 
@@ -497,7 +497,7 @@ strip = "debuginfo"  # recommended: production DLL size
 > inaccurate — EAPO actually does **downmix rejection + mono→stereo upmix only** (not a full
 > lock); (2) GetLatency with no child returns 0 (not "falls back to its own value"); (3) a
 > failing child is resetChild-destroyed (not just fallen back). See
-> `Equalizer 行为文档.md` S1-S5.
+> `driver/en/Configuration and DSP Design.md` §5 (EqualizerAPO behavior reference).
 
 ### 18.3 Impact of the differentiation (D1-D3 design consequences)
 

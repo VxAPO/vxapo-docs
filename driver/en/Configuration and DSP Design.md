@@ -40,7 +40,7 @@ q = 1.0
 
 - Unknown `type`, unknown keys, missing required keys, out-of-range values, or type errors fail the whole file.
 - On failure, the old chain is kept.
-- PEQ bands: 1-31 per block; global total per channel/shared scope <= 31.
+- PEQ bands: 1-31 per block; the 31-band cap is per channel for blocks with explicit `channels`, and one shared budget for unscoped blocks (the cross-channel total may exceed 31).
   Blocks with explicit `channels` count against those channels; unscoped blocks count against the shared budget.
 - PEQ per-band ranges: `fc 20..20000`, `gain_db -30..+30`, `q 0.1..12`,
   `crossover_hz 20..20000` (default 200).
@@ -49,7 +49,7 @@ q = 1.0
   (`gain_boost_db` / `max_output_db` / `target` / `lookahead_ms` / `dither` / `target_rms_db` /
   `response_s` / `max_gain_db` / `dynamic_preserve` / `noise_gate_db` / `peak_limit_db`) are accepted
   but ignored, and `CompressorParams` defaults apply.
-- Legacy `wide` keys `intensity` / `depth` fall back to `air` (only when `air` is not set on that block).
+- Legacy `wide` keys `intensity` / `depth` are no longer accepted: the `air` fallback was removed, and either key on a `wide` block now rejects the config (only explicit `air` is honored).
 - `enabled = false` bypasses an effect.
 
 ### 1.3 Effect types
@@ -196,6 +196,6 @@ The EAPO behavior reference is useful for install/child APO/format negotiation a
 - Slot backup and restore.
 - Post-install self-check (`CoCreateInstance`).
 
-Detailed source locations can be found in the original EAPO behavior document; this document defers to the current code.
+This document defers to the current code for detailed source locations.
 
 > For more detailed `config/` and `pipeline/` module specifications, see `driver/en/Module Reference Specification/`.

@@ -476,7 +476,7 @@ A `const _: () = { ... };` block verifies the re-exported SDK types and the cust
 
 | Function | Description |
 |----------|-------------|
-| `win32_err(err: WIN32_ERROR) -> VxApoError` | Win32 error code → `VxApoError::Registry` (HRESULT form `0x8007_0000 | (code & 0xFFFF)`) |
+| `win32_err(err: WIN32_ERROR) -> VxApoError` | Win32 error code → `VxApoError::Registry` (HRESULT form `0x8007_0000 \| (code & 0xFFFF)`) |
 | `err_from_hr(hr: HRESULT) -> VxApoError` | HRESULT → `VxApoError::Registry` (keeps the system error text) |
 | `win32_ok(err: WIN32_ERROR) -> Result<()>` | Win32 error code → `Result` |
 | `utf16_bytes_to_string(buf: &[u8]) -> String` | LE UTF-16 byte stream → `String`, stops at NUL |
@@ -525,7 +525,7 @@ pub struct RegKey {
 |--------|-----------|-------------|
 | `open` | `fn open(root: HKEY, sub_key: &str) -> Result<Self>` | Opens a subkey with `KEY_READ` |
 | `create` | `fn create(root: HKEY, sub_key: &str) -> Result<Self>` | Creates or opens (`KEY_ALL_ACCESS`); entry point for write/delete on keys we own |
-| `open_for_write` | `fn open_for_write(root: HKEY, sub_key: &str) -> Result<Self>` | Opens an existing subkey with only `KEY_SET_VALUE | KEY_QUERY_VALUE` — the minimal-permission path for MMDevices keys whose ACL grants Administrators only `SetValue, ReadKey` (requesting `KEY_ALL_ACCESS` would fail with 0x80070005 because of the `KEY_CREATE_SUB_KEY` bit) |
+| `open_for_write` | `fn open_for_write(root: HKEY, sub_key: &str) -> Result<Self>` | Opens an existing subkey with only `KEY_SET_VALUE \| KEY_QUERY_VALUE` — the minimal-permission path for MMDevices keys whose ACL grants Administrators only `SetValue, ReadKey` (requesting `KEY_ALL_ACCESS` would fail with 0x80070005 because of the `KEY_CREATE_SUB_KEY` bit) |
 | `open_sub_key` | `fn open_sub_key(&self, sub_key: &str) -> Result<Self>` | Delegates to `Self::open(self.handle, sub_key)` |
 | `handle` | `fn handle(&self) -> HKEY` | Returns the underlying handle. Callers must not `RegCloseKey` it |
 

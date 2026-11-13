@@ -2,6 +2,8 @@
 
 This directory describes the UI structure and interaction logic of the VxAPO App (`vxapo-app`) as actually implemented. The code is the baseline: class names, CSS variables, and animation durations all match `src/new.css`, `src/styles/*`, and `src/components/*`.
 
+> Back to: [VxAPO App UI Design Specification (Implemented)](<../UI Design Specification.md>)
+
 > Revision date: 2026-09-12 (glass-ring tokens and geometry backfilled from the current `theme.css` / `dark.css` / `useGlassRing.ts` / `useEdgeTintLayer.ts`; the previous revision, 2026-08-23, split the single `new.css` into the partitioned `src/styles/` files).
 
 ## File map

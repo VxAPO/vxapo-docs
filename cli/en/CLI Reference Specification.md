@@ -142,7 +142,7 @@ pub fn wait_for_audiodg_exit(timeout_ms: u32) -> bool; // event-driven audiodg e
 
 ### 2.4 config layer (config/parser.rs)
 
-The driver's `ConfigParser` (`parse_file` / `parse_string`, spec + filter chain) is **not
+The driver's `ConfigParser` (`parse_file_with_spec` / `parse_string`, spec + filter chain) is **not
 exported through the facade**. CLI-side read-back verification is therefore **file-level only**
 (the file was written and can be read back); DSP semantic validation is performed by the driver
 itself when it parses the config for hot reload.
@@ -620,5 +620,5 @@ stale fix-acl (admin)
 
 - P0-7 (roadmap): CLI end-to-end verification — once this specification lands, P0-7 can enter Implementing
 - P0-6 legacy: complete child-delegation chain testing + P0-4 listening verification — both covered by CLI (install/config set) end-to-end testing
-- `overview/Project Overview.md` §5 (three-layer separation) / §7 (slot-loss detection v8.5) / §11 (config.toml model) — superior constraints on CLI behavior
+- `overview/Project Overview.md`: three-layer separation, slot-loss detection (v8.5), config.toml model — superior constraints on CLI behavior
 

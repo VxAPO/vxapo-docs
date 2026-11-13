@@ -479,4 +479,3 @@ Additional Tauri plugins: `tauri-plugin-opener`, `tauri-plugin-dialog`.
 - `CLI Reference Specification.md`: backend-reused commands/device resolution/snapshot logic.
 - `driver/Configuration and DSP Design.md`: config.toml model, spec fingerprint, hot reload semantics.
 - `driver/Architecture and Module Specification.md`: DSP capabilities and numerical boundaries.
-- `项目定位/VxAPO 项目完整方案.txt`: App phase roadmap.
