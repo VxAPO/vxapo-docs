@@ -135,15 +135,18 @@ src/
 
 ## 3. Detailed per-module specs
 
-See the per-module files (Chinese in `driver/zh/模块引用规范/`, English in `driver/en/Module Reference Specification/`):
-- `sys Module Specification.md`
-- `pipeline Module Specification.md`
-- `install Module Specification.md`
-- `config Module Specification.md`
-- `object Module Specification.md`
-- `utils Module Specification.md`
-- `telemetry Module Specification.md`
-- `apo.rs Thread Safety Model.md`
+Sections **4–10** and **17** of this document are the per-module detailed specifications, extracted into standalone volumes (Chinese in `driver/zh/模块引用规范/`, English in `driver/en/Module Reference Specification/`):
+
+| Section | Volume |
+|---|---|
+| 4 | `sys Module Specification.md` |
+| 5 | `pipeline Module Specification.md` |
+| 6 | `install Module Specification.md` |
+| 7 | `config Module Specification.md` |
+| 8 | `object Module Specification.md` |
+| 9 | `utils Module Specification.md` |
+| 10 | `telemetry Module Specification.md` |
+| 17 | `apo.rs Thread Safety Model.md` |
 
 App and CLI reference specifications are under `app/` and `cli/` respectively.
 

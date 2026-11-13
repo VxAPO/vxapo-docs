@@ -96,7 +96,7 @@ monitors `config.toml`.
 > section 11 "Reference dependency table", is the only baseline; the per-file allowed and
 > forbidden dependencies of config are listed line by line there.
 
-## 6.0 `config/error.rs`
+## 6.1 `config/error.rs`
 
 **Responsibility**: the dedicated error type for config parsing.
 
@@ -133,7 +133,7 @@ impl From<ConfigError> for crate::utils::vx_error::VxApoError { /* -> VxApoError
 > requires synchronizing the CLI/App texts. `ConditionFalse` is not returned as an error —
 > when a condition is not met the line is simply skipped, without affecting parsing.
 
-## 6.1 `config/parser.rs`
+## 6.2 `config/parser.rs`
 
 **Responsibility**: config file parser (v9.11 TOML). Reads `config.toml` →
 `toml::from_str::<FileModel>` → `to_chain_model` (validation) → `factory::create_from_model`
@@ -297,7 +297,7 @@ SyntaxError "unknown command", not registered) → static match / REW prefix / `
 | REW dynamic prefix | `Filter N:` (`Filter 1:`/`Filter 12:`) | guard branch `starts_with("filter ")` |
 | registry command names | `IIR`/`Biquad`/`Convolution`/`VSTPlugin`/`LoudnessCorrection` (=`registry.factory_names()`, pipeline 4.10) | `_` branch `is_known_dsp_command` |
 
-## 6.2 `config/watcher.rs`
+## 6.3 `config/watcher.rs`
 
 **Responsibility**: config file change monitoring (**Win32 event-driven**, v7.8 revision —
 aligned with EAPO's `notificationThread`). **No polling** (the old 2000 ms polling had high
@@ -392,7 +392,7 @@ impl ConfigWatcher {
 > `Deduplicator(500ms)` removed — event-driven + 10 ms dedup kept the same rain-prevention
 > semantics with latency down from ~2000 ms to ~10 ms and zero idle CPU.
 
-## 6.3 Historical command system (removed)
+## 6.4 Historical command system (removed)
 
 Since v9.11, the `config/commands/*` line-command system has been removed entirely.
 Parsing now uses only the TOML model; effects are constructed by `pipeline/dsp/factory.rs`

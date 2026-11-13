@@ -94,7 +94,7 @@ q = 1.0
 
 ---
 
-### 6.0 `config/error.rs`
+### 6.1 `config/error.rs`
 
 **职责**：配置解析专用错误类型。
 
@@ -127,7 +127,7 @@ impl std::error::Error for ConfigError {}
 
 ---
 
-### 6.1 `config/parser.rs`
+### 6.2 `config/parser.rs`
 
 **职责**：配置文件解析器（v9.11 TOML）。读取 `config.toml` → `toml::from_str::<FileModel>`
 → `to_chain_model`（校验）→ `factory::create_from_model` 构造 Filter 链，并产出配置指纹
@@ -503,7 +503,7 @@ fn is_known_dsp_command(cmd_lower: &str, registry_command_names: &[&str]) -> boo
 
 ---
 
-### 6.2 `config/watcher.rs`
+### 6.3 `config/watcher.rs`
 
 **职责**：配置文件变更监控（**Win32 事件驱动**，v7.8 修订——对齐 EAPO `notificationThread`）。
 **不再使用轮询模式**（旧 2000ms 轮询延迟高、浪费 CPU）。
@@ -593,7 +593,7 @@ impl ConfigWatcher {
 
 ---
 
-### 6.3 历史命令体系（已删除）
+### 6.4 历史命令体系（已删除）
 
 v9.11 起，`config/commands/*` 逐行命令体系已整体移除。当前解析只使用 TOML 模型，
 效果器由 `pipeline/dsp/factory.rs` 静态分派构造。旧命令语法、`GraphicEQ:`、
