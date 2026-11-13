@@ -3,7 +3,7 @@
 > **目的**：定义 VxAPO CLI（`vxapo-cli`）的规范边界、现有能力、修改路线与执行约束。
 > **定位**：CLI 是**开发者工具**（overview/项目概览.md「三层分离」五节），依赖 vxapo-driver（as library）经
 > **安装层 API** 操作设备，不触碰 pipeline/RT；面向调试自动化与 P0 端到端验证，不面向终端用户。
-> **依据**：源码实读 `D:\APO_Project\VxAPO\vxapo-cli`（v0.3.2）+ `D:\APO_Project\VxAPO\vxapo-driver`（2026-08-13）。
+> **依据**：源码实读 `D:\APO_Project\VxAPO\vxapo-cli`（v0.3.0）+ `D:\APO_Project\VxAPO\vxapo-driver`（2026-08-13）。
 
 ---
 
@@ -35,7 +35,7 @@ vxapo-cli/
 | `install -d <device> [--mode ...] [--no-child] [--verify] [--timeout=<sec>] [--progress-file=<path>]` | 安装/重装（自动探测模式、快照基线、自动注册 driver、自动导入 config；`--verify` 走验证闭环） | 有 |
 | `uninstall -d <device>` | 卸载（停止音频服务、清槽位、回读验证、快照 diff；端点键已被移除时转残留清理） | 有 |
 | `config set/show` | 写/读 `C:\ProgramData\VxAPO\{GUID}\config.toml` | 有 |
-| `snapshot diff/restore/create` | 注册表基线快照、diff、恢复 | 有 |
+| `snapshot diff/restore/create`（别名 `changes`/`baseline`） | 注册表基线快照、diff、恢复（restore 基于卸载清槽位） | 有 |
 | `stale list/migrate/cleanup/fix-acl` | 旧 GUID 残留列表、迁移到当前端点、清理孤儿记录、修 config ACL | 有 |
 | `[0-N]` 选择端点 | 查看模式进入端点详情子菜单 | 有 |
 | `[x]` 查看注册表 | 转储端点注册表键 | 有 |
@@ -202,30 +202,31 @@ resolve_device(device_ref) -> (device_guid, device_name, connection_name)
 > 由 **driver 自身**经目录监控 + filter_spec 序列对齐检测（P0-4/v7.9：「目录变更 → 重新解析 →
 > spec 序列与 active_spec 逐项比较」config 6.1 + object 7.1.18，非哈希）。
 
-1. **快照内容（`snapshot_device(guid)`）**：捕获设备**注册表**状态
-   - FxProperties 键下 5 槽位值（LFX/GFX/SFX/MFX/EFX GUID）
-   - childApoPath 安装信息区（`HKLM\SOFTWARE\VxAPO\Child APOs\{guid}`：PreMixChild/PostMixChild/
-     AllowSilentBufferModification/DisableAutomaticAdjustment/Version）
-   - FxProperties 增强设置（DisableEnhancements）
-   - **不含 config 文件**（config 比对归 driver spec 序列对齐，见上注）
+1. **快照内容（`capture_snapshot(guid)`）**：捕获设备**注册表**状态（key=value 文本行）
+   - FxProperties 5 槽位值（`slot_0..slot_4`，含 NoKey/NoValue 占位）
+   - childApoPath 子 APO：`childPreMix` / `childPostMix`（GUID，缺省空串）+ `childApoKeyExists`（bool）
+   - **不含 config 文件**（config 比对归 driver spec 序列对齐，见上注）；不含安装信息区其余字段
+     （AllowSilentBufferModification / DisableAutomaticAdjustment / Version）与 DisableEnhancements
 2. **快照持久化**：存 `%ProgramData%\VxAPO\snapshots\{guid}.json`（**首个快照 = 安装前基线**）
-3. **change 列示（`snapshot diff` / `show changes` 命令）**：`diff_snapshot(baseline, current)`——
-   对比当前注册表状态与基线，**红绿底色/字体**输出（CLI 支持 ANSI 时；不支持则前缀 `+`/`-`/`~`）：
+3. **change 列示（`snapshot diff`，别名 `snapshot changes`）**：`diff_snapshots(baseline, current)`——
+   对比当前注册表状态与基线，**纯文本前缀**输出（无 ANSI 彩色），末尾附一行变更统计：
 
    | 变更类型 | 显示 |
    |----------|------|
-   | 新增（快照无 → 当前有） | 绿色 `+ 值名 = 值` |
-   | 删除（快照有 → 当前无） | 红色 `- 值名 = 值` |
-   | 修改（值不同） | 黄色 `~ 值名 = 旧值 → 新值` |
-   | 无变化 | 灰色 `  值名 = 值`（可折叠） |
+   | 新增（快照无 → 当前有） | `+ 值名 = 值` |
+   | 删除（快照有 → 当前无） | `- 值名 = （已删除）` |
+   | 修改（值不同） | `~ 值名 = 旧值 → 新值` |
+   | 无变化 | 缩进 `    值名 = 值` |
+   | 统计行 | 变更摘要（新增/删除/修改/无变化 计数） |
 
 4. **基线保持语义（明确）**：
-   - **安装前**：`snapshot_device` 建立基线（初次快照）
-   - **安装后**：可 `snapshot diff` 列出本次安装产生的全部注册表更改（红绿对比，可读验证）
+   - **安装前**：`snapshot create`（别名 `snapshot baseline`，`snapshot_device(replace=true)`）建立/替换基线
+   - **安装后**：可 `snapshot diff` 列出本次安装产生的全部注册表更改（可读验证）
    - **卸载时**：对比**仍用最开始的基线**（非卸载前重照）——展示「卸载是否恢复原状/清除了什么」；
      **快照只在「下一次重新安装」时才替换**为新基线（新安装前重照）
-5. **回滚**：`snapshot restore` 恢复基线状态（**仅注册表**）；driver Transaction 已保证
-   失败自动回滚（注册表级）；CLI 快照补**显式恢复**（用户可手动还原）
+5. **回滚**：`snapshot restore` **基于卸载**——经 `uninstall_endpoint` 清空 5 槽位 + 删除
+   childApoPath 键（非逐值还原基线；完整恢复走 `install` 全量路径）；driver Transaction 已保证
+   失败自动回滚（注册表级）
 6. **保留现有 `[x]` 注册表转储 + 诊断**：regdump/reg 辅助保留（调试工具价值）
 
 ### Phase D：P1 扩展（预留，不改 P0-7 主链）
@@ -286,7 +287,7 @@ main
      │      config.use_original_apo_premix  = !args.no_child # 默认 true：保留前任 PreMix 为子 APO
      │      config.use_original_apo_postmix = !args.no_child # 默认 true：保留前任 PostMix 为子 APO
      ├─ 4. snapshot_device(guid, replace=true)               # Phase C：**安装前建立/替换基线（只注册表）**
-     │        #   FxProperties 5 槽位 + childApoPath 键 + DisableEnhancements
+     │        #   5 槽位 + childPreMix/childPostMix/childApoKeyExists（key=value 文本）
      │        #   持久化 %ProgramData%\VxAPO\snapshots\{guid}.json
      │        #   （config 比对不属 CLI 快照——driver 目录监控 + spec 序列对齐，见 Phase C 注）
      ├─ 5. auto_register_driver()                            # 每次安装刷新全局 APO 注册（幂等，补全 AudioEngine 键）
@@ -384,9 +385,9 @@ main
      ├─ 2. (guid, ..) = resolve_device(args.device)
      ├─ 2b. **残留兜底**：`find_endpoint_path(guid)` 失败且该 guid 在 `stale list` 中
      │         → 直接转 `stale_cleanup(guid)`，清 Child APOs 键 + 配置目录后返回
-     ├─ 3. **不重照快照**（基线保持，明确）——`diff_snapshot(baseline, current)` 用**最开始的基线**
+     ├─ 3. **不重照快照**（基线保持，明确）——`diff_snapshots(baseline, current)` 用**最开始的基线**
      │        # 展示「卸载是否恢复原状/清除了什么」；基线只在下次重新安装时替换（`snapshot_device(replace=true)`）
-     ├─ 3b. **卸载前置停服（CLI 层）**：`stop_audio_service` + `taskkill audiodg` →
+     ├─ 3b. **卸载前置停服（CLI 层）**：`stop_audio_service` →
      │        `audiodg::wait_for_audiodg_exit(5000)` **事件驱动等待**
      │        （Toolhelp 取 PID → OpenProcess(SYNCHRONIZE) → WaitForSingleObject；
      │         实测 7 ms 返回，旧实现是固定 `sleep(1500)`），目的是释放
@@ -398,9 +399,8 @@ main
      │          NSIS installer-hooks 同样为此停服务）②让端点重启后 APO 链立刻重建
      │     └─（driver 内部）删除 childApoPath\{guid} 整个键（v8.5 卸载必删——再次安装回全量路径）
      │     └─（driver 内部）重启 AudioSrv（恢复输出）
-     ├─ 5. 成功 → 打印「已卸载 <guid>」+ `snapshot diff`（红绿对比卸载清除项/已还原项）
-     ├─ 6. 失败 → 打印 driver Err（步骤级错误 → 5.4）+ `snapshot diff` + 建议 `snapshot restore`
-     └─ 7. 可选 config 清理：删除 C:\ProgramData\VxAPO\{guid}\config.toml（确认，v8.9）
+     ├─ 5. 成功 → 打印「已卸载 <guid>」+ `snapshot diff`（`+`/`-`/`~` 前缀逐项 + 变更统计行）
+     └─ 6. 失败 → 打印 driver Err（步骤级错误 → 5.4）+ `snapshot diff` + 建议 `snapshot restore`
 ```
 
 ### 5.4 命令状态流（补充 2026-08-04）

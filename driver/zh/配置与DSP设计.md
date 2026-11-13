@@ -183,7 +183,7 @@ N = next_pow2(round(sr * 0.0213))，限制在 [1024, 8192]
 
 ## 5. EqualizerAPO 行为参考
 
-`Equalizer 行为文档` 的价值在于为安装/子 APO/格式协商等行为提供对照。当前实现已不再兼容 EAPO 的 `config.txt` 命令语法，但在以下方面保留了可对照的机制：
+本节为安装/子 APO/格式协商等行为提供与 EAPO 的对照基准（原 `Equalizer 行为文档` 已随 v9.11 删除，本节是唯一保留的对照来源）。当前实现已不再兼容 EAPO 的 `config.txt` 命令语法，但在以下方面保留了可对照的机制：
 
 - 子 APO 创建与委托。
 - 安装模式探测（LfxGfx / SfxMfx / SfxEfx）。

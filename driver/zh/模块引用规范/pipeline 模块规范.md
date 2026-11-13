@@ -61,8 +61,8 @@ pipeline/
 ├── interleave.rs       # 通道数据搬运（去交织/交织）
 ├── realtime.rs         # 实时安全基础设施模块入口
 ├── realtime/
-│   ├── ring.rs         # SPSC 无锁环形缓冲区
-│   └── contract.rs     # RT 上下文断言（RtGuard / assert_in_rt）
+│   └── contract.rs     # RT 上下文断言（RtGuard / assert 宏）
+│                       # （SPSC 环形缓冲区在 utils/ring.rs——见 4.8）
 ├── dsp.rs              # DSP 算法模块入口
 └── dsp/
     ├── filter.rs       # Filter trait + DspContext + PassthroughFilter + ChannelScopedFilter（v9.11）
@@ -70,7 +70,9 @@ pipeline/
     ├── transition.rs   # SmoothingProvider + raised_cosine + mix_buffers
     ├── biquad.rs       # 双二阶滤波器
     ├── fir.rs          # SIMD dot / 分块 FFT（v9.11）
+    ├── math.rs         # DSP 数学支撑：常量、卷积分块、对齐工具（v9.11）
     ├── model.rs        # ChainModel / EffectType（v9.11）
+    ├── specs.rs        # EffectParamSpec / EffectSpec 参数规范（facade 暴露，v9.11）
     ├── peq_hybrid.rs   # 混合式 PEQ（200 Hz IIR + 最小相位 FIR，v9.11）
     ├── gain.rs         # 增益（含内部平滑插值）
     ├── loudness.rs     # ISO 226 等响曲线
@@ -434,7 +436,7 @@ pub struct ProcessParams {
     pub max_frame_count: usize,
     pub valid_frame_count: usize,
     pub error_policy: ErrorPolicy,
-    pub allow_silent_buffer: bool,         // 来自 ApoObjectState.allow_silent_buffer_modification
+    pub allow_silent_buffer: bool,         // 静音缓冲快速路径开关（ProcessParams 自身字段，Note 11）
 }
 
 pub struct ProcessStatistics {
@@ -744,7 +746,7 @@ pub struct RealtimeContext { _private: () }
 
 pub struct RtGuard;
 impl RtGuard {
-    pub fn enter() -> Self;
+    pub fn new() -> Self;
 }
 // Drop 时自动清除 RT 标志
 
@@ -755,6 +757,7 @@ unsafe impl RtCopy for f32/f64/i8/i16/i32/i64/u8/u16/u32/u64/usize/isize/bool {}
 
 #[macro_export] macro_rules! rt_assert_in_rt { ... }
 #[macro_export] macro_rules! rt_assert_not_in_rt { ... }
+#[macro_export] macro_rules! rt_require_non_rt { ... }   // 非 RT 路径断言（hot_reload_impl 等取锁/IO 路径）
 
 pub unsafe fn rt_index<T>(slice: &[T], index: usize) -> &T;
 pub unsafe fn rt_index_mut<T>(slice: &mut [T], index: usize) -> &mut T;
@@ -937,6 +940,7 @@ pub struct DspContext {
     pub device_type: DeviceType,
     pub stage: ProcessingStage,
     pub variables: HashMap<String, f64>, // Eval: 命令变量存储
+    pub loudness_enabled: std::cell::Cell<bool>, // loudness 效果启用开关（Cell: 非 Send）
     pub rt_marker: PhantomData<RealtimeContext>, // RT 编译期见证（v6.6）
 }
 ```

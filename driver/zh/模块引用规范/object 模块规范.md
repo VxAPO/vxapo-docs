@@ -13,21 +13,22 @@ object/
 ├── apo.rs              # APO 核心模块入口（ApoObject + 四个 _Impl 接口实现）
 │   └── apo/
 │       ├── state.rs        # ApoState / StateCell / TransitionError / LockGuard
-│       ├── inner.rs        # ApoObjectInner + build_dsp_context
-│       ├── config.rs       # per-device 配置路径 + WatcherState + hot_reload_impl
+│       ├── inner.rs        # ApoObjectInner + build_dsp_context + 启动淡入
+│       ├── init.rs         # Initialize + GetRegistrationProperties（+ sysfx 自愈）
 │       ├── negotiate.rs    # 格式协商（extract_format_ref / check_format_supported）
-│       ├── aggregate.rs    # COM 聚合委托外壳（NApo / NonDelegating）
-│       └── （预留 init.rs / process.rs / interfaces.rs 继续拆分）
-│
-├── child.rs            # 子 APO COM 生命周期管理（类型化接口持有）
-│
+│       ├── process.rs      # APOProcess / LockForProcess / Calc frames / Reset / GetLatency
+│       ├── reload.rs       # WatcherState + start_watcher / stop_watcher / hot_reload_impl
+│       ├── config.rs       # per-device 配置路径解析 + 诊断日志
+│       ├── lock_key.rs     # config_stamp（mtime, size）——重锁链复用键
+│       ├── rtdump.rs       # RT 诊断转储（内存缓冲，Unlock 时落盘）
+│       ├── test_pipe.rs    # DeviceTestPipeName 通知（测试插桩）
+│       ├── aggregate.rs    # COM 聚合外壳（NApo / 非委托 IUnknown）
+│       ├── child.rs        # 子 APO COM 生命周期管理（类型化接口持有）
+│       └── process/tests.rs
 ├── factory.rs          # #[implement(IClassFactory)] + LOCK_COUNT
-│
 ├── ref_count.rs        # INST_COUNT 原子计数
-│
-├── vx_reg_props.rs     # CLSID×2 + REG_PROPS×2 + 查询辅助 + COM 注册条目
-│
-└── dll_exports.rs      # DllMain + 四个 COM 导出函数
+├── vx_reg_props.rs     # REG_PROPS ×2 + 查询辅助 + COM 注册条目
+└── dll_exports.rs      # DllMain + 五个 COM 导出函数 + register_apo_with_path
 ```
 
 ---
@@ -115,70 +116,29 @@ pub fn guid_matches(a: &GUID, b: &GUID) -> bool;
 
 ---
 
-#### 7.1.2 ApoObjectState
+#### 7.1.2 ApoObjectState（已移除）
+
+> **代码实证移除**：本节先前描述的 `ApoObjectState` 结构体与 `ap_state: Mutex<ApoObjectState>`
+> 字段**已不存在**（全仓搜索 0 处）。其格式 / 通道 / 锁定簿记并入如下：
+> - 格式与通道数 → `PipelineContext`（位于 `ApoObjectInner` 内，mutex 保护）
+> - 锁定状态 → `StateCell`（原子量，`ApoState::Locked`）
+> - CLSID → `ApoObject.clsid`（不可变字段）
+> - `allow_silent_buffer_modification` → 静音缓冲策略由 `pipeline/buffer.rs::evaluate_buffer`
+>   （BufferAction）与处理路径处理。
+>
+> 下方结构体仅作历史参考保留。
 
 ```rust
-/// APO 对象的核心状态。
-///
-/// 由 ApoObject 的 ap_state: Mutex<ApoObjectState> 持有。
-#[derive(Debug)]
-pub struct ApoObjectState {
-    /// 此实例的 CLSID（PreMix 或 PostMix）。
+pub struct ApoObjectState {   // 已移除——仅历史参考
     pub clsid: GUID,
-
-    /// 子 APO 的 CLSID（Initialize 时从 `childApoPath\{deviceGuid}\{PreMixChild|PostMixChild}`
-    /// 安装信息区读取，v8.4——APOInitSystemEffects **无子 APO 字段**，仅含端点 GUID）。
-    /// Some(guid) 表示需要创建子 APO；None 表示无子 APO（降级模式，Note 57）。
     pub child_apo_clsid: Option<GUID>,
-
-    /// 是否已通过 LockForProcess 锁定。
-    ///
-    /// 锁定前不得调用 APOProcess（Windows 约束）。
     pub is_locked: bool,
-
-    /// 采样率（LockForProcess 时确定）。
     pub sample_rate: u32,
-
-    /// 输入通道数。
     pub input_channel_count: u32,
-
-    /// 输出通道数。
     pub output_channel_count: u32,
-
-    /// 通道掩码。
     pub channel_mask: u32,
-
-    /// 每样本位数。
     pub bits_per_sample: u32,
-
-    /// 是否允许静音缓冲区快速路径（Note 11）。
     pub allow_silent_buffer_modification: bool,
-}
-```
-
-```rust
-impl ApoObjectState {
-    /// 创建新的 APO 对象状态。由 ClassFactory::CreateInstance 调用。
-    pub fn new(clsid: GUID) -> Self;
-
-    /// 判断此实例是 PreMix APO。
-    pub fn is_pre_mix(&self) -> bool;   // clsid == CLSID_VXAPO_PRE_MIX
-
-    /// 判断此实例是 PostMix APO。
-    pub fn is_post_mix(&self) -> bool;  // clsid == CLSID_VXAPO_POST_MIX
-
-    /// 锁定处理流程（LockForProcess 成功后调用）。
-    pub fn lock_for_process(
-        &mut self,
-        sample_rate: u32,
-        input_channels: u32,
-        output_channels: u32,
-        channel_mask: u32,
-        bits_per_sample: u32,
-    );
-
-    /// 解锁处理流程（UnlockForProcess 调用）。
-    pub fn unlock_for_process(&mut self);
 }
 ```
 
@@ -190,55 +150,48 @@ impl ApoObjectState {
 
 ---
 
-#### 7.1.3 ApoObject 字段
+#### 7.1.3 ApoObject 字段（对照代码核实）
 
 ```rust
 #[implement(
     IAudioProcessingObject,
     IAudioProcessingObjectRT,
-    IAudioProcessingObjectConfiguration
+    IAudioProcessingObjectConfiguration,
+    IAudioSystemEffects
 )]
 pub struct ApoObject {
-    /// APO 自身 CLSID（构造时确定，不可变）。
+    /// 此实例的 CLSID（PreMix 或 PostMix；不可变）。
     pub(crate) clsid: GUID,
-
     /// 原子状态机（Created → Initialized → Locked）。
     pub(crate) state_cell: StateCell,
-
-    /// 核心运行时状态（Chain、过渡、PipelineContext、临时缓冲区）。
-    pub(crate) mutex: Mutex<ApoObjectInner>,
-
-    /// 格式/通道/锁定状态（ApoObjectState）。
-    pub(crate) ap_state: Mutex<ApoObjectState>,
-
-    /// 配置加载器。
-    pub(crate) config_loader: ConfigLoader,
-
-    /// 配置文件监控器（v7.10：外部驱动模型——不自启线程，句柄 + 等待 API）。
-    pub(crate) watcher: Option<ConfigWatcher>,
-    /// watcher 线程句柄（v7.10 补充，start_watcher 创建 / stop_watcher join 后清空）。
-    pub(crate) watcher_thread: Option<std::thread::JoinHandle<()>>,
-    /// watcher 退出事件（v7.10 补充，start_watcher 创建 / stop_watcher CloseHandle）。
-    pub(crate) watcher_shutdown_event: Option<windows::Win32::Foundation::HANDLE>,
-
-    /// 配置文件路径。
-    pub(crate) config_path: String,
-
-    /// 日志器。
-    pub(crate) logger: Logger,
-
-    /// 延迟采样数（控制线程写，GetLatency 读）。
+    /// 核心运行时状态（双链过渡、缓冲区、规格指纹）。
+    /// Arc<Mutex>：spawn 的线程可克隆它（hot_reload 独立访问）。
+    pub(crate) mutex: Arc<Mutex<ApoObjectInner>>,
+    /// 延迟采样数（控制线程写；GetLatency 读——v8.3 起实际未用：
+    /// GetLatency 委托给子 APO 或返回 0）。
     pub(crate) latency_samples: AtomicU32,
-
-    /// 延迟帧数（CalcInputFrames/CalcOutputFrames 用，免锁）。
+    /// 延迟帧数（CalcInputFrames / CalcOutputFrames，免锁）。
     pub(crate) latency_frames_atomic: AtomicU32,
-
-    /// 处理统计。
+    /// 处理统计（error_count）。
     pub(crate) process_stats: ProcessStatistics,
-
-    /// 子 APO（Initialize 阶段创建）。
-    pub(crate) child_apo: Option<ChildApo>,
+    /// 配置文件路径（Initialize 时确定；per-device
+    /// C:\ProgramData\VxAPO\{GUID}\config.toml）。Arc<Mutex> 供 watcher 线程使用。
+    pub(crate) config_path: Arc<Mutex<String>>,
+    /// watcher 运行时状态（外部驱动模型）：Lock 末尾启动，Unlock 时停止。
+    /// Arc<Mutex>：&self 可写 + 可移入线程。
+    watcher_state: Arc<Mutex<WatcherState>>,
+    /// 子 APO（Initialize 时创建；失败降级为 None）。
+    /// Arc<Mutex>：&self 可写；RT 路径在锁 inner 前先短暂取锁。
+    pub(crate) child_apo: Arc<Mutex<Option<ChildApo>>>,
 }
+
+impl ApoObject {
+    pub fn new(clsid: GUID) -> Self { /* ref_count::increment(); ... */ }
+    /// 配置热重载（watcher 回调）。委托给模块级 hot_reload_impl
+    /// （共享 Arc 字段；以 Arc::as_ptr(&mutex) 作为稳定诊断地址，代替 &ApoObject）。
+    pub fn hot_reload(&self);
+}
+impl Drop for ApoObject { /* ref_count::decrement() */ }
 
 pub struct ApoObjectInner {
     pub current_chain: Box<Chain>,
@@ -280,7 +233,6 @@ pub struct ApoObjectInner {
 > `reloading` 标志确保同一个过渡周期内至多触发一次；消除了排队式的重复解析、
 > pending_reload 覆盖漏洞与额外标志保护。
 > 在 10ms 过渡窗口下，"阻塞到过渡完成的解析延迟"完全可忽略（调用方决策，R2 理由）。
-```
 
 ```rust
 // SAFETY: 音频引擎保证 LockForProcess / UnlockForProcess / APOProcess 不重叠。
@@ -343,22 +295,8 @@ impl StateCell {
     /// 获取当前状态（Acquire 序，RT 路径可安全调用）。
     pub fn current(&self) -> ApoState;
 
-    /// `current() == Locked` 的快捷判断。
-    pub fn is_locked(&self) -> bool;
-
     /// CAS 转换：成功返回 Ok，失败返回 TransitionError{expected, attempted, actual}。
     pub fn transition(&self, from: ApoState, to: ApoState) -> Result<(), TransitionError>;
-
-    /// 无条件复位至 `Created`（`AcqRel` swap）。返回复位前状态。
-    ///
-    /// 用于 COM `Release` 最终引用释放 / 析构器将单元置于已知终态
-    /// （DLL 卸载时的资源回收关键，v6.6 补全）。
-    pub fn release(&self) -> ApoState;
-
-    // ── 语义化便捷转换（失败即 TransitionError） ──
-    pub fn initialize(&self) -> Result<(), TransitionError>; // Created → Initialized
-    pub fn lock(&self)       -> Result<(), TransitionError>; // Initialized → Locked
-    pub fn unlock(&self)     -> Result<(), TransitionError>; // Locked → Initialized
 }
 ```
 
@@ -367,7 +305,6 @@ impl StateCell {
 - `LockForProcess`：要求 `Initialized` → `Locked`
 - `APOProcess`：要求 `Locked`（不改变状态）
 - `UnlockForProcess`：要求 `Locked` → `Initialized`
-- `release()`：任意状态 → `Created`（仅析构/最终 Release 路径使用）
 
 > **v6.6 设计说明（O2）**：引入 `TransitionError`（expected/attempted/actual）替代
 > 原 `VxApoError::State("非法状态转换")` 纯字符串，便于快速定位状态机偏差；
@@ -1028,11 +965,8 @@ fn GetLatency(&self, p_latency: *mut REFERENCE_TIME) -> HRESULT {
 ```rust
 fn GetRegistrationProperties(&self, pp_props: *mut *mut APO_REG_PROPERTIES) -> HRESULT {
     if pp_props.is_null() { return E_POINTER; }
-    let clsid = match self.ap_state.lock() {
-        Ok(s) => s.clsid,
-        Err(_) => return E_FAIL,
-    };
-    let props = match props_for_clsid(&clsid) {
+    // CLSID 是构造时确定的不可变字段，直接读取（无需取锁）
+    let props = match props_for_clsid(&self.clsid) {
         Some(p) => p,
         None => return E_FAIL,
     };
@@ -1058,7 +992,7 @@ fn GetRegistrationProperties(&self, pp_props: *mut *mut APO_REG_PROPERTIES) -> H
 > 由 Windows 引擎在**格式协商阶段**调用，**早于 `LockForProcess`**——此时 `pipeline_context` 仍为
 > `PipelineContext::new()`（全零默认值）。因此本方法**禁止依赖 `pipeline_context` 做等值比较**
 > （如 `fmt.channels == ctx.input_channels`——请求的真实格式 vs 全零永远不等 → 拒绝所有格式，
-> APO 无法协商）。正确做法是对请求格式做**独立属性检查**（下述浮点格式 + 采样率范围 + 通道数范围），
+> APO 无法协商）。正确做法是对请求格式做**独立属性检查**（下述浮点格式 + 通道数范围；不设采样率硬限制），
 > 而这些属性在协商时即已确定、与锁定后上下文无关。
 
 ```rust
@@ -1077,10 +1011,8 @@ fn IsInputFormatSupported(&self, p_opposite, p_requested, pp_supported) -> HRESU
         Err(_) => return APOERR_FORMAT_NOT_SUPPORTED,
     };
 
-    // 采样率范围：44.1kHz ~ 192kHz
-    if format.sample_rate < 44100 || format.sample_rate > 192000 {
-        return APOERR_FORMAT_NOT_SUPPORTED;
-    }
+    // 采样率：不设硬限制——协商仅校验 float 格式与 1–8 声道，拒绝 downmix/upmix
+    // （object/apo/negotiate.rs：采样率随 float + 通道数检查通过即放行）
 
     // 通道数范围：1 ~ 8
     if format.channels == 0 || format.channels > 8 {

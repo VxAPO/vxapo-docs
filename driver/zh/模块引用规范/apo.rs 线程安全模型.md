@@ -45,12 +45,12 @@
 - Reset 持有锁极短（字段清零 + 原子写入）
 - APOProcess 与 hot_reload 互斥——如果 hot_reload 恰好在 APOProcess 期间触发，hot_reload 等待 APOProcess 释放锁后执行
 
-**`self.ap_state` 互斥保证**：
+**格式与通道状态保证（`self.mutex` 内）**：
 
-- 保护格式和通道状态
+- 格式与通道状态位于 `ApoObjectInner`，由单一的 `self.mutex` 保护
 - 获取锁时间极短（字段读写级别，微秒以下）
-- LockForProcess / UnlockForProcess 中在 `self.mutex` 之后获取 `self.ap_state`，但不同时持有两把锁
-- GetRegistrationProperties 和 GetInputChannelCount 仅获取 `self.ap_state`，不持有 `self.mutex`
+- 不存在第二把状态锁：`LockForProcess` / `UnlockForProcess` 仅在 `self.mutex` 内触碰格式与通道状态
+- `GetRegistrationProperties` 和 `GetInputChannelCount` 经同一 `self.mutex` 读取该状态
 
 **`state_cell` 原子操作**：
 
@@ -72,9 +72,7 @@
   - hot_reload：锁内仅做 `Box` 指针替换（亚微秒级），配置解析在锁外完成
   - APOProcess 持锁期间不会有其他 APOProcess 竞争（Windows 音频引擎串行调用）
   - Reset：应用程序显式调用，不在播放期间触发
-- **`self.ap_state` 阻塞来源**：
-  - LockForProcess / UnlockForProcess / Initialize：均不在播放期间触发
-  - GetRegistrationProperties / GetInputChannelCount：锁持有时间极短（微秒以下），且在播放开始前或格式协商阶段调用
+- 格式与通道状态仅在播放开始前或格式协商阶段访问（`self.mutex` 内）
 - **`state_cell`、`latency_samples`、`latency_frames_atomic`**：原子操作，无阻塞
 - 对于系统级 APO（采样率 48kHz、缓冲区 128 帧 = 2.67ms 周期），偶尔的亚微秒级 mutex 等待不造成可听问题
 
@@ -83,13 +81,13 @@
 **重入禁止不变式**：
 
 - **`self.mutex` 不可重入**：任何方法不得在持有 `self.mutex` 的情况下调用同对象的其他需要获取 `self.mutex` 的方法
-- **`self.ap_state` 不可重入**：任何方法不得在持有 `self.ap_state` 的情况下调用同对象的其他需要获取 `self.ap_state` 的方法
-- **两锁不可交叉**：`self.mutex` 和 `self.ap_state` 在任何执行路径上都不会被同一线程同时持有
+- **原第二把状态锁（`self.ap_state`）已不存在**——它与 `self.mutex` 之间不再适用任何锁序规则
+- **两锁不可交叉**：任何执行路径上都不会被同一线程同时持有两把锁
 - **具体约束**：
   - `CalcInputFrames`、`CalcOutputFrames` 与 `APOProcess` 由 Windows 音频引擎串行调用，不存在重入
   - `CalcInputFrames` / `CalcOutputFrames` 通过 `latency_frames_atomic` 免锁读取延迟值，不获取任何锁
   - `LockForProcess` 内部不得调用 `CalcInputFrames` / `CalcOutputFrames`。v9.12 起延迟不上报（`latency_frames_atomic` 恒 0）；v9.13 同 config/格式的 Relock 复用现有链（`last_lock_key` 指纹，保留滤波器状态）
   - `hot_reload` 内部不得调用需要 `self.mutex` 的方法——整个 `hot_reload` 已持有 `self.mutex`
-  - `GetLatency` 在 `self.mutex` 内读取 `pipeline_context.sample_rate`，通过 `latency_samples` 原子加载延迟值，不获取 `self.ap_state`
-  - `GetRegistrationProperties` 和 `GetInputChannelCount` 仅获取 `self.ap_state`，不获取 `self.mutex`
+  - `GetLatency` 在 `self.mutex` 内读取 `pipeline_context.sample_rate`，通过 `latency_samples` 原子加载延迟值，不获取其他锁
+  - `GetRegistrationProperties` 和 `GetInputChannelCount` 经同一 `self.mutex` 读取格式与通道状态，不获取其他锁
 - 违反上述不变式在 debug 模式下会触发 `std::sync::Mutex` 的 panic（锁重入）

@@ -85,7 +85,7 @@ src/
 ├── data/library.ts            # 预设库（含中英文字段）
 ├── hooks/                     # useConfig, useDevices, useDragSort, useViewAnimation,
 │                              # useMarqueeSelection, useChannelState, usePresetActions,
-│                              # useCurveHover, useThrottledCompute, useTheme, useToast,
+│                              # useCurveHover, useThrottledCompute, useTheme,
 │                              # useInterval, useWindowControls, useEdgeTintLayer, useGlassRing
 ├── lib/
 │   ├── api.ts                 # Tauri 命令封装
@@ -196,6 +196,8 @@ src/
 
 ### 4.1 状态来源
 
+- **状态层（`src/stores/`，zustand）**：`deviceStore` / `configStore` / `channelStore` /
+  `selectionStore` / `uiStore` 五个全局 store（各带 `.test.ts`）；Toast 状态在 `uiStore`。
 - **设备状态**：`useDevices` 维护 `devices`、`staleInstalls`、`selectedGuid`、`installedDevices`、
   安装/卸载目标与进度、残留迁移/清理 busy 态；设备与残留列表同一次 `Promise.allSettled`
   拉取并做浅比较，内容未变时保留旧引用避免整树重渲染。
@@ -347,6 +349,8 @@ export interface StaleInstall {
   guid: string;
   device_instance_id: string;
   display_name: string;
+  /** 分层身份匹配依据（v9.24）：endpoint_history | device_instance_id | stored_identity | hardware_id；未命中为 null */
+  matched_by?: string | null;
   config_path?: string | null;
   config_mtime_ms?: number | null;
   snapshot_path?: string | null;
@@ -360,6 +364,8 @@ export interface StaleInstall {
   target_name?: string | null;
   /** matched_healthy | matched_partial | unmatched */
   target_state: string;
+  /** 可否自动修复（driver stale::StaleInstall.auto_repairable） */
+  auto_repairable: boolean;
 }
 
 /** 迁移报告（CLI `stale migrate --json`） */
@@ -446,7 +452,7 @@ export interface MigrationReport {
 | `read_config_checked` | guid, known_revision | `{revision, text?}` | 带内容指纹的读（未变时 text=null，供 2s 轮询短路） |
 | `write_config` | guid, content | `()` | 原子写 config.toml（tmp + rename） |
 | `install_device` | guid | `InstallResult` | 后台线程 `install --verify --progress-file`，emit `install-progress` |
-| `uninstall_device` | guid | `String` | 提权 `uninstall -d <guid> --json` |
+| `uninstall_device` | guid | `String` | 提权 `uninstall -d <guid>`（不带 `--json`） |
 | `rollback_install` | guid | `String` | 安装失败后提权回滚卸载 |
 | `list_stale_installs` | — | `StaleInstall[]` | CLI `stale list --json`（只读，不提权） |
 | `migrate_stale_install` | from, to, config_from?, snapshot_from? | `String`（MigrationReport JSON） | 提权 `stale migrate --from --to --json` |
@@ -499,4 +505,3 @@ export interface MigrationReport {
 - `CLI 引用规范.md`：后端复用的命令/设备解析/快照逻辑与硬性约束
 - `driver/配置与DSP设计.md`：config.toml 模型、spec 指纹、热重载语义
 - `driver/架构与模块规范.md`：DSP 能力与数值边界（限幅规则依据）
-- `项目定位/VxAPO 项目完整方案.txt`：App 阶段路线（阶段 C/D）

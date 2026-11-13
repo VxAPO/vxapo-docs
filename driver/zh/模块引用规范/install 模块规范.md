@@ -478,7 +478,7 @@ pub fn uninstall_endpoint(device_guid: &str) -> Result<()>;
 > `verify=true` 时，7 步全部 commit 后执行**音频管线自检**。**EAPO 源码事实**（DeviceAPOInfo.cpp 777-815）：
 > `testAPOInstallation` 实际是 `IMMDeviceEnumerator::GetDevice` → `IAudioClient::Activate` →
 > `GetMixFormat` → `Initialize(共享模式, 100ms)`——**激活 IAudioClient 验证端点可打开音频管线**，
-> **非**「CoCreateInstance 验证 DLL 可实例化」（v8.3 修正：此前描述与源码不符，见 `Equalizer 行为文档.md` S2）。
+> **非**「CoCreateInstance 验证 DLL 可实例化」（v8.3 修正：此前描述与源码不符，详见 `配置与DSP设计.md` §5「EqualizerAPO 行为参考」）。
 > VxAPO 对齐：`verify=true` 时按设备激活 IAudioClient 做管线自检（对齐 EAPO）。自检失败：
 > - **不自动回滚**（注册表已写入且端点可能瞬时不可用；EAPO 同策略抛异常报告）
 > - EAPO 语义：`fail()` 抛 `DeviceException`（DeviceAPOInfo.cpp 817-822）——VxAPO 对齐为返回 `Err` 附明确错误，由 CLI/调用方提示
