@@ -223,7 +223,7 @@ fn produce_spec(cmd: &str, value: &str) -> String {
 > **无冒号行不应被解析**（overview/项目概览.md「语法严格性」：冒号前字符串决定解析目标，必须是严格关键字）。
 > **EAPO 行为事实（v8.3 补注，S5）**：EAPO 对无冒号行是**静默跳过**（FilterEngine.cpp 329-330：
 > `pos = line.find(':')`，`pos==-1` 时整行不解析、无错误）——**VxAPO「拒绝报错」比 EAPO 更严格**，
-> 属**有意差异**（intent「输入严格保证解析宽容」：写错必有反馈），非对齐。详见 `配置与DSP设计.md` §5「EqualizerAPO 行为参考」C23 条（`Equalizer 行为文档` 已随 v9.11 移除）。
+> 属**有意差异**（intent「输入严格保证解析宽容」：写错必有反馈），非对齐。详见 `配置与DSP设计.md` §5「EqualizerAPO 行为参考」C23 条（`Equalizer 行为文档` 自 v9.11 起退役、v9.15 后随文档重组移除）。
 > 因此 **v7.9 的裸命令可达性修正删除**：
 > - `split_command_value` 零冒号 → `SyntaxError「缺少冒号」`（整体失败），不落 registry、不产出 spec；
 > - 效果：`BogusCommand`（无冒号）→ 明确「缺少冒号」错误，而非被 Convolution 宽容语义
