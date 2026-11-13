@@ -70,6 +70,7 @@
 - `self.mutex` is not reentrant.
 - The former second state lock (`self.ap_state`) no longer exists, so no lock-order rule applies between it and `self.mutex`.
 - The two locks are never held simultaneously on any execution path.
+- `CalcInputFrames`, `CalcOutputFrames` and `APOProcess` are called serially by the Windows audio engine; there is no reentrancy between them.
 - `CalcInputFrames` / `CalcOutputFrames` do not acquire any lock; they read `latency_frames_atomic` lock-free.
 - `LockForProcess` must not call `CalcInputFrames` / `CalcOutputFrames`; since v9.12 latency is not reported (`latency_frames_atomic` is always 0); v9.13 reuses the existing chain on same config/format Relock (`last_lock_key` fingerprint).
 - `hot_reload` must not call methods that require `self.mutex`; the whole `hot_reload` already holds `self.mutex`.

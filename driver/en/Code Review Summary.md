@@ -1,12 +1,12 @@
 # VxAPO Driver Code Review Summary
 
-This document consolidates historical code-review findings. The current implementation is authoritative.
+This document consolidates the key findings from historical code reviews, so that large numbers of separate review files do not have to be kept. The current implementation is authoritative.
 
 ## Key findings
 
 ### `sys/`
 
-- COM interfaces and IIDs are centralized.
+- COM interfaces and IIDs are centralized to avoid duplicate definitions.
 - Registry access uses minimal SAM to match MMDevices ACLs.
 - GUID formatting is centralized in `sys/com/prelude::guid_to_string`.
 
@@ -33,7 +33,7 @@ This document consolidates historical code-review findings. The current implemen
 
 ### `object/`
 
-- `ApoObject` is the multi-module glue layer.
+- `ApoObject` is the multi-module glue layer, responsible for COM lifetime and configuration hot reload.
 - Child APOs are managed under `HKLM\SOFTWARE\VxAPO\Child APOs`.
 - DLL registration must write `AudioEngine\AudioProcessingObjects`.
 

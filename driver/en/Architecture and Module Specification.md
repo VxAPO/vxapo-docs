@@ -6,9 +6,9 @@
 
 ```text
 src/
-├── lib.rs          # crate root
+├── lib.rs          # crate root, declares modules
 ├── sys/            # FFI layer: COM, registry, audio definitions
-├── pipeline/       # audio processing pipeline
+├── pipeline/       # audio processing: context, buffers, formats, chain, processing, DSP
 ├── install/        # device APO install/uninstall, device query
 ├── config/         # config file parsing (TOML model)
 ├── object/         # COM glue: ApoObject, class factory, DLL exports
@@ -47,7 +47,7 @@ Processes audio only; does not know install, config, or COM objects.
 - `chain.rs`: `Chain` holds `Vec<Box<dyn Filter>>` and total latency.
 - `process.rs`: normal and transition processing.
 - `realtime/`: `RealtimeContext` compile-time marker, lock-free ring buffer.
-- `dsp/`: `Filter` trait, factory, concrete filters.
+- `dsp/`: `Filter` trait, factory, concrete filters (biquad/FIR/PEQ/gain/loudness/reverb, etc.).
 
 `pipeline` must not depend on `install`, `config`, or `object`.
 
@@ -58,7 +58,7 @@ Handles device APO install/uninstall and device query.
 - `device/endpoint.rs`: endpoint state/name.
 - `device/format.rs`: WAVEFORMATEX parsing.
 - `device/slots.rs`: 5 APO slots, install modes, child APO path.
-- `device/info.rs`: `enumerate_devices` single entry.
+- `device/info.rs`: `enumerate_devices`, the single device-enumeration entry point.
 - `device/sysfx.rs`: CAPX default-effect template takeover/restore.
 - `device/stale.rs`: stale-GUID detection, migration and cleanup (device instance ID as stable identity).
 - `selector/operation.rs`: `install_endpoint` / `uninstall_endpoint` with transaction rollback.
@@ -116,7 +116,7 @@ Third-party dependencies:
 - `thiserror`: error enum derive.
 - `once_cell`: lazy init in `install/device/sysfx`.
 - `serde` / `toml`: config TOML deserialization.
-- `windows` family: COM and system APIs.
+- `windows` / `windows-core` / `windows-implement` / `windows-interface`: COM and system APIs.
 
 ## 4. Data flow
 

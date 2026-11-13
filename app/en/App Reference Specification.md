@@ -168,7 +168,7 @@ src/
 | `useCurveHover` | curve hover tip follow and avoidance |
 | `useThrottledCompute` | throttled recompute (42 ms ≈ 24 fps, fixed interval while dragging + final pass) |
 | `useTheme` | light/dark/system |
-| `useToast` | notifications |
+| ~~`useToast.ts`~~ | notifications — **merged into `stores/uiStore.ts`** (Toast state + 2.5 s auto-dismiss kept from the original implementation) |
 | `useInterval` / `useWindowControls` | pausable interval polling / window controls |
 
 ### 3.5 src-tauri backend commands
@@ -252,7 +252,9 @@ config write denied (migrated file inherits an administrator ACL)
 
 ## 5. Type specification (`lib/model.ts`)
 
-Actual types are defined in `src/lib/model.ts`:
+Actual types live in `src/lib/model.ts`. `Device` / `StaleInstall` / `MigrationReport` are
+re-exported from `lib/generated` (generated from the `vxapo-cli/protocol` contract via ts-rs);
+the UI-side types below are hand-written:
 
 ```ts
 export type ViewMode = "preset" | "advanced";
@@ -337,6 +339,10 @@ export interface StaleInstall {
   target_name?: string | null;
   /** matched_healthy | matched_partial | unmatched */
   target_state: string;
+  /** how the record matched: endpoint_history | device_instance_id | stored_identity | hardware_id | null */
+  matched_by?: string | null;
+  /** whether the driver can auto-repair this record through `stale migrate` */
+  auto_repairable: boolean;
 }
 
 /** Migration report (CLI `stale migrate --json`) */
@@ -353,7 +359,9 @@ export interface MigrationReport {
 }
 ```
 
-> All business types are centralized in `lib/model.ts` with `isPresetLibraryEntry` / `isPresetMeta` guards.
+> All business types are centralized in `lib/model.ts` with `isPresetLibraryEntry` / `isPresetMeta`
+> guards; `Device` / `StaleInstall` / `MigrationReport` come from the generated CLI-contract
+> bindings in `lib/generated` and are only re-exported, so no second hand-written definition drifts.
 
 ## 6. Effect model (`lib/effects.ts`, keys match driver)
 
@@ -418,7 +426,7 @@ Semantic strength round-trip (`semanticStrength` / `applySemanticStrength`):
 | `read_config_checked` | guid, known_revision | `{revision, text?}` | fingerprint-checked read (`text = null` when unchanged, for the 2 s poll) |
 | `write_config` | guid, content | `()` | atomic write (tmp + rename) |
 | `install_device` | guid | `InstallResult` | background `install --verify --progress-file`, emits `install-progress` |
-| `uninstall_device` | guid | `String` | elevated `uninstall -d <guid> --json` |
+| `uninstall_device` | guid | `String` | elevated `uninstall -d <guid>` (no `--json`; plain output is captured) |
 | `rollback_install` | guid | `String` | elevated rollback after install failure |
 | `list_stale_installs` | — | `StaleInstall[]` | CLI `stale list --json` (read-only, no elevation) |
 | `migrate_stale_install` | from, to, config_from?, snapshot_from? | `String` (MigrationReport JSON) | elevated `stale migrate --from --to --json` |
@@ -455,7 +463,9 @@ Additional Tauri plugins: `tauri-plugin-opener`, `tauri-plugin-dialog`.
 1. No real-time audio processing in the App or its backend.
 2. No direct registry writes; install/uninstall/snapshot go through CLI/driver logic.
 3. Config syntax must match the driver (`[[effects]]` TOML model); file path is fixed.
-4. State has a single source of truth; components are controlled.
+4. State has a single source of truth; components are controlled. Business state lives in
+   `App.tsx`, the hooks, and the zustand stores under `src/stores/` (device / config / channel /
+   selection / ui); components and panels do not own business state.
 5. Clamp/validation rules follow driver behavior (`[-120, +48]`, floor -60, NaN/inf rejected); clamping happens on write only.
 6. 31-band limit enforced by `applyPreset` / `addBand`.
 7. Stale-GUID migration never writes the registry or file permissions directly from the App; it

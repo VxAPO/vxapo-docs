@@ -47,7 +47,7 @@ Measured over the whole driver crate:
 | **Default (adopted)** | 445 | 1802 | 991 | +811 | **257** |
 | `Max` | 504 | 962 | 1885 | −923 | **431** |
 
-`Max` raises the count of hard-to-read `>90`-column lines from 287 to 431 (+68%) and
+`Max` raises the count of hard-to-read `>90`-column lines from 287 to 431 (+50%) and
 requires maintaining a custom config forever. Defaults need no local configuration at
 all — any editor, CI system, or downstream tool produces the same formatting out of the box.
 
@@ -57,7 +57,7 @@ all — any editor, CI system, or downstream tool produces the same formatting o
 
 When reviewing a formatting commit, the following are **not** logic changes:
 
-1. **Removal of a leading UTF-8 BOM** (U+FEFF) — driver had 17 such files.
+1. **Removal of a leading UTF-8 BOM** (U+FEFF) — driver had 22 such files.
 2. **Trailing-comma normalisation** in multi-line constructs.
 3. **Reordering of `use` lists and `mod` declarations** (lexicographic).
 4. **Brace insertion/removal** for single-expression arms (`=> expr` ↔ `=> { expr }`).
@@ -81,7 +81,7 @@ destroying traceability.
 
 ### 3.2 Blame protection
 
-Each repository has `.git-blame-ignore-revs` listing the full hashes of pure formatting
+Each of the three Rust repositories has `.git-blame-ignore-revs` listing the full hashes of pure formatting
 commits. Each machine must run once (GitHub's web UI recognises the file automatically):
 
 ```sh
@@ -102,7 +102,7 @@ git config blame.ignoreRevsFile .git-blame-ignore-revs
 
 ### 4.1 Local pre-commit hook
 
-Each repository has `.githooks/pre-commit`, which runs the format check and rejects
+Each of the three Rust repositories has `.githooks/pre-commit`, which runs the format check and rejects
 unformatted commits. The hook **only checks; it never rewrites** — auto-formatting would
 fold unintended changes into the commit and hide the real content.
 
@@ -156,8 +156,8 @@ files are only ever modified inside the driver repository.
   "modified but content unchanged" state no longer occurs.
 - `.editorconfig` covers non-Rust files (indentation, line endings, final newline).
 
-> **Note**: `vxapo-app/.gitignore` is **GBK-encoded** (not UTF-8). Edit it at byte level;
-> re-encoding it as UTF-8 would corrupt its Chinese comments.
+> **Note**: `vxapo-app/.gitignore` is **predominantly GBK-encoded**, with a few later lines in UTF-8. Edit it at byte level;
+> re-encoding it wholesale would corrupt its Chinese comments.
 
 ---
 
@@ -177,12 +177,10 @@ The three Rust repositories pin the same version; update their `rust-toolchain.t
 
 ---
 
-## 8. Quality baseline (recorded before execution)
+## 8. Quality baseline
 
-| Repository | `cargo test` | clippy |
-|---|---|---|
 > Numbers evolve with the code; they **must not regress** across a change. Current values
-> (2026-10):
+> (2026-11-13 re-checked):
 
 | Repository | `cargo test` | clippy |
 |---|---|---|

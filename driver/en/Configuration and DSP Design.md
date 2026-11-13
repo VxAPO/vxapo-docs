@@ -8,11 +8,11 @@ Each device has one config file:
 C:\ProgramData\VxAPO\{GUID}\config.toml
 ```
 
-Example:
+The config is TOML v1. Top-level fields:
 
 ```toml
 version = 1
-enabled = true
+enabled = true             # false = whole-chain passthrough, content kept
 
 [meta]
 app = "vxapo"
@@ -75,7 +75,8 @@ PEQ band types (`bands[].type`, default `peaking`):
 Implementation notes:
 
 - `reverb`: Dattorro plate reverb; `low_cut_hz` is the low-frequency transient protection crossover
-  (content below it bypasses the reverb per channel, `20` ~ off).
+  (content below it bypasses the reverb per channel and passes through untouched, `20` ~ off;
+  content above the crossover enters the reverb).
 - `compressor`: all-channel linked **two-stage detection**. The primary detector is a
   **slow loudness axis** (asymmetric mean-square pole: 0.5 s rise keeps the
   note-scale translation, 0.2 s fall keeps post-passage recovery snappy — symmetric
@@ -111,11 +112,11 @@ Implementation notes:
   **low-end reduction** — an RBJ low shelf with Q fixed at 0.707, corner = `crossover_hz`, depth =
   6 dB x `gain`, applied to the **reconstructed dry sum**; `air` is the center air absorption;
   `side_itd` (Side ITD) sets the **fractional delay length** of the side channel above 1.5 kHz
-  (0 = phase untouched, 1 = 0.10 / 0.15 ms, dtau = 0.05 ms, scaled by sample rate so the time
-  amount is sample-rate independent). The side dry branch uses that splitter's low-pass branch
+  (pure delay, amplitude untouched: 0 = phase untouched, 1 = 0.10 / 0.15 ms, dtau = 0.05 ms,
+  scaled by sample rate so the time amount is sample-rate independent). The side dry branch uses that splitter's low-pass branch
   (same group delay as the high band, avoiding an x[n]-x[n-D2] residual), and the mid references
   plus the dry signal are shifted by the splitter's group delay D2 — total latency is therefore
-  D2 (~2.6 ms at 48k) above the main crossover. The side channel is neither boosted nor separately
+  D2 (~2.6 ms, 127 samples at 48 kHz) above the main crossover. The side channel is neither boosted nor separately
   attenuated; the processed increment passes a first-order high-pass at the crossover, and the
   output has a soft-knee limiter.
 - `aural`: 2nd-order Butterworth high-pass + level follower + tanh odd-order soft saturation +
@@ -195,6 +196,6 @@ The EAPO behavior reference is useful for install/child APO/format negotiation a
 - Slot backup and restore.
 - Post-install self-check (`CoCreateInstance`).
 
-The current code is authoritative.
+Detailed source locations can be found in the original EAPO behavior document; this document defers to the current code.
 
 > For more detailed `config/` and `pipeline/` module specifications, see `driver/en/Module Reference Specification/`.

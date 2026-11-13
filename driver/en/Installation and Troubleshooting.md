@@ -20,7 +20,7 @@ Supported install modes:
 
 ### 1.2 Install flow
 
-`install::selector::operation::install_endpoint` performs:
+`install::selector::operation::install_endpoint` performs the full installation:
 
 1. Check `DisableProtectedAudioDG`.
 2. Read device slots and format.
@@ -115,7 +115,7 @@ HKCR\AudioEngine\AudioProcessingObjects\{CLSID}
     APOInterface0 = {FD7F2B29-24D0-4B5C-B177-592C39F9CA10}
 ```
 
-`unregister_com_class` deletes the key.
+`unregister_com_class` also deletes this key.
 
 ## 5. Common checks
 
@@ -128,7 +128,7 @@ HKCR\AudioEngine\AudioProcessingObjects\{CLSID}
 | Child APO path exists | affects child delegation |
 | Administrator rights | required for install/uninstall |
 
-## 6. Stale GUID records: detect, migrate, clean up
+## 6. Stale GUID records: detect, migrate, clean up (since v9.10)
 
 ### 6.1 Why it happens
 
@@ -139,7 +139,7 @@ Bluetooth re-pairing). The old endpoint slot keys disappear, but VxAPO's own rec
 - `C:\ProgramData\VxAPO\{oldGUID}\config.toml`.
 - `C:\ProgramData\VxAPO\snapshots\{oldGUID}.json`.
 
-The new GUID then looks "not installed" while the old config and snapshot stay on disk.
+The new GUID then looks "not installed" while the old config and snapshot stay on disk, and the user had to move them by hand.
 
 ### 6.2 Stable identity and matching
 
@@ -163,7 +163,9 @@ pub fn fix_config_acl(guid: &str) -> Result<()>;
 
 - `StaleInstall`: `guid` / `device_instance_id` / `display_name` / `config_path` /
   `config_mtime_ms` / `snapshot_path` / `snapshot_mtime_ms` / `premix_slot` / `postmix_slot` /
-  `inferred_mode` / `has_child_backup` / `has_sysfx_backup` / `target_guid` / `target_name` / `target_state`.
+  `inferred_mode` / `has_child_backup` / `has_sysfx_backup` / `target_guid` / `target_name` /
+  `target_state` / `matched_by` (`endpoint_history` / `device_instance_id` / `stored_identity` /
+  `hardware_id` / `null`) / `auto_repairable`.
 - `MigrationReport`: `success` / `target_guid` / `config_from` / `snapshot_from` /
   `config_migrated` / `snapshot_migrated` / `install_repaired` / `removed_guids` / `warnings`.
 - CLI: `vxapo-cli stale list|migrate|cleanup|fix-acl` (see CLI Reference Specification 5.6);
@@ -174,13 +176,20 @@ pub fn fix_config_acl(guid: &str) -> Result<()>;
 ```text
 stale migrate --from <oldGuid> --to <newGuid>
   -> require_admin
-  -> stop audio service + taskkill audiodg
+  -> no service stop (measured 2026-09-16): writing/deleting FxProperties values only needs a
+     KEY_SET_VALUE handle; audiodg holding the endpoint does not block it — stopping the audio
+     service was a historical misconception
   -> migrate_install:
        when config_from / snapshot_from are omitted, choose the source between the old records
        of the same device instance and the target's existing files (latest config, earliest snapshot)
        migrate config.toml + snapshot -> repair the new GUID install state -> delete old records
+       refresh the target record's identity and write the EndpointHistory union back (including
+       the new GUID, so a future GUID change can be recognized)
        existing target files are backed up to C:\ProgramData\VxAPO\_migration_backup\{guid}\
-  -> emit MigrationReport (JSON); on failure restart audiosrv
+       if the repair branch rewrote slots, the driver restarts the endpoint device afterwards
+       (the engine caches the endpoint APO chain; registry edits alone do not reload it)
+  -> emit MigrationReport (JSON) / migrated summary + warnings; afterwards ensure the audio
+     service is running (idempotent, no restart when already running)
 ```
 
 Migration runs through the elevated CLI, so the migrated `config.toml` may inherit an administrator

@@ -56,6 +56,6 @@ vxapo_driver.dll (APO)
 ## 6. Key design principles
 
 - Audio is real-time: RT path has zero allocation, zero locks, zero I/O.
-- Configuration is per-device.
+- Configuration is per-device: each endpoint has its own independent configuration.
 - Changing configuration does not interrupt sound: hot reload + raised-cosine transition.
 - Clear layering: driver does not depend on UI; App/CLI interact through the file system and CLI.

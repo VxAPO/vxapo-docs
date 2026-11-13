@@ -5,27 +5,32 @@
 **Responsibility**: Lock-free ring logging with zero heap allocation on the real-time path.
 
 **References**:
-- `crate::pipeline::realtime::ring::RingBuffer`
+- `crate::utils::ring::RingBuffer` (SPSC lock-free ring buffer)
 
 **Exports to**: `pipeline/`, `object/`
 
 **Public API**:
 ```rust
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct LogEntry {
-    level: LogLevel,
-    len: u8,
-    msg: [u8; 256],
-}
+/// Process-level logger (lazily initialized on the first `DllGetClassObject` call).
+pub(crate) static LOGGER: OnceLock<Logger> = OnceLock::new();
 
 #[repr(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LogLevel {
     Debug,
     Info,
     Warning,
     Error,
     RtViolation,
+}
+
+/// Fixed-size ring log entry (RT-safe).
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct LogEntry {
+    pub level: LogLevel,
+    pub len: u8,
+    pub msg: [u8; 256],
 }
 
 pub struct Logger {
@@ -35,7 +40,13 @@ pub struct Logger {
 impl Logger {
     pub fn new(capacity: usize) -> Self;
 
-    // Real-time safe: no heap allocation, no blocking
+    /// Lazily initializes the process-level logger (capacity 4096) and installs it
+    /// into the `log` crate. The first call happens in `DllGetClassObject`
+    /// (outside the Loader Lock), not in `DllMain`. Idempotent: a repeated
+    /// `set_logger` failure is ignored (already installed).
+    pub fn install() -> &'static Logger;
+
+    // Real-time safe: no heap allocation, no blocking.
     pub fn log(&self, level: LogLevel, msg: &str) {
         let bytes = msg.as_bytes();
         let len = bytes.len().min(255);
@@ -44,7 +55,7 @@ impl Logger {
         let _ = self.ring.push(entry);
     }
 
-    // Non-real-time: batch read
+    // Non-real-time batch read. Test-only in the current codebase (`#[cfg(test)]`).
     pub fn drain<F>(&self, mut f: F) where F: FnMut(LogLevel, &str) {
         while let Some(entry) = self.ring.pop() {
             let len = entry.len as usize;
@@ -53,9 +64,18 @@ impl Logger {
         }
     }
 }
+
+// `log` crate facade: `log::info!`-style macros land in the same ring buffer.
+impl log::Log for Logger {
+    fn enabled(&self, metadata: &log::Metadata<'_>) -> bool; // gates at `Debug`
+    fn log(&self, record: &log::Record<'_>);                 // maps level + `{target}: {args}`
+    fn flush(&self) {}                                       // no-op
+}
 ```
 
 **Truncation**: Messages longer than 255 bytes are silently truncated. RT log messages should stay short (error code + key parameters).
+
+**Allocation note**: The `log` macros are not on the RT hot path (RT diagnostics go through the fixed-size RT ring); therefore the facade's `format!` allocation is acceptable there.
 
 ## 9.2 `telemetry/panic.rs`
 
@@ -72,23 +92,20 @@ pub fn install_panic_hook(logger: &'static Logger);
 ```
 
 **Panic hook behavior**:
-1. Capture panic information.
-2. Write to the logger at `RtViolation` level.
-3. Call `abort()`.
+1. Capture the panic payload (`&str`, `String`, or `Debug` fallback) as `panic: ...`.
+2. Write it to the logger at `RtViolation` level.
+3. Call `std::process::abort()`.
+
+**Idempotency**: Installation is guarded by `std::sync::Once` — `DllGetClassObject` may run once per CLSID (PreMix / PostMix); only the first hook is installed. In test builds the hook is not installed, so intentional `#[should_panic]` tests do not abort the test process.
 
 **`'static` lifetime requirement**:
 `install_panic_hook` requires `&'static Logger` because the panic hook is global and must live for the entire process lifetime.
 
-In `object/dll_exports.rs`, a global static `Logger` is created with `std::sync::OnceLock`:
+In `object/dll_exports.rs`, telemetry is installed lazily at the first `DllGetClassObject` call (outside the Loader Lock):
 
 ```rust
-use std::sync::OnceLock;
-use crate::telemetry::logger::Logger;
-
-static LOGGER: OnceLock<Logger> = OnceLock::new();
-
-LOGGER.get_or_init(|| Logger::new(1024));
-install_panic_hook(LOGGER.get().unwrap());
+let logger = crate::telemetry::logger::Logger::install();
+crate::telemetry::panic::install_panic_hook(logger);
 ```
 
-**Note**: Do not perform complex initialization in `DllMain`. Prefer `DllRegisterServer` (self-registration entry) for Logger initialization.
+**Note**: Do not perform complex initialization in `DllMain`. The process-level `Logger` lives in `telemetry::logger::LOGGER` (`OnceLock`, capacity 4096) and is initialized by `Logger::install()` on the first `DllGetClassObject` call — not in `DllRegisterServer` and not in `DllMain`.
