@@ -17,9 +17,9 @@ Formatting is decided **only by `cargo fmt`**.
 | Line-breaking strategy | **rustfmt defaults** (no custom width settings) |
 | `style_edition` | `2021` (pinned explicitly) |
 | `newline_style` | `Unix` |
-| Toolchain | `channel = "1.97.1"` (pinned via `rust-toolchain.toml`) |
+| Toolchain | `channel = "1.100.0"` (pinned via `rust-toolchain.toml`) |
 
-`style_edition` is pinned so that a future crate `edition` bump (2021 → 2024) does **not**
+`style_edition` is pinned so that a crate `edition` bump (2021 → 2024) does **not**
 force another whole-repo reflow. `newline_style = "Unix"` matches `.gitattributes`
 `eol=lf`.
 
